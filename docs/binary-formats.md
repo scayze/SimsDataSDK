@@ -132,3 +132,5 @@ API works for both the XML and binary encodings.
 | EP13 delta Combined Tuning | binary `DATA`, 4,749 entries |
 | EP13 `DevelopmentalMilestone` | 109 entries |
 | Save file (`Slot_*.save`) | constant group index, 61 entries, JPEG + RefPack resources |
+| Full game scan | 629 packages, 2,581,974 entries, 0 failures |
+| All English string tables | 117 packages, 163,302 strings, 0 failures |

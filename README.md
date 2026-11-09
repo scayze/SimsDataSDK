@@ -80,6 +80,8 @@ The readers were verified against game files:
 | EP13 delta Combined Tuning | binary `DATA`, 4,749 entries |
 | EP13 `DevelopmentalMilestone` | 109 entries |
 | Save file | constant-group index, JPEG + RefPack resources |
+| Full game scan | 629 packages, 2,581,974 index entries, 0 failures |
+| All English string tables | 117 packages, 163,302 strings, 0 failures |
 
 See [`docs/binary-formats.md`](docs/binary-formats.md) for the verified format
 notes, and run the example:
