@@ -12,6 +12,7 @@ from typing import Callable, Optional
 
 from .catalog import Catalog, PremadeAncestor, PremadeHousehold, PremadeSim, StaticData, build_static
 from .installation import Installation
+from .save import SaveFile, TrayLibrary, read_save, read_tray_library
 
 __all__ = ["Sims4Workspace"]
 
@@ -79,6 +80,37 @@ class Sims4Workspace:
 
     def find_household(self, key: str | int) -> Optional[PremadeHousehold]:
         return self.static_data().household(key)
+
+    # ------------------------------------------------------------------
+    # saves and Tray
+    # ------------------------------------------------------------------
+    def read_save(self, path: str | Path, catalog: Optional[Catalog] = None) -> SaveFile:
+        return read_save(path, catalog if catalog is not None else self.catalog)
+
+    def save_files(self) -> list[Path]:
+        if self.installation.user_dir is None:
+            return []
+        saves = Path(self.installation.user_dir) / "saves"
+        if not saves.is_dir():
+            return []
+        return sorted(saves.glob("*.save"))
+
+    def read_saves(self) -> list[SaveFile]:
+        return [self.read_save(path) for path in self.save_files()]
+
+    def tray_library(
+        self,
+        folder: str | Path | None = None,
+        catalog: Optional[Catalog] = None,
+    ) -> TrayLibrary:
+        if folder is None:
+            if self.installation.user_dir is None:
+                raise FileNotFoundError("no Sims 4 user directory; pass folder explicitly")
+            folder = Path(self.installation.user_dir) / "Tray"
+        return read_tray_library(
+            folder,
+            catalog if catalog is not None else self.catalog,
+        )
 
     # ------------------------------------------------------------------
     # misc

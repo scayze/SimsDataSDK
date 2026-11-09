@@ -14,6 +14,7 @@ import pytest
 
 from sims4_sdk import Installation
 from sims4_sdk.catalog import build_static, load_static
+from sims4_sdk.save import read_save, read_tray_library
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
@@ -149,6 +150,45 @@ def test_cache_roundtrip(static_context) -> None:
     assert cached is not None
     assert len(cached.catalog.traits) == len(data.catalog.traits)
     assert len(cached.premades.sims) == len(data.premades.sims)
+
+
+def test_save_file(static_data, user_dir: Path) -> None:
+    saves = sorted((Path(user_dir) / "saves").glob("*.save"))
+    if not saves:
+        pytest.skip("no save files in the user directory")
+
+    save = read_save(saves[0], static_data.catalog)
+    assert save.slot.slot_name
+    assert save.sims
+    assert save.households
+    assert save.zones
+
+    bella = save.sim("Bella Goth")
+    if bella is None:
+        pytest.skip("the save does not contain Bella Goth")
+
+    assert bella.age in {"BABY", "TODDLER", "CHILD", "TEEN", "YOUNGADULT", "ADULT", "ELDER"}
+    assert bella.gender in {"MALE", "FEMALE"}
+    assert bella.species == "HUMAN"
+    assert bella.personality_traits
+    assert bella.career is not None
+    assert bella.spouse_id is not None
+    assert bella.children
+    assert bella.household_name
+
+
+def test_tray_library(static_data, user_dir: Path) -> None:
+    tray_dir = Path(user_dir) / "Tray"
+    if not tray_dir.is_dir():
+        pytest.skip("no Tray folder in the user directory")
+
+    library = read_tray_library(tray_dir, static_data.catalog)
+    assert library.households
+    assert library.items
+    household = next((hh for hh in library.households if hh.sims), None)
+    assert household is not None
+    assert household.family_name
+    assert household.sims[0].full_name
 
 
 @pytest.mark.skipif(

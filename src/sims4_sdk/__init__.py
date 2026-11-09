@@ -1,11 +1,14 @@
 """sims4-sdk — read The Sims 4 game data, saves, and Tray files.
 
-Step 2 exposes the save-independent static data:
+Step 3 exposes:
 
 * :class:`sims4_sdk.Sims4Workspace` — discover the game and load everything
 * :class:`sims4_sdk.catalog.Catalog` — traits, preferences, aspirations,
   careers, milestones, and relationship bits
 * :class:`sims4_sdk.catalog.PremadeSim` — pre-made Sims and their base values
+* :class:`sims4_sdk.save.SaveFile` — live save state (traits, careers, skills,
+  family, milestones, pregnancy, occult, …)
+* :class:`sims4_sdk.save.TrayLibrary` — Gallery/Tray households
 * :class:`sims4_sdk.core.DBPF` — package/world/save container reader
 * :class:`sims4_sdk.core.StringTable` — localized STBL strings
 * :class:`sims4_sdk.core.CombinedTuning` — XML or binary tuning blobs
@@ -79,10 +82,22 @@ from .paths import (
     saves_dir,
     tray_dir,
 )
+from .save import (
+    SaveError,
+    SaveFile,
+    SavedHousehold,
+    SavedSim,
+    TrayError,
+    TrayHousehold,
+    TrayItem,
+    TrayLibrary,
+    read_save,
+    read_tray_library,
+)
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "__version__",
@@ -112,6 +127,16 @@ __all__ = [
     "build_static",
     "SimInfo",
     "SimInfoError",
+    "SaveFile",
+    "SavedSim",
+    "SavedHousehold",
+    "TrayLibrary",
+    "TrayHousehold",
+    "TrayItem",
+    "read_save",
+    "read_tray_library",
+    "SaveError",
+    "TrayError",
     # containers
     "DBPF",
     "DBPFError",
