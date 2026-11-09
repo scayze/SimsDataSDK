@@ -1,0 +1,17 @@
+{| class="wikitable sortable"
+! width=32px|Icon
+! Activity
+! width=32px|Pack
+|-
+|[[File:Skill TS4 Acting.png|32px|center]]
+|[[Acting]]
+|{{TS4icon|GF}}
+|-
+|[[File:TS4 Like Baking.png|32px|center]]
+|[[Baking]]
+|{{TS4icon|GTW}}
+|-
+|[[File:TS4 Like Fitness.png|32px|center]]
+|[[Fitness]]
+|{{TS4icon|TS4}}
+|}

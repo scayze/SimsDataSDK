@@ -184,6 +184,25 @@ class PremadeSim:
                 return trait.name[len("trait_Gender") :].upper()
         return None
 
+    @property
+    def age(self) -> Optional[str]:
+        mapping = {
+            "baby": "BABY",
+            "infant": "INFANT",
+            "toddler": "TODDLER",
+            "child": "CHILD",
+            "teen": "TEEN",
+            "youngadult": "YOUNGADULT",
+            "adult": "ADULT",
+            "elder": "ELDER",
+        }
+        for trait in self.traits:
+            if trait.name.startswith("trait_"):
+                key = trait.name[len("trait_") :].casefold()
+                if key in mapping:
+                    return mapping[key]
+        return None
+
     def __repr__(self) -> str:
         return f"PremadeSim({self.full_name!r}, traits={len(self.traits)})"
 

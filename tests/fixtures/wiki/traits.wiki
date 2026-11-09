@@ -1,0 +1,21 @@
+{| class="wikitable sortable"
+! width=20px class="unsortable"|Icon
+! Trait
+! class="unsortable"|Description
+! width=20px class="sortable"|Pack
+|-
+|[[File:Trait TS4 Ambitious.png|32px]]
+|[[Ambitious (The Sims 4)|Ambitious]]
+|''These Sims gain powerful Moodlets from career success.''
+|{{TS4icon|TS4}}
+|-
+|[[File:Trait TS4 Cheerful.png|32px]]
+|[[Cheerful]]
+|''These Sims tend to be Happier than other Sims.''
+|{{TS4icon|TS4}}
+|-
+|[[File:Trait TS4 Family-Oriented.png|32px]]
+|[[Family-Oriented (The Sims 4)|Family-Oriented]]
+|''These Sims become Happy around family members.''
+|{{TS4icon|TS4}}
+|}

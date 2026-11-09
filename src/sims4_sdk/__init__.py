@@ -9,6 +9,8 @@ Step 3 exposes:
 * :class:`sims4_sdk.save.SaveFile` — live save state (traits, careers, skills,
   family, milestones, pregnancy, occult, …)
 * :class:`sims4_sdk.save.TrayLibrary` — Gallery/Tray households
+* :mod:`sims4_sdk.validation` — cached Sims Wiki fetching, parsing, and
+  reconciliation (requires the ``validation`` extra)
 * :class:`sims4_sdk.core.DBPF` — package/world/save container reader
 * :class:`sims4_sdk.core.StringTable` — localized STBL strings
 * :class:`sims4_sdk.core.CombinedTuning` — XML or binary tuning blobs
@@ -97,7 +99,7 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = [
     "__version__",

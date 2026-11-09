@@ -1,0 +1,25 @@
+{| class="wikitable"
+! width="25%"|Aspiration
+! width="45%"|Milestones and requirements
+! width="25%"|Reward trait
+! width="5%"|Pack
+|-valign="top"
+|rowspan="2"|[[File:Aspiration TS4 Friend of the Animals.png|50px|left]]'''Friend of the Animals''' - This Sim wants to be friends with the animals.
+|'''Acquaintance of the Animals'''
+*Have a cat or dog
+*Be friends with 1 cat or dog
+|rowspan="2"|[[File:Trait TS4 Animal Whisperer.png|40px|left]]'''Animal Whisperer''' - It is easier to Train animals.
+|rowspan="2"|{{TS4icon|TS4:GTO}}
+|-valign="top"
+|'''Friend of the Animals'''
+*Be friends with 5 cats and/or dogs
+|-valign="top"
+|rowspan="3"|[[File:Aspiration TS4 Bodybuilder.png|50px|left]]'''Bodybuilder''' - This Sim wants to work out and become fit.
+|'''Basic Trainer'''
+*Work out for 8 total hours
+|rowspan="3"|[[File:Trait TS4 Long Lived.png|40px|left]]'''Long Lived''' - This Sim will live a long life.
+|rowspan="3"|{{TS4icon|TS4}}
+|-valign="top"
+|'''Exercise Demon'''
+*Achieve level 4 fitness skill
+|}

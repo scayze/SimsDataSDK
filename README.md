@@ -3,10 +3,10 @@
 A Python SDK for reading **The Sims 4** data so it can be used by other tools:
 game packages, DLC packages, mods, save files, and Tray files.
 
-> Status: **Step 3 — saves and Tray files.** The SDK now reads the static catalog,
-> pre-made Sims, live save-game state, and Tray/Gallery households. Save data
-> includes traits, likes/dislikes, careers, skills, aspiration tracks, family
-> relationships, milestones, pregnancy, occult state, and more.
+> Status: **Step 4 — Sims Wiki validation.** The SDK can now reconcile its static
+> catalog, pre-made Sims, and save data against The Sims Wiki, with a cached
+> MediaWiki client, wikitext parsers, field-by-field comparisons, and Markdown/JSON
+> reports.
 
 ## Quick start (no save file required)
 
@@ -82,6 +82,37 @@ forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder
 See [`docs/save-and-tray.md`](docs/save-and-tray.md) for the protobuf field map,
 validation numbers, and current limitations.
 
+### Sims Wiki validation (Step 4)
+
+- **Cached MediaWiki client** — `sims.fandom.com/api.php`, with disk caching and
+  batch page fetching.
+- **Wikitext parsers** — `Infobox Sim4`, skill tables, relationship tables, trait
+  tables, aspiration tables, career tables, milestone tables, and likes/dislikes
+  tables.
+- **Catalog coverage** — reports matched/missing SDK entries per domain.
+- **Sim reconciliation** — compares age, gender, traits, aspiration, career,
+  spouse, children, parents, skills, and relationships.
+- **Reports** — Markdown and JSON, with per-field status
+  (`match`, `mismatch`, `missing_sdk`, `missing_wiki`, `not_available`).
+
+```bash
+pip install -e ".[validation]"
+python examples/validate_wiki.py                # first save, 50 Sim pages
+python examples/validate_wiki.py --catalog-only
+python examples/validate_wiki.py --no-save      # compare static pre-made Sims
+```
+
+Or from Python:
+
+```python
+report = ws.validate_wiki(sim_limit=25)
+print(report.summary())
+print(report.to_markdown()[:2000])
+```
+
+See [`docs/wiki-validation.md`](docs/wiki-validation.md) for methodology,
+results, and known gaps.
+
 ### Low-level binary readers (Step 1)
 
 ```python
@@ -132,6 +163,12 @@ src/sims4_sdk/
 │   ├── models.py       # SaveFile, SavedSim, SavedHousehold, TrayHousehold, ...
 │   ├── reader.py       # .save reader
 │   └── tray.py         # .trayitem / .householdbinary reader
+├── validation/         # Sims Wiki validation
+│   ├── wiki_client.py  # cached MediaWiki API client
+│   ├── parse.py        # infobox/table/wikitext parsers
+│   ├── reconcile.py    # field-by-field comparison
+│   ├── validator.py    # orchestration
+│   └── models.py       # report/comparison models
 ├── installation.py     # package discovery and load order
 ├── siminfo.py          # SimInfo trait-list reader
 ├── workspace.py        # Sims4Workspace facade
@@ -146,7 +183,8 @@ examples/
 2. **Step 2 — static catalog + pre-made Sims** (done; save-independent).
 3. **Step 3 — saves and Tray files** (done; live Sim state, family, milestones,
    careers, skills, pregnancy, occult).
-4. **Step 4 — Sims Wiki validation** (catalog and pre-made/played Sim reconciliation).
+4. **Step 4 — Sims Wiki validation** (done; catalog, pre-made/played Sim
+   reconciliation, Markdown/JSON reports).
 5. **Step 5 — public API/export tooling** (CLI, JSON/SQLite/Polars helpers).
 
 > Note on pre-made Sim values: where the game bakes values into the SimInfo
@@ -193,6 +231,8 @@ builds are cached, so the first run is the slow one.
 | Full static scan (base + all packs + mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 400 pre-made Sims, 191 households, 41 ancestors, 0 errors, 616 packages; ~255 s first build, cached afterwards |
 | Save files | 6 parsed (`Slot_*` + `ver0`–`ver4`), 0 failures; example save: 59 Sims / 32 households / 59 zones |
 | Tray files | 286 `.trayitem` + 286 `.householdbinary`, 0 failures |
+| Wiki catalog coverage | traits 99.6%, preferences 97.6%, aspirations 99.1%, careers 100%, milestones 100% |
+| Wiki save validation | Bella Goth 100% field match (age, gender, traits, aspiration, career, spouse, children, skills) |
 
 See [`docs/binary-formats.md`](docs/binary-formats.md) for the verified format
 notes, and run the example:

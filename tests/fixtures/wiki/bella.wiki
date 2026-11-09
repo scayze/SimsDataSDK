@@ -1,0 +1,109 @@
+{{Era|TS1|TSC|BO|TS2|TS2PSP|TS3|TS3LL|SOC|TSFP|TS4|TSMOBILE|TS4DHD|TS4HSY|FA}}
+{{DEFAULTSORT:Goth, Bella}}
+'''Bella Goth''' ({{IPAc-en|ˈ|b|ɛ|l|ə|_|ɡ|ɒ|θ}}) {{nee|Bachelor}} is a pre-made, playable [[Sim]] that first appeared in ''[[The Sims]]''. She is the daughter of [[Simis Bachelor|Simis]] and [[Jocasta Bachelor]], and the younger sister of [[Michael Bachelor]]. She grew up in a large house in [[Sunset Valley]] just down the road from her future husband, [[Mortimer Goth|Mortimer]]. Later, the two fell in [[relationship|love]], [[marriage|married]], and moved to [[5 Sim Lane]], where they had a daughter, [[Cassandra Goth|Cassandra]].  
+
+Between ''The Sims'' and ''[[The Sims 2]]'', Bella and Mortimer had one more [[child]], [[Alexander Goth|Alexander]], and moved to [[Pleasantview]]. Shortly before the start of ''The Sims 2,'' Bella went missing, having been [[alien abduction|abducted]] by [[alien]]s, and was transported to [[Strangetown]]. 
+
+In the [[alternate universe]] of ''[[The Sims 4]]'', Bella lives at [[Ophelia Villa]] in [[Willow Creek]], alongside her husband, her [[teen]]age daughter, Cassandra, and her son, Alexander.
+
+With her trademark red dress and being in every game in [[The Sims (series)|the ''Sims'' series]], either as a playable character or an [[Non-playable character|NPC]], Bella Goth can be considered one of the mascots of the entire ''Sims'' franchise.
+__NOTOC__
+{{Tabber
+|tab1                 = The Sims 4
+|text1                =
+{{Infobox Sim4
+|name                 = Bella Goth
+|image                = <tabber>
+|-|Current            = [[File:Bella Goth headshot.png|250px]]
+|-|New Home New Goths = [[File:Bella Goth (DHD).png|250px]]
+|-|Original           = [[File:Bella Goth headshot 2014.png|250px]]
+</tabber>
+|sex                  = Female
+|game                 = The Sims 4
+|age                  = Young Adult
+|career               = Secret Agent
+|careerlevel          = Intelligence Researcher
+|asp                  = Party Animal
+|trait1               = Good
+|trait2               = Family-Oriented
+|trait3               = Romantic
+|trait4               = Gregarious
+|state                = Sim
+|hair                 = Black 1
+|eye                  = Brown 3
+|skin                 = Warm 15
+|muscle               = f0.09
+|fat                  = f0.09
+|family               = [[Goth family]]
+|spouse               = {{Spouse|[[Mortimer Goth]]|Husband}}
+|maritalstatus        = Married
+|child                = {{Relative|[[Cassandra Goth]]|Daughter|[[Alexander Goth]]|Son}}
+|play                 = Playable
+|neighbor             = Willow Creek}}
+
+==Biography==
+In ''[[The Sims 4]]'', Bella lives in [[Willow Creek]] in the [[Ophelia Villa]] with her husband, [[Mortimer Goth|Mortimer]], and their two [[child]]ren, [[Cassandra Goth|Cassandra]] and [[Alexander Goth|Alexander]]. This version of Bella Goth has been officially confirmed as existing in an alternate timeline to those seen in previous installments of [[The Sims (series)|the series]].
+
+''The Sims 4'' version of Bella is a [[young adult]] and 28 days away from becoming an [[adult]]. Her [[trait (The Sims 4)|traits]] are [[good (The Sims 4)|good]], [[family-oriented (The Sims 4)|family-oriented]], and [[romantic (trait)|romantic]], and she has the Party Animal [[Aspiration (The Sims 4)|aspiration]]. She has no [[relationship]]s outside of her [[household]] when first played, but can build new relationships easily thanks to her gregarious reward trait.
+
+The household description for the [[Goth family]] mentions that Bella sometimes disappears under mysterious circumstances. This statement is likely a reference to her working in the [[Secret agent|Secret Agent]] [[career]], as well as a nod to her [[alien abduction|abduction]] plot line in ''[[The Sims 2]]''.
+
+In May 2022, Bella and her [[family relationships|family]] were given an official makeover with new outfits, facial features, and [[skin#The Sims 4|skin]] tones shortly after the release of [[The Sims 4/Patch 129|patch 129]] of the base game.<ref>{{cite web|title=The Sims 4  Delivery Express: NEW DELIVERY! (May 25th, 2022)|url=https://simscommunity.info/2022/05/25/the-sims-4-delivery-express-new-delivery-may-25th-2022/|first=Jovan|last=Jovic|publisher=Sims Community|date=May 25, 2022|accessdate=May 25, 2022}}</ref> Notable changes to Bella include different hair, eyebrows, and makeup, a different nose preset, a darker and less saturated skin tone, a breast reduction, and a dress without her signature sweetheart neckline for her everyday outfit.<ref>Players of ''[[The Sims 4#Legacy edition|The Sims 4: Legacy Edition]]'' will still have the original [[Goth family]] since they do not receive patches past [[The Sims 4/Patch 88|Patch 88]].</ref> The version of Bella and her family that launched with ''The Sims 4'' in 2014 can be downloaded from [https://www.ea.com/games/the-sims/the-sims-4/gallery/item/eezQYekZEeyER0LIjIhxIA Maxis' official Gallery page]. This version was uploaded for players who prefer the Goths' pre-patch appearance. 
+
+The "Antique Blocks" in ''[[Kits for The Sims 4#The Sims 4: Storybook Nursery Kit|The Sims 4: Storybook Nursery Kit]]'' are rumored to be Bella's favorite childhood [[toy]].
+
+===Alternate versions===
+====Create-a-Sim Trailer version====
+Prior to ''[[The Sims 4]]'' game's release, Bella appeared in several promotional materials, including an [[Easter Egg]] in the first official trailer and official character renders. In 2014's [https://www.youtube.com/watch?v=pZmtGfTj-to ''The Sims 4'': Create A Sim Official Gameplay trailer], producer Ryan Vaughan walked through the new [[Create a Sim|Create A Sim]] tools and created [[Mortimer Goth|Mortimer]] and Bella.
+
+The version of Bella Goth from the Create A Sim trailer is actually not the exact same Bella that launched with ''The Sims 4''. The CAS trailer version of Bella has a slightly different wardrobe and [[personality]]; trailer Bella is [[outgoing]] and [[active (trait)|active]] instead of [[good (The Sims 4)|good]] and [[family-oriented (The Sims 4)|family-oriented]]. Although both Bellas aspire for [[popularity]], trailer Bella has the Friend of the World [[aspiration (The Sims 4)|aspiration]] instead of the Party Animal aspiration. This version of Bella is available to download from SimGuruJill's [[The Sims 4 Gallery|gallery]] page.
+
+===="New Home New Goths" version====
+In the trailer for ''[[The Sims 4: Dream Home Decorator]]'', Bella and her [[family relationships|family]] are given makeovers after receiving a home renovation. Instead of her iconic red dress, this Bella wears a black tie-strap mini dress with red flowers for her everyday outfit. All her other outfit categories are different as well. This version of the [[Goth family]] was uploaded to [[Maxis]]' [[The Sims 4 Gallery|gallery]] page under the name "[https://www.ea.com/games/the-sims/the-sims-4/gallery/item/2ZgQhfx1EeuMvS4s5iFApA New Home New Goths]" with the following description: "Out with the old, in with the new! Things are changing around here, and the new Goth's are lovin' it. Thanks to [[Patina Wainscot|Patina]]'s influence, they've decided to not only change up their home, but also change up their old look! #Goths #MaxisCreates #DreamHomeDecorator"
+
+====Free Base Game Launch Trailer versions====
+In the [https://youtu.be/GJENRAB4ykA?si=4NIg-bqksSCYIXIS&t=77 Free Base Game Launch Trailer], one clip shows Bella shocked to see eleven clones of herself in front of a [[café]]. Nine are identical to Bella, one is dressed as a [[waiter|waitress]], and one is male. 
+
+===="Doja Cat's Bella Takeover" versions====
+During the [https://youtu.be/bGwpmIXCMrA?si=cqdQsRC001Ds9fT_&t=12709 livestream for ''The Sims''' 25th anniversary], American rapper and singer [[Doja Cat]] played with 15 identical clones of Bella Goth across two [[household]]s. The first household consisted of 8 Bellas:
+
+*'''Bella Goth 1:''' [[Romantic (trait)|Romantic]] and [[Family-oriented (The Sims 4)|Family-Oriented]].
+*'''Bella Goth 2:''' Romantic, Family-Oriented, [[Kleptomaniac (The Sims 4)|Kleptomaniac]], and [[Paranoid (The Sims 4)|Paranoid]].
+*'''Bella Goth 3:''' Romantic, Family-Oriented, and [[Hot-headed (The Sims 4)|Hot-headed]].
+*'''Bella Goth 4:''' Romantic, Family-Oriented, and Paranoid.
+*'''Bella Goth 5:''' Romantic and Family-Oriented.
+*'''Bella Goth 6:''' Romantic, Family-Oriented, and [[Cringe]].
+*'''Bella Goth 7:''' Romantic, Family-Oriented, and [[High maintenance]].
+*'''Bella Goth 8:''' Romantic, Family-Oriented, and [[Evil (The Sims 4)|Evil]].
+
+All 8 Bellas dislike [[pet]] enthusiasts.
+
+This household was uploaded to [[Maxis]]' [[The Sims 4 Gallery|gallery]] page under the name "[https://www.ea.com/games/the-sims/the-sims-4/gallery/item/U10savp3RWu%2B6RoTeKeODQ Doja Cat's Bella Takeover]" with the following description: "''Doja Cat did what?! She filled a house with nothing but Bellas-yes, THAT Bella. Now it's your turn to unleash the chaos! Download Doja's Bellas, throw them into your world, and see what happens when multiple Goth icons share one roof. Inspired by Doja Cat's legendary Sims 25-Hour Livestream #DojaCat #BellaGoth #TheSims25''"
+
+==Simology==
+<tabber>
+|-|Skills=
+{{SkillTable3
+|charisma    = 2
+|fitness     = 2
+|programming = 2}}
+|-|Relationships=
+{{RelationshipTableSims4|
+{{RelationshipSims4
+|image     = Mortimer Goth headshot.png
+|name      = [[Mortimer Goth]]
+|level     = Spouse, Sweetheart
+|relnumber = 45
+|romnumber = 75}}
+{{RelationshipSims4
+|image     = Cassandra Goth headshot.png
+|name      = [[Cassandra Goth]]
+|level     = Daughter, Friend
+|relnumber = 45}}
+{{RelationshipSims4
+|image     = Alexander Goth headshot.png
+|name      = [[Alexander Goth]]
+|level     = Son, Friend
+|relnumber = 45}}
+}}
+</tabber>

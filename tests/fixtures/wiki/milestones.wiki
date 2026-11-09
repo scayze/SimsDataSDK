@@ -1,0 +1,22 @@
+{| class="wikitable sortable"
+|+
+! width=50px|Icon
+! Milestone
+! Description
+! width=125|Age
+! width=32px|Pack
+|-
+| colspan="5" |'''Fine Motor'''
+|-
+|[[File:Infant Milestone - Learned To Reach.png|50px]]
+|'''Learned to Reach'''
+|Work those tiny muscles!
+|[[File:Milestones - Infant.png|125px|Infant]]
+|{{TS4icon|TS4:GTO}}
+|-
+|[[File:Infant Milestone - Learned To Grab.png|50px]]
+|'''Learned to Grab'''
+|Who knew tiny hands could be this strong?
+|[[File:Milestones - Infant.png|125px|Infant]]
+|{{TS4icon|TS4:GTO}}
+|}

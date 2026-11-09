@@ -113,6 +113,44 @@ class Sims4Workspace:
         )
 
     # ------------------------------------------------------------------
+    # wiki validation
+    # ------------------------------------------------------------------
+    def validate_wiki(
+        self,
+        *,
+        client=None,
+        cache_dir: str | Path | None = None,
+        sim_limit: int = 50,
+        save: str | Path | SaveFile | None = None,
+        catalog_only: bool = False,
+    ):
+        """Compare the SDK with The Sims Wiki (requires the validation extra)."""
+        from .validation import WikiClient, run_validation
+
+        static = self.static_data()
+        if client is None:
+            client = WikiClient(cache_dir=cache_dir)
+
+        save_obj = None
+        if not catalog_only:
+            if isinstance(save, SaveFile):
+                save_obj = save
+            elif save is not None:
+                save_obj = self.read_save(save, static.catalog)
+            else:
+                files = self.save_files()
+                if files:
+                    save_obj = self.read_save(files[0], static.catalog)
+
+        return run_validation(
+            static_data=static,
+            client=client,
+            sim_limit=sim_limit,
+            save=save_obj,
+            catalog_only=catalog_only,
+        )
+
+    # ------------------------------------------------------------------
     # misc
     # ------------------------------------------------------------------
     def refresh(self) -> StaticData:
