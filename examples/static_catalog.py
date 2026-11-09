@@ -72,13 +72,22 @@ def main() -> int:
             print(f"    preferences: {', '.join(p.display_name for p in sim.preferences)}")
         if sim.aspiration is not None:
             print(f"    aspiration: {sim.aspiration.display_name}")
+        elif sim.aspiration_track is not None:
+            print(f"    aspiration track: {sim.aspiration_track.display_name}")
         if sim.career_level is not None:
             print(f"    career: {sim.career_level.title} (level {sim.career_level.level})")
+        elif sim.career_track is not None:
+            print(f"    career: {sim.career_track.display_name}")
 
     print("\nHouseholds:")
     for household in data.households:
         members = ", ".join(member.full_name or "?" for member in household.members)
-        print(f"  {household.name}: {members or '(no members)'}")
+        funds = f" ({household.funds:,} simoleons)" if household.funds is not None else ""
+        print(f"  {household.name}: {members or '(no members)'}{funds}")
+
+    print("\nLots:")
+    for lot in data.lots:
+        print(f"  {lot.lot_name or '?'} -> {lot.household_name or '(empty)'}")
 
     return 0
 

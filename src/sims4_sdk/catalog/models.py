@@ -212,7 +212,13 @@ class RelationshipBit:
 
 @dataclass
 class SkillLevel:
-    """A skill value assigned to a pre-made Sim."""
+    """A skill value assigned to a pre-made Sim.
+
+    ``level``/``min_value``/``max_value``/``ideal_value`` come from tuning
+    templates.  ``value`` is the raw numeric skill value found in starter-save
+    household resources (``0xB3C438F0``); converting it to a level needs the
+    skill threshold table, which is not modelled yet.
+    """
 
     skill_id: int
     skill_name: Optional[str] = None
@@ -220,6 +226,7 @@ class SkillLevel:
     min_value: Optional[int] = None
     max_value: Optional[int] = None
     ideal_value: Optional[int] = None
+    value: Optional[float] = None
 
 
 @dataclass

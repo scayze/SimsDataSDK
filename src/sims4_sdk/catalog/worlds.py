@@ -1,0 +1,558 @@
+"""World/lot manifests and pre-made household resources.
+
+Two resources describe how a *new* save is populated.  Neither lives in the
+``.world`` files (those only contain terrain, lot objects and art):
+
+``0x729F6C4F`` — lot/household manifest
+    One small record per lot.  It carries the lot name and description
+    localization keys and, when a pre-made household lives on the lot, the
+    household name/description keys plus a 64-bit reference to a
+    ``0xB3C438F0`` resource.
+
+``0xB3C438F0`` — pre-made household ("starter save")
+    A protobuf document with the household funds and one message per member.
+    Members carry their names, gender, age, traits, aspiration track, career and
+    skill values.  This is where the older-pack pre-mades live (BFF, Pancakes,
+    Caliente, Roomies, Spencer-Kim-Lewis, ...), which have no
+    ``PremadeSimTemplate`` tuning at all.
+
+Both resources appear in ``Data/Client/*.package`` and
+``Delta/<PACK>/ClientDeltaBuild0.package``; the manifest is also duplicated in
+the ``Simulation`` builds.  Scanning only ``Data/Simulation`` (as the SDK used
+to) silently hides every household defined this way.
+"""
+
+from __future__ import annotations
+
+import struct
+from dataclasses import dataclass, field
+from typing import Iterable, Mapping, Optional
+
+from ..core import DBPF, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID
+from ..installation import PackageInfo
+from ..save.protobuf import ProtobufError, iter_fields
+from .models import TuningSource
+
+__all__ = [
+    "WorldDataError",
+    "LotRecord",
+    "StarterMember",
+    "StarterHouseholdRecord",
+    "WorldData",
+    "parse_lot_manifest",
+    "parse_premade_household",
+    "collect_world_data",
+]
+
+#: ``member.gender_flags`` bits observed in household resources.
+_GENDER_FLAGS = {0x1000: "MALE", 0x2000: "FEMALE"}
+#: ``member.age_flags`` bits.  The trait list also contains ``trait_<age>``,
+#: which is preferred when present; this is only a fallback.
+_AGE_FLAGS = {
+    1: "BABY",
+    2: "TODDLER",
+    4: "CHILD",
+    8: "TEEN",
+    16: "YOUNGADULT",
+    32: "ADULT",
+    64: "ELDER",
+}
+
+_HOUSEHOLD_HEADER_SIZE = 8
+
+
+class WorldDataError(ValueError):
+    """Raised when a lot manifest or household resource cannot be read."""
+
+
+@dataclass
+class LotRecord:
+    """One record from a ``0x729F6C4F`` lot manifest."""
+
+    instance: int
+    lot_name_key: Optional[int] = None
+    lot_description_key: Optional[int] = None
+    household_name_key: Optional[int] = None
+    household_description_key: Optional[int] = None
+    household_id: Optional[int] = None
+    record_size: int = 0
+    source: Optional[TuningSource] = None
+
+    @property
+    def has_household(self) -> bool:
+        return self.household_id is not None
+
+    def __repr__(self) -> str:
+        name = f"0x{self.lot_name_key:08X}" if self.lot_name_key else None
+        return f"LotRecord(instance=0x{self.instance:04X}, name={name}, household={self.household_id})"
+
+
+@dataclass
+class StarterMember:
+    """One Sim inside a ``0xB3C438F0`` household resource."""
+
+    first_name: str = ""
+    last_name: str = ""
+    sim_id: Optional[int] = None
+    gender: Optional[str] = None
+    age: Optional[str] = None
+    body_blend: Optional[str] = None
+    trait_ids: list[int] = field(default_factory=list)
+    aspiration_track_id: Optional[int] = None
+    career_id: Optional[int] = None
+    career_track_id: Optional[int] = None
+    careers: list[tuple[int, int]] = field(default_factory=list)
+    skills: list[tuple[int, float]] = field(default_factory=list)
+
+    @property
+    def full_name(self) -> str:
+        return " ".join(part for part in (self.first_name, self.last_name) if part)
+
+    def __repr__(self) -> str:
+        return f"StarterMember({self.full_name!r}, traits={len(self.trait_ids)})"
+
+
+@dataclass
+class StarterHouseholdRecord:
+    """A parsed ``0xB3C438F0`` household resource."""
+
+    instance: int
+    name: str = ""
+    funds: Optional[int] = None
+    members: list[StarterMember] = field(default_factory=list)
+    source: Optional[TuningSource] = None
+
+    def __repr__(self) -> str:
+        return f"StarterHouseholdRecord({self.name!r}, members={len(self.members)})"
+
+
+@dataclass
+class WorldData:
+    """Lot manifests and pre-made households collected from packages."""
+
+    lots: dict[int, LotRecord] = field(default_factory=dict)
+    households: dict[int, StarterHouseholdRecord] = field(default_factory=dict)
+    errors: list[str] = field(default_factory=list, repr=False)
+    _pending_lots: dict[int, tuple[bytes, Optional[TuningSource]]] = field(
+        default_factory=dict, repr=False
+    )
+    _household_errors: dict[int, str] = field(default_factory=dict, repr=False)
+
+    def add_household(
+        self,
+        instance: int,
+        data: bytes,
+        source: Optional[TuningSource] = None,
+    ) -> None:
+        try:
+            record = parse_premade_household(data, instance=instance, source=source)
+        except WorldDataError as exc:
+            self._household_errors[instance] = (
+                f"pre-made household 0x{instance:016X}: {exc}"
+            )
+            return
+        # A newer build of the same resource may have succeeded already.
+        self._household_errors.pop(instance, None)
+        self.households[instance] = record
+
+    def add_lot(
+        self,
+        instance: int,
+        data: bytes,
+        source: Optional[TuningSource] = None,
+    ) -> None:
+        # Parsing needs the complete set of household instance IDs, so the raw
+        # record is kept until :meth:`finalize`.
+        if not data:
+            return
+        self._pending_lots[instance] = (data, source)
+
+    def finalize(self) -> "WorldData":
+        self.errors.extend(self._household_errors.values())
+        self._household_errors.clear()
+        household_ids = set(self.households)
+        for instance, (data, source) in self._pending_lots.items():
+            try:
+                self.lots[instance] = parse_lot_manifest(
+                    data,
+                    instance=instance,
+                    household_ids=household_ids,
+                    source=source,
+                )
+            except WorldDataError as exc:
+                self.errors.append(f"lot manifest 0x{instance:04X}: {exc}")
+        self._pending_lots.clear()
+        return self
+
+    def merge(self, other: "WorldData") -> "WorldData":
+        self.lots.update(other.lots)
+        self.households.update(other.households)
+        self.errors.extend(other.errors)
+        return self
+
+    def __repr__(self) -> str:
+        return (
+            f"WorldData(lots={len(self.lots)}, "
+            f"households={len(self.households)}, errors={len(self.errors)})"
+        )
+
+
+# ----------------------------------------------------------------------
+# lot manifest
+# ----------------------------------------------------------------------
+def parse_lot_manifest(
+    data: bytes,
+    *,
+    instance: int = 0,
+    household_ids: Optional[Iterable[int]] = None,
+    strings: Optional[Mapping[int, str]] = None,
+    source: Optional[TuningSource] = None,
+) -> LotRecord:
+    """Parse one ``0x729F6C4F`` record.
+
+    The lot name and description keys are at fixed offsets.  The optional
+    household block is located by scanning for a ``(name_key, description_key,
+    uint64 household_id)`` triple; passing ``household_ids`` (the instances that
+    actually exist) makes that detection exact.
+    """
+    if len(data) < 0x10:
+        raise WorldDataError(f"record is too small ({len(data)} bytes)")
+
+    lot_name_key = _u32(data, 0x04)
+    lot_description_key = _u32(data, 0x08)
+
+    record = LotRecord(
+        instance=instance,
+        lot_name_key=lot_name_key or None,
+        lot_description_key=lot_description_key or None,
+        record_size=len(data),
+        source=source,
+    )
+
+    block = _find_household_block(data, household_ids, strings)
+    if block is None:
+        return record
+
+    record.household_name_key = _u32(data, block) or None
+    record.household_description_key = _u32(data, block + 4) or None
+    record.household_id = _u64(data, block + 8) or None
+    return record
+
+
+def _find_household_block(
+    data: bytes,
+    household_ids: Optional[Iterable[int]],
+    strings: Optional[Mapping[int, str]],
+) -> Optional[int]:
+    ids = set(household_ids) if household_ids is not None else None
+    for offset in range(0x0C, len(data) - 15):
+        name_key = _u32(data, offset)
+        description_key = _u32(data, offset + 4)
+        household_id = _u64(data, offset + 8)
+        if not household_id or not name_key or not description_key:
+            continue
+        if ids is not None:
+            if household_id not in ids:
+                continue
+        elif strings is not None:
+            if name_key not in strings or description_key not in strings:
+                continue
+        else:
+            # Structural fallback for callers without a catalog: the block is
+            # preceded by four zero bytes and a non-zero word.
+            if _u32(data, offset - 4) != 0 or _u32(data, offset - 8) == 0:
+                continue
+        return offset
+    return None
+
+
+# ----------------------------------------------------------------------
+# pre-made households
+# ----------------------------------------------------------------------
+def parse_premade_household(
+    data: bytes,
+    *,
+    instance: int = 0,
+    source: Optional[TuningSource] = None,
+) -> StarterHouseholdRecord:
+    """Parse one ``0xB3C438F0`` household resource.
+
+    Two header layouts occur in the installed game (both little-endian):
+
+    * version 0 — ``u32 version, u32 payload_length`` (8-byte header);
+    * version 2 — three ``u32`` words then a length (16-byte header).
+
+    Rather than trusting the length field, the payload offsets are tried in
+    order and the first one that yields a household message wins.
+    """
+    if len(data) < _HOUSEHOLD_HEADER_SIZE:
+        raise WorldDataError(f"resource is too small ({len(data)} bytes)")
+
+    for payload in _candidate_payloads(data):
+        record = _parse_household_payload(payload, instance, source)
+        if record is not None:
+            return record
+    raise WorldDataError("household resource has no household message")
+
+
+def _candidate_payloads(data: bytes) -> Iterable[bytes]:
+    version = _u32(data, 0)
+    preferred = {0: (8,), 2: (16,)}.get(version, (8, 16))
+    seen: set[int] = set()
+    for offset in preferred:
+        if 0 <= offset < len(data):
+            seen.add(offset)
+            yield data[offset:]
+    # Fallback: scan a short prefix for the protobuf start.
+    for offset in range(4, min(len(data), 64)):
+        if offset not in seen:
+            seen.add(offset)
+            yield data[offset:]
+
+
+def _parse_household_payload(
+    payload: bytes,
+    instance: int,
+    source: Optional[TuningSource],
+) -> Optional[StarterHouseholdRecord]:
+    try:
+        fields = list(iter_fields(payload))
+    except ProtobufError:
+        return None
+
+    household_blob = next(
+        (value for number, wire, value in fields if number == 1 and wire == 2),
+        None,
+    )
+    if household_blob is None:
+        return None
+
+    try:
+        household = list(iter_fields(household_blob))
+    except ProtobufError:
+        return None
+
+    name = _text(household, 3)
+    if name is None and not any(number == 6 for number, _, _ in household):
+        return None
+
+    members = [
+        _parse_member(value, index)
+        for index, (number, wire, value) in enumerate(
+            (item for item in household if item[0] == 6 and item[1] == 2), start=1
+        )
+    ]
+
+    return StarterHouseholdRecord(
+        instance=instance,
+        name=name or "",
+        funds=_varint(household, 4),
+        members=members,
+        source=source,
+    )
+
+
+def _parse_member(data: bytes, index: int) -> StarterMember:
+    fields = _fields(data, f"household member {index}")
+
+    member = StarterMember(
+        first_name=_text(fields, 5) or "",
+        last_name=_text(fields, 6) or "",
+        sim_id=_fixed64(fields, 1),
+        gender=_GENDER_FLAGS.get(_varint(fields, 7) or 0),
+        age=_AGE_FLAGS.get(_varint(fields, 8) or 0),
+        body_blend=_text(fields, 12),
+        aspiration_track_id=_varint(fields, 34),
+    )
+
+    for number, wire, value in fields:
+        if number == 30 and wire == 2:
+            _parse_gameplay(value, member)
+    return member
+
+
+def _parse_gameplay(data: bytes, member: StarterMember) -> None:
+    try:
+        fields = list(iter_fields(data))
+    except ProtobufError:
+        return
+
+    for number, wire, value in fields:
+        if number == 10 and wire == 2:
+            member.trait_ids.extend(_packed_traits(value))
+        elif number == 12 and wire == 2:
+            for entry in _submessages(value):
+                career = _parse_career(entry)
+                if career is not None:
+                    member.careers.append(career)
+        elif number == 13 and wire == 2:
+            for entry in _submessages(value):
+                skill = _parse_skill(entry)
+                if skill is not None:
+                    member.skills.append(skill)
+
+    member.trait_ids = _dedupe(member.trait_ids)
+    if member.careers:
+        member.career_id, member.career_track_id = member.careers[0]
+
+
+def _packed_traits(data: bytes) -> list[int]:
+    """``gameplay.10`` is a message whose field 1 is packed trait IDs."""
+    traits: list[int] = []
+    for number, wire, value in _fields(data, "trait list"):
+        if number == 1 and wire == 2:
+            traits.extend(_read_packed_varints(value))
+    return traits
+
+
+def _submessages(data: bytes) -> list[bytes]:
+    """Return the repeated ``field 1`` messages of a container message.
+
+    ``gameplay.12``/``gameplay.13`` wrap their repeated career/skill entries in
+    an extra message level, so the container holds ``field 1`` per entry.
+    """
+    try:
+        fields = list(iter_fields(data))
+    except ProtobufError:
+        return []
+    children = [value for number, wire, value in fields if number == 1 and wire == 2]
+    if children:
+        return children
+    return [data]
+
+
+def _parse_career(data: bytes) -> Optional[tuple[int, int]]:
+    fields = _fields(data, "career")
+    career_id = _varint(fields, 1)
+    track_id = _varint(fields, 2)
+    if career_id is None or track_id is None:
+        return None
+    return career_id, track_id
+
+
+def _parse_skill(data: bytes) -> Optional[tuple[int, float]]:
+    fields = _fields(data, "skill")
+    skill_id = _varint(fields, 1)
+    value: Optional[float] = None
+    for number, wire, raw in fields:
+        if number != 2:
+            continue
+        if wire == 5 and len(raw) == 4:
+            value = struct.unpack("<f", raw)[0]
+        elif wire == 1 and len(raw) == 8:
+            value = struct.unpack("<d", raw)[0]
+    if skill_id is None or value is None:
+        return None
+    return skill_id, value
+
+
+# ----------------------------------------------------------------------
+# package scanning
+# ----------------------------------------------------------------------
+def collect_world_data(
+    packages: Iterable[PackageInfo],
+    *,
+    progress=None,
+) -> WorldData:
+    """Read both resource types from ``packages`` without touching tuning.
+
+    Kept as a standalone helper; :func:`sims4_sdk.catalog.builder.collect_package_data`
+    fuses this with the tuning scan so packages are only opened once.
+    """
+    world = WorldData()
+    for info in packages:
+        if progress:
+            progress(f"  world: {info.label}: {info.path.name}")
+        try:
+            package = DBPF(info.path)
+        except Exception:
+            continue
+        source = TuningSource(
+            package=str(info.path.name),
+            pack=info.pack,
+            is_mod=info.is_mod,
+        )
+        for entry in package.iter_entries(type_id=PREMADE_HOUSEHOLD_TYPE_ID):
+            world.add_household(entry.key.instance, package.read_resource(entry), source)
+        for entry in package.iter_entries(type_id=LOT_MANIFEST_TYPE_ID):
+            world.add_lot(entry.key.instance, package.read_resource(entry), source)
+    return world.finalize()
+
+
+def add_package_world_resources(
+    world: WorldData,
+    package: DBPF,
+    source: TuningSource,
+) -> None:
+    """Add one already-open package's world resources to ``world``.
+
+    Used by :func:`sims4_sdk.catalog.builder.collect_package_data` so the DBPF
+    index is parsed once per package.
+    """
+    for entry in package.iter_entries(type_id=PREMADE_HOUSEHOLD_TYPE_ID):
+        world.add_household(entry.key.instance, package.read_resource(entry), source)
+    for entry in package.iter_entries(type_id=LOT_MANIFEST_TYPE_ID):
+        world.add_lot(entry.key.instance, package.read_resource(entry), source)
+
+
+# ----------------------------------------------------------------------
+# helpers
+# ----------------------------------------------------------------------
+def _fields(data: bytes, context: str) -> list[tuple[int, int, object]]:
+    try:
+        return list(iter_fields(data))
+    except ProtobufError as exc:
+        raise WorldDataError(f"{context}: {exc}") from exc
+
+
+def _u32(data: bytes, offset: int) -> int:
+    return struct.unpack_from("<I", data, offset)[0]
+
+
+def _u64(data: bytes, offset: int) -> int:
+    return struct.unpack_from("<Q", data, offset)[0]
+
+
+def _text(fields, number: int) -> Optional[str]:
+    for field_number, wire, value in fields:
+        if field_number == number and wire == 2:
+            return value.decode("utf-8", errors="replace")
+    return None
+
+
+def _varint(fields, number: int) -> Optional[int]:
+    for field_number, wire, value in fields:
+        if field_number == number and wire == 0:
+            return int(value)
+    return None
+
+
+def _fixed64(fields, number: int) -> Optional[int]:
+    for field_number, wire, value in fields:
+        if field_number == number and wire == 1 and len(value) == 8:
+            return int.from_bytes(value, "little")
+    return None
+
+
+def _read_packed_varints(data: bytes) -> list[int]:
+    values: list[int] = []
+    position = 0
+    total = len(data)
+    while position < total:
+        result = 0
+        shift = 0
+        while position < total and shift < 70:
+            byte = data[position]
+            position += 1
+            result |= (byte & 0x7F) << shift
+            if not byte & 0x80:
+                values.append(result)
+                break
+            shift += 7
+        else:
+            break
+    return values
+
+
+def _dedupe(values: list[int]) -> list[int]:
+    return list(dict.fromkeys(values))

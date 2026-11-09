@@ -173,6 +173,63 @@ enum such as `FATHER` / `MOTHER` / `MOTHERS_MOM`).
 `TunablePremadeAncestor` stores an ancestor's localized full name, gender, death
 trait, and thumbnail.
 
+## Lot/household manifest (type `0x729F6C4F`)
+
+One record per lot, stored in each pack's `Simulation*` and `Client*` packages.
+The record lists the lot name/description and, when a pre-made household lives
+there, the household name/description plus the household resource reference.
+
+94-byte record (base game / client builds):
+
+```
+0x00  uint32  count/flags (usually 7)
+0x04  uint32  lot name STBL key
+0x08  uint32  lot description STBL key
+...
+0x46  uint32  lot record id (varies per lot)
+0x4A  uint32  0
+0x4E  uint32  household name STBL key
+0x52  uint32  household description STBL key
+0x56  uint64  household resource instance (0xB3C438F0)
+```
+
+The Preload/Delta builds use a 162-byte record with the same block at `0x72`;
+the SDK locates it by searching for a `(name_key, description_key, uint64 id)`
+triple and validating the ID against the household resources that exist.
+
+## Pre-made household (type `0xB3C438F0`)
+
+Protobuf document with a small binary header.  Two header layouts occur:
+
+```
+version 0:  uint32 version=0, uint32 payload_length      (8 bytes)
+version 2:  uint32 version=2, uint32 0, uint32 0, uint32 length  (16 bytes)
+```
+
+Payload message:
+
+```
+field 1  message   household
+  3  string   household name            ("BFF")
+  4  varint   household funds           (9000)
+  6  message  repeated member
+       1   fixed64  Sim ID
+       5   string   first name
+       6   string   last name
+       7   varint   gender flag   (0x1000 male, 0x2000 female)
+       8   varint   age flag      (4 child, 8 teen, 16 YA, 32 adult, 64 elder)
+      12   string   body/genetics float list
+      30   message  gameplay
+            10  message  { 1: packed trait IDs }
+            12  message  { 1: repeated { 1: career, 2: track } }
+            13  message  { 1: repeated { 1: skill statistic, 2: float value } }
+      34   varint   aspiration track ID
+```
+
+The age also appears as a trait (`trait_youngAdult`, `trait_adult`, ...), which
+the SDK prefers.  Verified on the BFF, Goth, Pancakes, Roomies,
+Spencer-Kim-Lewis, Caliente and EP02–EP18 households with zero parse errors.
+
 ## Verified static extraction (base game + EP13)
 
 | Item | Count |
@@ -190,11 +247,11 @@ trait, and thumbnail.
 | Pre-made ancestors | 21 |
 | Extraction errors | 0 |
 
-## Verified full static scan (base + all packs + mods)
+## Verified full static scan (base + all packs, no mods)
 
 | Item | Count |
 | --- | --- |
-| Packages scanned | 616 |
+| Packages scanned | 602 |
 | Tuning entries | 179,499 |
 | Traits | 2,795 |
 | Preferences | 334 |
@@ -203,13 +260,15 @@ trait, and thumbnail.
 | Career levels | 671 |
 | Developmental milestones | 201 |
 | Relationship bits | 766 |
-| Pre-made Sims | 400 |
-| Pre-made households | 191 |
+| Pre-made Sims | 431 |
+| Pre-made households | 204 |
 | Pre-made ancestors | 41 |
+| Lot manifest records | 548 |
 | Extraction errors | 0 |
-| First build time | ~255 s (cached afterwards) |
+| First build time | ~275 s (cached afterwards) |
 
-The full scan includes mods by default. Use `Installation(include_mods=False)` or
+`Installation(include_mods=True)` adds 16 mod packages on this machine (618
+total). Use `Installation(include_mods=False)` or
 `Sims4Workspace(include_mods=False)` for game-only data.
 
 ## Verified binary readers

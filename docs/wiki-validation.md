@@ -99,12 +99,15 @@ These are reported rather than hidden.
 
 Comparing `--no-save` is stricter because many base-game pre-made Sims do not
 pin age/gender/career/skills in tuning. The validation run also revealed a real
-static extraction gap:
+static extraction gap, which has since been fixed:
 
-- **BFF household** — Liberty Lee, Travis Scott, and Summer Holiday appear in
-  saves and on the wiki, but are not emitted by `PremadeSimTemplate` extraction.
-  They are likely defined in world-template/starter-save data rather than tuning.
-  This should be handled by a world-template extractor in a follow-up.
+- **BFF household** — Liberty Lee, Travis Scott, and Summer Holiday were not
+  emitted by `PremadeSimTemplate` extraction because they have no tuning
+  template at all. They are defined by the lot manifest (`0x729F6C4F`) and a
+  pre-made household resource (`0xB3C438F0`) under `Data/Client`. The SDK now
+  scans those packages and merges the households, so BFF, Pancakes, Caliente,
+  Roomies and Spencer-Kim-Lewis (and the equivalent households in EP02–EP18)
+  are part of the static catalog.
 
 ## False-positive controls
 
@@ -127,8 +130,8 @@ static extraction gap:
 1. Wiki pages mix multiple game versions; the parser selects the first
    `Infobox Sim4` whose `game` is exactly `The Sims 4`. Alternate versions and
    gallery makeovers can still cause differences.
-2. Some pre-made households live in world-template/starter-save data rather than
-   tuning, so static extraction misses them.
+2. `.world` files contain terrain, lot objects and art but no Sims; world-level
+   lot/object extraction is still unimplemented.
 3. Live friendship/romance/sentiment values in older saves are stored in legacy
    type-`0x00000006` persistence chunks that are not decoded yet.
 4. Wiki tables are parsed heuristically; names can occasionally leak from

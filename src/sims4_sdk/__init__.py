@@ -1,11 +1,14 @@
 """sims4-sdk — read The Sims 4 game data, saves, and Tray files.
 
-Step 3 exposes:
+The SDK exposes:
 
 * :class:`sims4_sdk.Sims4Workspace` — discover the game and load everything
 * :class:`sims4_sdk.catalog.Catalog` — traits, preferences, aspirations,
   careers, milestones, and relationship bits
 * :class:`sims4_sdk.catalog.PremadeSim` — pre-made Sims and their base values
+* :class:`sims4_sdk.catalog.PremadeHousehold` — households (tuning templates
+  plus the starter-save resources used by older packs)
+* :class:`sims4_sdk.catalog.PremadeLot` — lots and their occupying household
 * :class:`sims4_sdk.save.SaveFile` — live save state (traits, careers, skills,
   family, milestones, pregnancy, occult, …)
 * :class:`sims4_sdk.save.TrayLibrary` — Gallery/Tray households
@@ -28,16 +31,22 @@ from .catalog import (
     CareerLevel,
     CareerTrack,
     Catalog,
+    LotRecord,
     Milestone,
     Preference,
     PremadeAncestor,
     PremadeBundle,
     PremadeHousehold,
+    PremadeLot,
     PremadeSim,
     RelationshipBit,
     SkillLevel,
+    StarterHouseholdRecord,
+    StarterMember,
     StaticData,
     Trait,
+    WorldData,
+    WorldDataError,
     build_catalog,
     build_static,
 )
@@ -46,6 +55,8 @@ from .core import (
     COMPRESSION_NONE,
     COMPRESSION_REFPACK,
     COMPRESSION_ZLIB,
+    LOT_MANIFEST_TYPE_ID,
+    PREMADE_HOUSEHOLD_TYPE_ID,
     SIMDATA_TYPE_ID,
     STRING_TABLE_TYPE_ID,
     TUNING_TYPE_ID,
@@ -99,7 +110,7 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "__version__",
@@ -124,7 +135,13 @@ __all__ = [
     "PremadeSim",
     "PremadeHousehold",
     "PremadeAncestor",
+    "PremadeLot",
     "PremadeBundle",
+    "WorldData",
+    "WorldDataError",
+    "LotRecord",
+    "StarterHouseholdRecord",
+    "StarterMember",
     "build_catalog",
     "build_static",
     "SimInfo",
@@ -161,6 +178,8 @@ __all__ = [
     "TuningElement",
     "TUNING_TYPE_ID",
     "COMBINED_TUNING_TYPE_ID",
+    "LOT_MANIFEST_TYPE_ID",
+    "PREMADE_HOUSEHOLD_TYPE_ID",
     "decode_binary_tuning",
     "is_binary_tuning",
     # data tables / simdata

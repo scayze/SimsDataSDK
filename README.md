@@ -32,6 +32,12 @@ for sim in ws.premade_sims():
 bella = ws.find_sim("Bella Goth")
 goth = ws.find_household("premadeHouseholdTemplate_Goth")
 
+# Base-game households that have no tuning template
+bff = ws.find_household("BFF")
+print(bff.funds, [member.full_name for member in bff.members])
+for lot in ws.lots():
+    print(lot.lot_name, "->", lot.household_name)
+
 # Live save data
 save = ws.read_save(ws.save_files()[0])
 bella_in_save = save.sim("Bella Goth")
@@ -63,6 +69,10 @@ forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder
 - **Pre-made Sims** — names, traits, likes/dislikes baked into SimInfo, skills,
   explicit aspiration/career level, dynasty, occult, household membership.
 - **Pre-made households** — members and spouse/family relationships.
+- **Starter-save households** — the older-pack pre-mades that have no tuning
+  template (BFF, Pancakes, Caliente, Roomies, Spencer-Kim-Lewis, …), including
+  funds, gender, age, aspiration track, career and raw skill values.
+- **Lots** — lot names/descriptions and the pre-made household occupying them.
 - **Pre-made ancestors** — names, gender, death traits, thumbnails.
 
 ### Saves and Tray (Step 3)
@@ -156,6 +166,7 @@ src/sims4_sdk/
 │   ├── builder.py      # tuning scan + catalog extraction
 │   ├── strings.py      # merged STBL resolution
 │   ├── premades.py     # PremadeSimTemplate / household / ancestor extraction
+│   ├── worlds.py       # lot manifest + starter-save household resources
 │   └── static.py       # coordinated build + cache
 ├── save/               # live save and Tray data
 │   ├── protobuf.py     # schema-driven protobuf decoder
@@ -228,7 +239,8 @@ builds are cached, so the first run is the slow one.
 | Full game scan | 629 packages, 2,581,974 index entries, 0 failures |
 | All English string tables | 117 packages, 163,302 strings, 0 failures |
 | Node test set (base + EP13) | 745 traits, 166 preferences, 191 aspirations, 223 career levels, 109 milestones, 36 pre-made Sims, 15 households, 21 ancestors, 0 errors |
-| Full static scan (base + all packs + mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 400 pre-made Sims, 191 households, 41 ancestors, 0 errors, 616 packages; ~255 s first build, cached afterwards |
+| Full static scan (base + all packs, no mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 431 pre-made Sims, 204 households, 41 ancestors, 548 lots, 0 errors, 602 packages; ~275 s first build, cached afterwards |
+| Starter-save households | BFF (9,000), Pancakes (20,000), Roomies (14,000), Spencer-Kim-Lewis (55,500), Caliente (28,500); 0 parse errors |
 | Save files | 6 parsed (`Slot_*` + `ver0`–`ver4`), 0 failures; example save: 59 Sims / 32 households / 59 zones |
 | Tray files | 286 `.trayitem` + 286 `.householdbinary`, 0 failures |
 | Wiki catalog coverage | traits 99.6%, preferences 97.6%, aspirations 99.1%, careers 100%, milestones 100% |

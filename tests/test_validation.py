@@ -158,6 +158,22 @@ def test_compare_sim_matches() -> None:
     assert statuses["relationships"] == "not_available"
 
 
+def test_sdk_career_uses_track_display_name() -> None:
+    from sims4_sdk.validation.reconcile import _sdk_career
+
+    sim = SimpleNamespace(
+        career=Career(id=1, name="career_Adult_Astronaut"),
+        career_track=CareerTrack(
+            id=2,
+            name="Astronaut_Track1",
+            display_name="Astronaut",
+            description=None,
+        ),
+        career_level=None,
+    )
+    assert _sdk_career(sim) == "Astronaut"
+
+
 def test_compare_catalog_coverage() -> None:
     coverage = compare_catalog(
         "traits",

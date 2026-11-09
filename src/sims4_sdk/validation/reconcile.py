@@ -244,10 +244,21 @@ def _sdk_career(sim: Any) -> Optional[str]:
         title = getattr(career, "title", None)
         track = getattr(career, "track_name", None)
         career_name = getattr(career, "career_name", None)
-        return _join_filtered(track, title) or career_name
+        text = _join_filtered(track, title) or career_name
+        if text:
+            return text
+    # Prefer an explicit career level over the (broader) track name, so tuning
+    # Sims that pin a level keep comparing against the same value as before.
     level = getattr(sim, "career_level", None)
     if level is not None:
-        return getattr(level, "title", None) or getattr(level, "name", None)
+        text = getattr(level, "title", None) or getattr(level, "name", None)
+        if text:
+            return text
+    career_track = getattr(sim, "career_track", None)
+    if career_track is not None:
+        return getattr(career_track, "display_name", None) or getattr(
+            career_track, "name", None
+        )
     return None
 
 

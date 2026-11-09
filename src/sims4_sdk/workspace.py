@@ -1,8 +1,8 @@
 """High-level SDK entry point.
 
 ``Sims4Workspace`` discovers the game and user directories, then exposes the
-save-independent static data (catalog + pre-made Sims).  Save and Tray readers
-are added in Step 3.
+save-independent static data (catalog, pre-made Sims/households/lots), the save
+reader, the Tray reader, and Wiki validation.
 """
 
 from __future__ import annotations
@@ -10,7 +10,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Optional
 
-from .catalog import Catalog, PremadeAncestor, PremadeHousehold, PremadeSim, StaticData, build_static
+from .catalog import (
+    Catalog,
+    PremadeAncestor,
+    PremadeHousehold,
+    PremadeLot,
+    PremadeSim,
+    StaticData,
+    build_static,
+)
 from .installation import Installation
 from .save import SaveFile, TrayLibrary, read_save, read_tray_library
 
@@ -75,11 +83,17 @@ class Sims4Workspace:
     def ancestors(self, *, refresh: bool = False) -> list[PremadeAncestor]:
         return self.static_data(refresh=refresh).premades.ancestors
 
+    def lots(self, *, refresh: bool = False) -> list[PremadeLot]:
+        return self.static_data(refresh=refresh).premades.lots
+
     def find_sim(self, key: str | int) -> Optional[PremadeSim]:
         return self.static_data().sim(key)
 
     def find_household(self, key: str | int) -> Optional[PremadeHousehold]:
         return self.static_data().household(key)
+
+    def find_lot(self, key: str | int) -> Optional[PremadeLot]:
+        return self.static_data().lot(key)
 
     # ------------------------------------------------------------------
     # saves and Tray

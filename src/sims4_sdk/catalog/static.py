@@ -10,7 +10,7 @@ from typing import Callable, Optional
 from ..installation import Installation, PackageInfo
 from .builder import (
     cache_key,
-    collect_entries,
+    collect_package_data,
     default_cache_dir,
     extract_catalog,
 )
@@ -42,17 +42,25 @@ class StaticData:
     def ancestors(self):
         return self.premades.ancestors
 
+    @property
+    def lots(self):
+        return self.premades.lots
+
     def sim(self, key: str | int):
         return self.premades.sim(key)
 
     def household(self, key: str | int):
         return self.premades.household(key)
 
+    def lot(self, key: str | int):
+        return self.premades.lot(key)
+
     def summary(self) -> str:
         return (
             f"{self.catalog.summary()} | premade sims={len(self.premades.sims)}, "
             f"households={len(self.premades.households)}, "
-            f"ancestors={len(self.premades.ancestors)}"
+            f"ancestors={len(self.premades.ancestors)}, "
+            f"lots={len(self.premades.lots)}"
         )
 
 
@@ -100,18 +108,24 @@ def build_static(
         progress(f"loaded {len(strings):,} strings")
 
     if progress:
-        progress(f"scanning {len(selected)} tuning packages")
-    entries, sources = collect_entries(selected, progress=progress)
+        progress(f"scanning {len(selected)} packages")
+    collected = collect_package_data(selected, progress=progress)
+    entries, sources, world = collected.entries, collected.sources, collected.world
     if progress:
-        progress(f"extracted {len(entries):,} tuning entries")
+        progress(
+            f"extracted {len(entries):,} tuning entries, "
+            f"{len(world.households):,} household resources, "
+            f"{len(world.lots):,} lot records"
+        )
 
     if progress:
         progress("extracting catalog")
     catalog = extract_catalog(entries, sources, strings)
+    catalog.errors.extend(world.errors)
 
     if progress:
         progress("extracting pre-made Sims")
-    premades = build_premades(installation, catalog, entries, sources)
+    premades = build_premades(installation, catalog, entries, sources, world=world)
 
     data = StaticData(catalog=catalog, premades=premades)
 

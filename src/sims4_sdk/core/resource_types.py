@@ -22,6 +22,10 @@ SIMOUTFIT_TYPE_ID: Final = 0x025ED6F4
 SIMINFO_TYPE_ID: Final = SIMOUTFIT_TYPE_ID
 #: Tray item metadata.
 TRAYITEM_TYPE_ID: Final = 0x2A8A5E22
+#: Lot/household manifest used to build a new save (one record per lot).
+LOT_MANIFEST_TYPE_ID: Final = 0x729F6C4F
+#: Pre-made household / starter-save definition (protobuf, older pack range).
+PREMADE_HOUSEHOLD_TYPE_ID: Final = 0xB3C438F0
 
 #: Human-readable labels for the resource types this SDK understands.
 RESOURCE_TYPE_LABELS: Final[dict[int, str]] = {
@@ -31,6 +35,8 @@ RESOURCE_TYPE_LABELS: Final[dict[int, str]] = {
     SIMDATA_TYPE_ID: "SimData (DATA)",
     SIMOUTFIT_TYPE_ID: "SimInfo (SIMO)",
     TRAYITEM_TYPE_ID: "Tray Item",
+    LOT_MANIFEST_TYPE_ID: "Lot/Household Manifest",
+    PREMADE_HOUSEHOLD_TYPE_ID: "Pre-made Household",
     0x00B2D882: "DDS Image",
     0x0166038C: "Name Map",
     0x01661233: "Model (MODL)",

@@ -22,6 +22,8 @@ from .fnv import fnv1_32, fnv1_64, fnv1a_32, fnv1a_64, hash32, hash64
 from .refpack import RefPackError, decompress as decompress_refpack, is_refpack
 from .resource_types import (
     COMBINED_TUNING_TYPE_ID,
+    LOT_MANIFEST_TYPE_ID,
+    PREMADE_HOUSEHOLD_TYPE_ID,
     SIMDATA_TYPE_ID,
     STRING_TABLE_TYPE_ID,
     TRAYITEM_TYPE_ID,
@@ -83,6 +85,8 @@ __all__ = [
     "hash64",
     # resource types
     "COMBINED_TUNING_TYPE_ID",
+    "LOT_MANIFEST_TYPE_ID",
+    "PREMADE_HOUSEHOLD_TYPE_ID",
     "SIMDATA_TYPE_ID",
     "STRING_TABLE_TYPE_ID",
     "TRAYITEM_TYPE_ID",

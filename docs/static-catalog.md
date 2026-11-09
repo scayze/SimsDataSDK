@@ -17,8 +17,8 @@ and cached, so downstream tools can call it without a save.
 | --- | --- | --- |
 | 1 | DBPF/RefPack/STBL/DATA/Combined Tuning readers | done |
 | 2 | Static catalog + pre-made Sims (no save) | done |
-| 3 | Saves, Tray files, live Sim state | next |
-| 4 | Sims Wiki validation | pending |
+| 3 | Saves, Tray files, live Sim state | done |
+| 4 | Sims Wiki validation | done |
 | 5 | CLI and export helpers | pending |
 
 Saves remain a first-class feature, but they are no longer a prerequisite for
@@ -32,8 +32,10 @@ order:
 1. base game full build,
 2. base game preload,
 3. base game delta,
-4. each DLC pack (`Delta/EP*`, `GP*`, `SP*`, `FP*`), with delta last,
-5. mods (`Mods/**/*.package`).
+4. base game client full/delta builds (no tuning, but the pre-made household
+   and lot-manifest resources live here),
+5. each DLC pack (`Delta/EP*`, `GP*`, `SP*`, `FP*`), with delta last,
+6. mods (`Mods/**/*.package`).
 
 Later definitions override earlier ones. Individual tuning XML resources
 (`0x03B33DDF`) are also read, which covers most mods.
@@ -86,16 +88,63 @@ list even though their template only says `num_random`.
 Likes/dislikes are stored in the same trait list and are separated using the
 `Preference` catalog entries.
 
+## Starter-save households and lots
+
+Older packs (base game through EP18, plus GP04/07/08/09/11/12) do **not** use
+`PremadeSimTemplate` for their pre-made population.  The BFF household, the
+Pancakes, the Calientes, the Roomies and the Spencer-Kim-Lewis family have no
+tuning template at all.  They are defined by two non-tuning resources:
+
+| Type | Resource | Contents |
+| --- | --- | --- |
+| `0x729F6C4F` | lot/household manifest | one record per lot: lot name/description keys, household name/description keys, and a `uint64` reference to the household resource |
+| `0xB3C438F0` | pre-made household | protobuf document: household name and funds, one message per member |
+
+These live in `Data/Client/ClientFullBuild0.package` and
+`Data/Client/ClientDeltaBuild0.package` (and `Delta/<PACK>/ClientDeltaBuild0.package`).
+Scanning only `Data/Simulation` silently hides them, which is why earlier builds
+were missing most base-game households.
+
+Each household member message carries:
+
+| Field | Meaning |
+| --- | --- |
+| `5` / `6` | first name / last name |
+| `7` | gender flag (`0x1000` male, `0x2000` female) |
+| `8` | age flag (`4` child, `8` teen, `16` young adult, `32` adult, `64` elder) |
+| `12` | body/genetics float list |
+| `30.10` | packed trait IDs (the age trait is included) |
+| `30.12` | career + career track IDs |
+| `30.13` | skill statistic ID + raw skill value |
+| `34` | aspiration track ID |
+
+The SDK merges these into the normal models:
+
+* `PremadeHousehold.funds` is populated;
+* a household whose members are all already defined by tuning (Goth,
+  Landgraabs, Zest) is not duplicated — its funds and missing gender/age hints
+  are attached to the tuning household instead;
+* otherwise a `PremadeHousehold` plus one `PremadeSim` per member is added, with
+  `gender`, `age`, `personality_traits`, `aspiration_track`, `career`,
+  `career_track` and raw skill values (`SkillLevel.value`);
+* `PremadeBundle.lots` exposes the lot records and their household links.
+
+`PremadeSim.id` for these Sims is the 64-bit Sim ID from the resource, so it does
+not collide with 32-bit tuning instance IDs.
+
 ### What is and is not available statically
 
 - **Available:** names, baked traits, preferences, household membership,
-  spouse/parent relationships, ancestors, explicit skills, explicit aspiration
-  and career level, dynasty, occult, pregnancy.
-- **Template-only:** some base-game Sims do not pin an aspiration or career in
-  tuning; the game may assign one at runtime. In that case the field is `None`
-  rather than guessed.
-- **Step 3:** full SimInfo parsing (career/aspiration trackers), live
-  relationships, milestones, and all save state.
+  household funds, spouse/parent relationships, ancestors, explicit skills,
+  explicit aspiration and career level, dynasty, occult, pregnancy, gender and
+  age (from starter-save resources), aspiration track, career track, lots and
+  lot↔household links.
+- **Template-only:** some newer-pack Sims (EP19+) do not pin an aspiration,
+  career, gender or age in tuning and have no starter-save resource; the field
+  is `None` rather than guessed.
+- **Not decoded yet:** the starter-save appearance/CAS blobs, skill level
+  thresholds (raw `SkillLevel.value` is exposed instead), and `.world` terrain
+  and lot-object data.
 
 ## API
 
@@ -116,10 +165,19 @@ catalog.milestone("lifeMilestone_Engaged")
 
 for sim in data.sims:
     print(sim.full_name, sim.household_name)
+    print("  age/gender:", sim.age, sim.gender)
     print("  personality:", [t.display_name for t in sim.personality_traits])
     print("  visible:", [t.display_name for t in sim.visible_traits])
-    print("  likes:", [p.display_name for p in sim.preferences if p.is_like])
-    print("  dislikes:", [p.display_name for p in sim.preferences if p.is_dislike])
+    print("  aspiration track:", sim.aspiration_track.display_name if sim.aspiration_track else None)
+    print("  career:", sim.career_track.display_name if sim.career_track else None)
+
+# Base-game households that have no tuning template
+bff = data.household("BFF")
+print(bff.funds, [member.full_name for member in bff.members])
+
+# Lots and their occupying household
+for lot in data.lots:
+    print(lot.lot_name, "->", lot.household_name)
 
 # Build a subset (useful for tests or single-pack tools)
 from sims4_sdk import Installation
@@ -130,7 +188,8 @@ data = build_static(inst, packages=subset, use_cache=False)
 
 ## Cache and validation
 
-A full scan of the local installation (616 packages, including mods) produces:
+A full scan of the local installation (`include_mods=False`, 602 packages)
+produces:
 
 | Item | Count |
 | --- | --- |
@@ -142,13 +201,14 @@ A full scan of the local installation (616 packages, including mods) produces:
 | Career levels | 671 |
 | Developmental milestones | 201 |
 | Relationship bits | 766 |
-| Pre-made Sims | 400 |
-| Pre-made households | 191 |
+| Pre-made Sims | 431 |
+| Pre-made households | 204 |
 | Pre-made ancestors | 41 |
+| Lots (lot manifest) | 548 |
 | Errors | 0 |
 
-The first build takes about four minutes; the cached load is under a second.
-Pass `include_mods=False` to get game-only data, or a package subset to
+The first build takes about four and a half minutes; the cached load is under a
+second. Pass `include_mods=False` to get game-only data, or a package subset to
 `build_static` for faster iteration.
 
 `Sims4Workspace` and `build_static` cache the result as

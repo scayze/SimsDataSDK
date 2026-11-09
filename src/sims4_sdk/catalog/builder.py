@@ -7,6 +7,7 @@ import os
 import pickle
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -34,10 +35,12 @@ from .models import (
 )
 from .strings import load_strings
 from .values import TuningView
+from .worlds import WorldData, add_package_world_resources
 
 __all__ = [
     "build_catalog",
     "collect_entries",
+    "collect_package_data",
     "extract_catalog",
     "default_cache_dir",
     "cache_key",
@@ -45,7 +48,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-2"
+CACHE_VERSION = "step2-3"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
@@ -146,13 +149,23 @@ def build_catalog(
 # ----------------------------------------------------------------------
 # tuning collection
 # ----------------------------------------------------------------------
-def collect_entries(
+@dataclass
+class CollectedPackageData:
+    """Tuning plus world resources collected from one package pass."""
+
+    entries: dict[int, TuningElement] = field(default_factory=dict)
+    sources: dict[int, TuningSource] = field(default_factory=dict)
+    world: WorldData = field(default_factory=WorldData)
+
+
+def collect_package_data(
     packages: Iterable[PackageInfo],
     *,
     progress: ProgressCallback = None,
-) -> tuple[dict[int, TuningElement], dict[int, TuningSource]]:
-    entries: dict[int, TuningElement] = {}
-    sources: dict[int, TuningSource] = {}
+    include_world: bool = True,
+) -> CollectedPackageData:
+    """Open every package once and collect tuning and world resources."""
+    data = CollectedPackageData()
 
     for info in packages:
         if progress:
@@ -181,8 +194,8 @@ def collect_entries(
             except Exception:
                 continue
             for tuning in combined:
-                entries[tuning.instance_id] = tuning
-                sources[tuning.instance_id] = source
+                data.entries[tuning.instance_id] = tuning
+                data.sources[tuning.instance_id] = source
 
         # Combined tuning (the main source for retail packages).
         for entry in package.iter_entries(type_id=COMBINED_TUNING_TYPE_ID):
@@ -192,10 +205,25 @@ def collect_entries(
             except Exception:
                 continue
             for tuning in combined:
-                entries[tuning.instance_id] = tuning
-                sources[tuning.instance_id] = source
+                data.entries[tuning.instance_id] = tuning
+                data.sources[tuning.instance_id] = source
 
-    return entries, sources
+        if include_world:
+            add_package_world_resources(data.world, package, source)
+
+    if include_world:
+        data.world.finalize()
+    return data
+
+
+def collect_entries(
+    packages: Iterable[PackageInfo],
+    *,
+    progress: ProgressCallback = None,
+) -> tuple[dict[int, TuningElement], dict[int, TuningSource]]:
+    """Collect only tuning entries (kept for backwards compatibility)."""
+    data = collect_package_data(packages, progress=progress, include_world=False)
+    return data.entries, data.sources
 
 
 # ----------------------------------------------------------------------

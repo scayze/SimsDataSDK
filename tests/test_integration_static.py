@@ -18,7 +18,12 @@ from sims4_sdk.save import read_save, read_tray_library
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
-BASE_PACKAGES = {"SimulationFullBuild0.package", "SimulationDeltaBuild0.package"}
+BASE_PACKAGES = {
+    "SimulationFullBuild0.package",
+    "SimulationDeltaBuild0.package",
+    "ClientFullBuild0.package",
+    "ClientDeltaBuild0.package",
+}
 
 
 def _selected_packages(installation: Installation):
@@ -142,6 +147,77 @@ def test_premade_ancestors(static_data) -> None:
     names = {ancestor.full_name for ancestor in static_data.ancestors}
     assert "Cornelia Goth" in names
     assert "Darren Dreamer" in names
+
+
+def test_starter_save_household_bff(static_data) -> None:
+    """The BFF household has no tuning template at all; it lives in 0xB3C438F0."""
+    household = static_data.household("BFF")
+    assert household is not None
+    assert household.funds == 9000
+    assert {member.full_name for member in household.members} == {
+        "Travis Scott",
+        "Liberty Lee",
+        "Summer Holiday",
+    }
+
+    liberty = static_data.sim("Liberty Lee")
+    assert liberty is not None
+    assert liberty.household_name == "BFF"
+    assert liberty.gender == "FEMALE"
+    assert liberty.age == "YOUNGADULT"
+    assert {trait.display_name for trait in liberty.personality_traits} == {
+        "Geek",
+        "Bookworm",
+        "Clumsy",
+    }
+    assert liberty.aspiration_track is not None
+    assert liberty.aspiration_track.display_name == "Nerd Brain"
+    assert liberty.career is not None
+    assert liberty.skills
+    assert any(skill.value and skill.value > 100 for skill in liberty.skills)
+
+
+def test_starter_save_other_base_households(static_data) -> None:
+    for name, funds in (("Pancakes", 20000), ("Roomies", 14000), ("Spencer-Kim-Lewis", 55500)):
+        household = static_data.household(name)
+        assert household is not None, name
+        assert household.funds == funds
+        assert household.members
+
+    assert static_data.sim("Bob Pancakes") is not None
+    assert static_data.sim("Zoe Patel") is not None
+    assert static_data.sim("Dennis Kim") is not None
+
+
+def test_starter_hints_enrich_tuning_households(static_data) -> None:
+    """Goth/Landgraab/Zest exist in tuning; the resource only adds funds/hints."""
+    goth = static_data.household("premadeHouseholdTemplate_Goth")
+    assert goth is not None
+    assert goth.funds == 45500
+
+    # The resource's own household name is registered as an alias.
+    assert static_data.household("Goth") is goth
+    assert static_data.household("Landgraab") is not None
+
+    bella = static_data.sim("Bella Goth")
+    assert bella is not None
+    assert bella.gender == "FEMALE"
+
+
+def test_lot_manifest(static_data) -> None:
+    lots = static_data.lots
+    assert lots
+
+    garden = static_data.lot("Garden Essence")
+    assert garden is not None
+    assert garden.household_name == "BFF"
+    assert garden.household_id == static_data.household("BFF").id
+    assert garden.lot_description
+
+    ophelia = static_data.lot("Ophelia Villa")
+    assert ophelia is not None
+    assert ophelia.household_name == "Goth"
+    assert ophelia.household_id is not None
 
 
 def test_cache_roundtrip(static_context) -> None:

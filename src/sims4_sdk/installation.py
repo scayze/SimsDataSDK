@@ -91,17 +91,35 @@ class Installation:
 
     @property
     def base_packages(self) -> list[PackageInfo]:
-        simulation = self.install_dir / "Data" / "Simulation"
-        # Full build first, then preload, then the current delta patch.
+        """Base-game packages in load order.
+
+        The simulation build carries tuning; the client build carries the
+        pre-made household and lot-manifest resources that tuning does not
+        describe (see :mod:`sims4_sdk.catalog.worlds`).  Both are scanned so
+        older-pack pre-mades such as the BFF household are visible.
+        """
         result: list[PackageInfo] = []
-        for name in (
-            "SimulationFullBuild0.package",
-            "SimulationPreload.package",
-            "SimulationDeltaBuild0.package",
+        for folder, names in (
+            (
+                self.install_dir / "Data" / "Simulation",
+                (
+                    "SimulationFullBuild0.package",
+                    "SimulationPreload.package",
+                    "SimulationDeltaBuild0.package",
+                ),
+            ),
+            (
+                self.install_dir / "Data" / "Client",
+                (
+                    "ClientFullBuild0.package",
+                    "ClientDeltaBuild0.package",
+                ),
+            ),
         ):
-            candidate = simulation / name
-            if candidate.exists():
-                result.append(PackageInfo(candidate, pack="BASE"))
+            for name in names:
+                candidate = folder / name
+                if candidate.exists():
+                    result.append(PackageInfo(candidate, pack="BASE"))
         return result
 
     @property

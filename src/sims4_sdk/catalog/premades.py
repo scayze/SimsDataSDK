@@ -1,11 +1,17 @@
 """Extract pre-made Sims, households, and ancestors without a save file.
 
-In The Sims 4 the concrete pre-made population is defined by tuning:
+In The Sims 4 the concrete pre-made population is defined in two places:
 
-* ``PremadeSimTemplate`` — name, referenced ``.siminfo`` resource, explicit
-  traits/skills, primary aspiration, career level, dynasty and occult data.
-* ``PremadeHouseholdTemplate`` — household members and their relationships.
-* ``TunablePremadeAncestor`` — ancestors used to build family trees.
+* tuning — ``PremadeSimTemplate`` (name, referenced ``.siminfo`` resource,
+  explicit traits/skills, primary aspiration, career level, dynasty and occult
+  data), ``PremadeHouseholdTemplate`` (household members and their
+  relationships) and ``TunablePremadeAncestor`` (ancestors used to build family
+  trees);
+* starter-save household resources (``0xB3C438F0``) — the older-pack pre-mades
+  (BFF, Pancakes, Caliente, Roomies, Spencer-Kim-Lewis, ...) which have no
+  tuning template at all.  These carry names, gender, age, traits, aspiration
+  track, career, raw skill values and household funds.  They are located
+  through the lot manifest (``0x729F6C4F``); see :mod:`sims4_sdk.catalog.worlds`.
 
 The referenced ``.siminfo`` resource contains the traits that were baked into the
 Sim, including the result of ``num_random`` trait assignment.  Step 2 reads that
@@ -22,7 +28,10 @@ from ..installation import Installation
 from ..siminfo import SimInfo, SimInfoError
 from .models import (
     Aspiration,
+    AspirationTrack,
+    Career,
     CareerLevel,
+    CareerTrack,
     Catalog,
     Preference,
     SkillLevel,
@@ -30,17 +39,45 @@ from .models import (
     TuningSource,
 )
 from .values import TuningView
+from .worlds import StarterMember, WorldData
 
 __all__ = [
     "PremadeSim",
     "PremadeHousehold",
     "PremadeAncestor",
+    "PremadeLot",
     "HouseholdMember",
     "HouseholdRelationship",
     "PremadeBundle",
     "build_premades",
     "parse_resource_key",
 ]
+
+
+@dataclass
+class PremadeLot:
+    """A lot from the world/lot manifest (``0x729F6C4F``).
+
+    ``household_id`` is the instance of the ``0xB3C438F0`` household resource
+    that occupies the lot, when the lot ships with a pre-made household.
+    """
+
+    id: int
+    lot_name: Optional[str] = None
+    lot_description: Optional[str] = None
+    household_name: Optional[str] = None
+    household_description: Optional[str] = None
+    household_id: Optional[int] = None
+    lot_name_key: Optional[int] = None
+    lot_description_key: Optional[int] = None
+    source: Optional[TuningSource] = None
+
+    @property
+    def has_household(self) -> bool:
+        return self.household_id is not None
+
+    def __repr__(self) -> str:
+        return f"PremadeLot({self.lot_name!r}, household={self.household_name!r})"
 
 
 @dataclass
@@ -67,6 +104,7 @@ class PremadeHousehold:
     relationships: list[HouseholdRelationship] = field(default_factory=list)
     hidden: bool = False
     townie_street: Optional[str] = None
+    funds: Optional[int] = None
     source: Optional[TuningSource] = None
 
     @property
@@ -115,6 +153,16 @@ class PremadeSim:
     pronouns: Optional[str] = None
     household_id: Optional[int] = None
     household_name: Optional[str] = None
+    aspiration_track_id: Optional[int] = None
+    aspiration_track: Optional[AspirationTrack] = None
+    career_id: Optional[int] = None
+    career: Optional[Career] = None
+    career_track_id: Optional[int] = None
+    career_track: Optional[CareerTrack] = None
+    #: Raw hints from starter-save household resources (``0xB3C438F0``).
+    gender_hint: Optional[str] = None
+    age_hint: Optional[str] = None
+    body_blend: Optional[str] = None
     source: Optional[TuningSource] = None
 
     @property
@@ -179,6 +227,8 @@ class PremadeSim:
 
     @property
     def gender(self) -> Optional[str]:
+        if self.gender_hint:
+            return self.gender_hint
         for trait in self.traits:
             if trait.name in ("trait_GenderMale", "trait_GenderFemale"):
                 return trait.name[len("trait_Gender") :].upper()
@@ -201,7 +251,7 @@ class PremadeSim:
                 key = trait.name[len("trait_") :].casefold()
                 if key in mapping:
                     return mapping[key]
-        return None
+        return self.age_hint
 
     def __repr__(self) -> str:
         return f"PremadeSim({self.full_name!r}, traits={len(self.traits)})"
@@ -212,10 +262,12 @@ class PremadeBundle:
     sims: list[PremadeSim] = field(default_factory=list)
     households: list[PremadeHousehold] = field(default_factory=list)
     ancestors: list[PremadeAncestor] = field(default_factory=list)
+    lots: list[PremadeLot] = field(default_factory=list)
     sims_by_name: dict[str, PremadeSim] = field(default_factory=dict, repr=False)
     households_by_name: dict[str, PremadeHousehold] = field(
         default_factory=dict, repr=False
     )
+    lots_by_name: dict[str, PremadeLot] = field(default_factory=dict, repr=False)
 
     def sim(self, key: str | int) -> Optional[PremadeSim]:
         if isinstance(key, int):
@@ -226,6 +278,11 @@ class PremadeBundle:
         if isinstance(key, int):
             return next((hh for hh in self.households if hh.id == key), None)
         return self.households_by_name.get(key)
+
+    def lot(self, key: str | int) -> Optional[PremadeLot]:
+        if isinstance(key, int):
+            return next((lot for lot in self.lots if lot.id == key), None)
+        return self.lots_by_name.get(key)
 
     def __len__(self) -> int:
         return len(self.sims)
@@ -239,6 +296,8 @@ def build_premades(
     catalog: Catalog,
     entries: dict[int, TuningElement],
     sources: dict[int, TuningSource],
+    *,
+    world: Optional[WorldData] = None,
 ) -> PremadeBundle:
     sims: dict[int, PremadeSim] = {}
     households: dict[int, PremadeHousehold] = {}
@@ -268,17 +327,248 @@ def build_premades(
                 sim.household_id = household.id
                 sim.household_name = household.name
 
+    if world is not None:
+        aliases = _merge_world(catalog, sims, households, world)
+    else:
+        aliases = {}
+
     bundle = PremadeBundle(
         sims=sorted(sims.values(), key=lambda sim: sim.full_name.casefold()),
         households=sorted(households.values(), key=lambda hh: hh.name.casefold()),
         ancestors=sorted(ancestors.values(), key=lambda anc: anc.full_name.casefold()),
+        lots=_build_lots(catalog, world),
     )
     for sim in bundle.sims:
         bundle.sims_by_name.setdefault(sim.name, sim)
         bundle.sims_by_name.setdefault(sim.full_name, sim)
     for household in bundle.households:
-        bundle.households_by_name[household.name] = household
+        bundle.households_by_name.setdefault(household.name, household)
+        display_name = _household_display_name(household.name)
+        if display_name:
+            bundle.households_by_name.setdefault(display_name, household)
+    for alias, household in aliases.items():
+        bundle.households_by_name.setdefault(alias, household)
+    for lot in bundle.lots:
+        if lot.lot_name:
+            bundle.lots_by_name.setdefault(lot.lot_name, lot)
     return bundle
+
+
+def _merge_world(
+    catalog: Catalog,
+    sims: dict[int, PremadeSim],
+    households: dict[int, PremadeHousehold],
+    world: WorldData,
+) -> dict[str, PremadeHousehold]:
+    """Merge ``0xB3C438F0`` households into the tuning-derived population.
+
+    A legacy household is skipped when tuning already defines every one of its
+    members (that is the case for Goth, Landgraabs and Zest, which have both a
+    ``PremadeHouseholdTemplate`` and a starter-save resource).  Partially
+    covered households link the existing tuning Sims and add the rest.
+
+    Returns aliases: the resource's household name for households that already
+    existed under a tuning name.
+    """
+    aliases: dict[str, PremadeHousehold] = {}
+    by_name: dict[str, PremadeSim] = {}
+    for sim in sims.values():
+        if sim.full_name:
+            by_name.setdefault(sim.full_name.casefold(), sim)
+
+    tuning_by_members = {
+        frozenset(member.full_name.casefold() for member in household.members if member.full_name): household
+        for household in households.values()
+        if household.members
+    }
+    taken_names = {household.name.casefold() for household in households.values()}
+
+    for record in sorted(
+        world.households.values(), key=lambda item: (item.name.casefold(), item.instance)
+    ):
+        if not record.members:
+            continue
+        covered = sum(
+            1 for member in record.members if member.full_name.casefold() in by_name
+        )
+        if covered == len(record.members):
+            # Tuning already defines every member.  Attach the resource's
+            # household funds and any per-Sim hints that tuning leaves blank.
+            key = frozenset(
+                member.full_name.casefold() for member in record.members if member.full_name
+            )
+            match = tuning_by_members.get(key)
+            if match is not None:
+                if match.funds is None and record.funds is not None:
+                    match.funds = record.funds
+                if record.name:
+                    aliases.setdefault(record.name, match)
+            for member in record.members:
+                existing = by_name.get(member.full_name.casefold())
+                if existing is not None:
+                    _apply_hints(catalog, existing, member)
+            continue
+        if record.name and record.name.casefold() in taken_names:
+            continue
+
+        household = PremadeHousehold(
+            id=record.instance,
+            name=record.name or f"household_{record.instance:016X}",
+            funds=record.funds,
+            source=record.source,
+        )
+        taken_names.add(household.name.casefold())
+
+        for index, member in enumerate(record.members, start=1):
+            existing = by_name.get(member.full_name.casefold())
+            if existing is None:
+                existing = _starter_sim(catalog, household, member, index)
+                sims[existing.id] = existing
+                by_name[member.full_name.casefold()] = existing
+            household.members.append(
+                HouseholdMember(
+                    tag=f"household_member_{index}",
+                    sim_template_id=existing.id,
+                    sim_name=existing.name,
+                    full_name=existing.full_name,
+                )
+            )
+
+        households[household.id] = household
+
+    return aliases
+
+
+def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> None:
+    """Fill gender/age/body/career hints that tuning does not define."""
+    if sim.gender_hint is None and member.gender is not None:
+        sim.gender_hint = member.gender
+    if sim.age_hint is None and member.age is not None:
+        sim.age_hint = member.age
+    if sim.body_blend is None and member.body_blend:
+        sim.body_blend = member.body_blend
+    if not sim.aspiration_track_id and member.aspiration_track_id:
+        sim.aspiration_track_id = member.aspiration_track_id
+        sim.aspiration_track = catalog.aspiration_tracks.get(
+            member.aspiration_track_id
+        )
+    if sim.career_id is None and member.career_id:
+        sim.career_id = member.career_id
+        sim.career = catalog.careers.get(member.career_id)
+        sim.career_track_id = member.career_track_id
+        if member.career_track_id:
+            sim.career_track = catalog.career_tracks.get(member.career_track_id)
+
+
+def _starter_sim(
+    catalog: Catalog,
+    household: PremadeHousehold,
+    member: StarterMember,
+    index: int,
+) -> PremadeSim:
+    traits: list[Trait] = []
+    preferences: list[Preference] = []
+    unknown: list[int] = []
+    for trait_id in member.trait_ids:
+        trait = catalog.traits.get(trait_id)
+        if trait is not None:
+            traits.append(trait)
+            continue
+        preference = catalog.preferences.get(trait_id)
+        if preference is not None:
+            preferences.append(preference)
+            continue
+        unknown.append(trait_id)
+
+    skills = [
+        SkillLevel(
+            skill_id=skill_id,
+            skill_name=catalog.tuning_names.get(skill_id),
+            value=value,
+        )
+        for skill_id, value in member.skills
+    ]
+
+    career = catalog.careers.get(member.career_id) if member.career_id else None
+    career_track = (
+        catalog.career_tracks.get(member.career_track_id)
+        if member.career_track_id
+        else None
+    )
+    aspiration_track = (
+        catalog.aspiration_tracks.get(member.aspiration_track_id)
+        if member.aspiration_track_id
+        else None
+    )
+
+    return PremadeSim(
+        id=member.sim_id or (household.id + index),
+        name=_starter_sim_name(household, member),
+        first_name=member.first_name,
+        last_name=member.last_name,
+        explicit_trait_ids=list(member.trait_ids),
+        traits=traits,
+        preferences=preferences,
+        unknown_trait_ids=unknown,
+        skills=skills,
+        aspiration_track_id=member.aspiration_track_id,
+        aspiration_track=aspiration_track,
+        career_id=member.career_id,
+        career=career,
+        career_track_id=member.career_track_id,
+        career_track=career_track,
+        gender_hint=member.gender,
+        age_hint=member.age,
+        body_blend=member.body_blend,
+        household_id=household.id,
+        household_name=household.name,
+        source=household.source,
+    )
+
+
+def _starter_sim_name(household: PremadeHousehold, member: StarterMember) -> str:
+    household_slug = "".join(ch for ch in household.name if ch.isalnum())
+    member_slug = "".join(
+        ch for ch in (member.first_name + member.last_name) if ch.isalnum()
+    )
+    if not member_slug:
+        member_slug = f"Sim{member.sim_id:016X}" if member.sim_id else "Sim"
+    return f"starterSim_{household_slug or 'Household'}_{member_slug}"
+
+
+def _household_display_name(name: str) -> Optional[str]:
+    for prefix in ("premadeHouseholdTemplate_", "HH_Template_", "hH_Template_"):
+        if name.startswith(prefix):
+            return name[len(prefix) :].replace("_", " ")
+    return None
+
+
+def _build_lots(catalog: Catalog, world: Optional[WorldData]) -> list[PremadeLot]:
+    if world is None:
+        return []
+    lots = [
+        PremadeLot(
+            id=record.instance,
+            lot_name=catalog.strings.get(record.lot_name_key)
+            if record.lot_name_key
+            else None,
+            lot_description=catalog.strings.get(record.lot_description_key)
+            if record.lot_description_key
+            else None,
+            household_name=catalog.strings.get(record.household_name_key)
+            if record.household_name_key
+            else None,
+            household_description=catalog.strings.get(record.household_description_key)
+            if record.household_description_key
+            else None,
+            household_id=record.household_id,
+            lot_name_key=record.lot_name_key,
+            lot_description_key=record.lot_description_key,
+            source=record.source,
+        )
+        for record in world.lots.values()
+    ]
+    return sorted(lots, key=lambda lot: (lot.lot_name or "").casefold())
 
 
 def _build_sim(
@@ -300,6 +590,14 @@ def _build_sim(
         skill.skill_name = catalog.tuning_names.get(skill.skill_id)
 
     aspiration_id = view.enabled_value("primary_aspiration")
+    aspiration = catalog.aspirations.get(aspiration_id) if aspiration_id else None
+    aspiration_track_id: Optional[int] = None
+    aspiration_track: Optional[AspirationTrack] = None
+    if aspiration is None and aspiration_id is not None:
+        # Some templates (e.g. EP21 Monty) store an AspirationTrack here.
+        aspiration_track = catalog.aspiration_tracks.get(aspiration_id)
+        if aspiration_track is not None:
+            aspiration_track_id = aspiration_id
     career_level_id = view.enabled_value("career_level")
 
     dynasty = _dynasty(view)
@@ -352,7 +650,9 @@ def _build_sim(
         random_trait_count=random_trait_count,
         skills=skills,
         aspiration_id=aspiration_id,
-        aspiration=catalog.aspirations.get(aspiration_id) if aspiration_id else None,
+        aspiration=aspiration,
+        aspiration_track_id=aspiration_track_id,
+        aspiration_track=aspiration_track,
         career_level_id=career_level_id,
         career_level=(
             catalog.career_levels.get(career_level_id) if career_level_id else None
