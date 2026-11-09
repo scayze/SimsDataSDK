@@ -1,0 +1,39 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*.pyo
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+wheelhouse/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Type checking
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# Local extraction output and caches
+.cache/
+out/
+*.log
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
