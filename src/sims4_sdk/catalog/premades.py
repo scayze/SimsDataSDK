@@ -153,6 +153,37 @@ class PremadeSim:
     def preference_names(self) -> list[str]:
         return [preference.name for preference in self.preferences]
 
+    @property
+    def likes(self) -> list[Preference]:
+        return [preference for preference in self.preferences if preference.is_like]
+
+    @property
+    def dislikes(self) -> list[Preference]:
+        return [preference for preference in self.preferences if preference.is_dislike]
+
+    @property
+    def species(self) -> Optional[str]:
+        for trait in self.traits:
+            if trait.name.startswith("trait_Species_"):
+                return trait.name[len("trait_Species_") :]
+        return None
+
+    @property
+    def occult(self) -> Optional[str]:
+        if self.occult_type:
+            return self.occult_type
+        for trait in self.traits:
+            if trait.name.startswith("trait_Occult_"):
+                return trait.name[len("trait_Occult_") :]
+        return None
+
+    @property
+    def gender(self) -> Optional[str]:
+        for trait in self.traits:
+            if trait.name in ("trait_GenderMale", "trait_GenderFemale"):
+                return trait.name[len("trait_Gender") :].upper()
+        return None
+
     def __repr__(self) -> str:
         return f"PremadeSim({self.full_name!r}, traits={len(self.traits)})"
 

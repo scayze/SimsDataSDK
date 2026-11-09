@@ -55,3 +55,31 @@ def test_premade_sim_properties() -> None:
     assert sim.hidden_traits == []
     assert sim.visible_traits == [trait]
     assert sim.preference_names == ["trait_SimPreference_Likes_Cooking"]
+    assert sim.likes == [preference]
+    assert sim.dislikes == []
+
+
+def test_premade_sim_derived_species_gender_occult() -> None:
+    def trait(name: str, type_: str = "HIDDEN") -> Trait:
+        return Trait(
+            id=hash(name) & 0xFFFFFFFF,
+            name=name,
+            display_name=name,
+            description=None,
+            trait_type=type_,
+        )
+
+    sim = PremadeSim(
+        id=1,
+        name="premadeSimTemplate_Pet",
+        first_name="Rex",
+        last_name="",
+        traits=[
+            trait("trait_Species_Dog"),
+            trait("trait_GenderMale"),
+            trait("trait_Occult_NoOccult"),
+        ],
+    )
+    assert sim.species == "Dog"
+    assert sim.gender == "MALE"
+    assert sim.occult == "NoOccult"
