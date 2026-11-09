@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sims4-sdk"
-version = "0.1.0"
+version = "0.2.0"
 description = "A Python SDK for reading The Sims 4 game data, packages, saves, and tray files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,4 +39,5 @@ pythonpath = ["src"]
 addopts = "-q"
 markers = [
     "integration: reads a real Sims 4 installation from disk (skipped when not present)",
+    "slow: takes longer than a few seconds (usually a full catalog build)",
 ]

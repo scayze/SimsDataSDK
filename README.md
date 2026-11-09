@@ -3,33 +3,67 @@
 A Python SDK for reading **The Sims 4** data so it can be used by other tools:
 game packages, DLC packages, mods, save files, and Tray files.
 
-> Status: **Step 1 — binary foundation.** The package currently ships the low-level
-> readers (DBPF, RefPack, STBL, DATA tables, Combined Tuning, SimData). Higher-level
-> domain extraction (traits, milestones, careers, relationships, …) lands in later steps.
+> Status: **Step 2 — static catalog and pre-made Sims.** Reading the game, DLC,
+> and mod packages is complete: traits, preferences (likes/dislikes), aspirations,
+> careers, milestones, relationship bits, pre-made Sims, households, and ancestors
+> can all be extracted **without a save file**. Save/Tray reading is Step 3.
 
-## Installation
+## Quick start (no save file required)
 
-```bash
-pip install -e ".[dev]"
+```python
+from sims4_sdk import Sims4Workspace
+
+ws = Sims4Workspace()                 # auto-detects the game + user folder
+catalog = ws.catalog                  # built once, then cached
+
+print(catalog.summary())
+
+# Catalog lookups
+print(catalog.trait("trait_Mean"))    # Trait('trait_Mean', type='PERSONALITY')
+print(catalog.trait("trait_Mean").display_name)   # "Mean"
+print(catalog.preference("trait_SimPreference_Likes_Music_HipHop").preference_type)
+
+# Every pre-made Sim that ships with the installed packs
+for sim in ws.premade_sims():
+    print(sim.full_name, [trait.display_name for trait in sim.personality_traits])
+    print("  household:", sim.household_name)
+    print("  aspiration:", sim.aspiration.display_name if sim.aspiration else None)
+
+bella = ws.find_sim("Bella Goth")
+goth = ws.find_household("premadeHouseholdTemplate_Goth")
 ```
 
-Python 3.10+ is required. The core readers use only the standard library.
+Calls are cached under `%LOCALAPPDATA%\sims4-sdk\cache`; deleting that folder
+forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder.
 
 ## What works today
+
+### Static catalog (Step 2)
+
+- **Traits** — type (`PERSONALITY`, `GHOST`, `FEAR`, `WALKSTYLE`, …), display
+  name, description, ages, species, conflicting traits, icon, source pack.
+- **Preferences** — likes, dislikes, and no-opinion preferences.
+- **Aspirations**, aspiration tracks, and categories.
+- **Careers**, career tracks/branches, and career levels (titles, pay, schedule).
+- **Milestones** — including the Growing Together developmental milestones.
+- **Relationship bits**.
+- **Pre-made Sims** — names, traits, likes/dislikes baked into SimInfo, skills,
+  explicit aspiration/career level, dynasty, occult, household membership.
+- **Pre-made households** — members and spouse/family relationships.
+- **Pre-made ancestors** — names, gender, death traits, thumbnails.
+
+### Low-level binary readers (Step 1)
 
 ```python
 from sims4_sdk.core import DBPF, StringTable, CombinedTuning
 
 with DBPF(r"Data/Client/Strings_ENG_US.package") as package:
-    # Every STBL resource in the package
     for entry in package.iter_entries(type_id=StringTable.TYPE_ID):
         table = StringTable.parse(package.read_resource(entry))
         print(len(table), "strings")
 
-    # Combined tuning (binary DATA or XML; both are handled)
     for entry in package.iter_entries(type_id=CombinedTuning.TYPE_ID):
         tuning = CombinedTuning.parse(package.read_resource(entry))
-        print(len(tuning), "tuning entries")
         for item in tuning.by_class("Trait")[:5]:
             print(item.name, item.instance_id)
 ```
@@ -41,36 +75,73 @@ Low-level helpers are also public:
 - `sims4_sdk.core.data_tables` — the binary `DATA` table format.
 - `sims4_sdk.core.simdata` — SimData (`0x545AC67A`) resources.
 - `sims4_sdk.core.fnv` — FNV-1 / FNV-1a hashing used by tuning IDs and STBL keys.
+- `sims4_sdk.siminfo` — partial SimInfo reader (baked trait lists).
 
 ## Layout
 
 ```
 src/sims4_sdk/
 ├── core/               # low-level binary readers
-│   ├── dbpf.py         # DBPF 2.x container + index reader
-│   ├── refpack.py      # RefPack (QFS) decompressor
-│   ├── stbl.py         # STBL string tables
-│   ├── data_tables.py  # binary DATA table decoder
+│   ├── dbpf.py
+│   ├── refpack.py
+│   ├── stbl.py
+│   ├── data_tables.py
 │   ├── combined_tuning.py
 │   ├── simdata.py
 │   ├── resource_types.py
 │   └── fnv.py
+├── catalog/            # save-independent extraction
+│   ├── models.py       # Trait, Preference, Aspiration, Career, Milestone, ...
+│   ├── builder.py      # tuning scan + catalog extraction
+│   ├── strings.py      # merged STBL resolution
+│   ├── premades.py     # PremadeSimTemplate / household / ancestor extraction
+│   └── static.py       # coordinated build + cache
+├── installation.py     # package discovery and load order
+├── siminfo.py          # SimInfo trait-list reader
+├── workspace.py        # Sims4Workspace facade
 └── paths.py            # install / user directory discovery
 tests/                  # unit tests + optional local integration tests
+examples/
 ```
+
+## Roadmap
+
+1. **Step 1 — binary foundation** (done).
+2. **Step 2 — static catalog + pre-made Sims** (done; save-independent).
+3. **Step 3 — saves and Tray files** (live Sim state, milestones, relationships,
+   full SimInfo/career/aspiration persistence).
+4. **Step 4 — Sims Wiki validation** (catalog and pre-made Sim reconciliation).
+5. **Step 5 — public API/export tooling** (CLI, JSON/SQLite/Polars helpers).
+
+> Note on pre-made Sim values: where the game bakes values into the SimInfo
+> resource (for example randomized traits), those values are surfaced. Where the
+> game only assigns a value at runtime (some base-game aspirations/careers), the
+> template value is exposed when present and `None` otherwise.
+
+
+## Installation
+
+```bash
+pip install -e ".[dev]"
+```
+
+Python 3.10+ is required. The core readers use only the standard library.
 
 ## Testing
 
 ```bash
-python -m pytest                      # unit tests
-python -m pytest -m integration       # reads the local installation
+python -m pytest                              # unit tests
+python -m pytest -m "integration and not slow" # fast local integration tests
+python -m pytest -m "integration"             # all local integration tests
+SIMS4_FULL_TEST=1 python -m pytest -m "integration"  # scan every installed pack
 ```
 
 Tests that require a real installation are marked `integration` and are skipped
 automatically when no Sims 4 install is found. Set `SIMS4_INSTALL_DIR` and
-`SIMS4_USER_DIR` to point at a specific installation/user folder.
+`SIMS4_USER_DIR` to point at a specific installation/user folder. Full catalog
+builds are cached, so the first run is the slow one.
 
-The readers were verified against game files:
+### Verified against the local installation
 
 | Check | Result |
 | --- | --- |
@@ -82,6 +153,8 @@ The readers were verified against game files:
 | Save file | constant-group index, JPEG + RefPack resources |
 | Full game scan | 629 packages, 2,581,974 index entries, 0 failures |
 | All English string tables | 117 packages, 163,302 strings, 0 failures |
+| Node test set (base + EP13) | 745 traits, 166 preferences, 191 aspirations, 223 career levels, 109 milestones, 36 pre-made Sims, 15 households, 21 ancestors, 0 errors |
+| Full static scan (base + all packs + mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 400 pre-made Sims, 191 households, 41 ancestors, 0 errors, 616 packages; ~255 s first build, cached afterwards |
 
 See [`docs/binary-formats.md`](docs/binary-formats.md) for the verified format
 notes, and run the example:

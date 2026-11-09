@@ -122,7 +122,97 @@ Combined Tuning uses exactly seven tables:
 The decoder reconstructs the original XML tree, so the same `CombinedTuning`
 API works for both the XML and binary encodings.
 
-## Verified against the local installation
+## SimInfo (`.siminfo`, type `0x025ED6F4`)
+
+This is the resource referenced by `PremadeSimTemplate.resource_key`.  It is a
+proprietary serialization (version field currently `38`) that interleaves Sim
+data with CAS/appearance data.
+
+The part used by Step 2 is the trait list:
+
+```
+uint32  version                  (38)
+uint32  last_trait_offset        (offset of the last 64-bit trait ID)
+...
+byte    count
+uint64  trait_id                 (count times)
+...
+CAS/appearance data
+```
+
+The list sits immediately before the appearance data.  Walking back from
+`last_trait_offset + 8` in 8-byte strides, the count byte is the byte before the
+first ID.  Validating the count and every ID against the catalog makes the
+recovery reliable (verified on Bella, Mortimer, Alexander, Cassandra, Alex Moyer,
+the Burglar, and the Landry household).
+
+Preferences (likes/dislikes) are stored in the same list and are separated by
+their catalog class.
+
+## Pre-made Sims
+
+`PremadeSimTemplate` fields:
+
+| Field | Meaning |
+| --- | --- |
+| `_sim_creation_info.first_name` | 32-bit localization key |
+| `_sim_creation_info.last_name` | `specify_last_name` key or `no_last_name` |
+| `_sim_creation_info.resource_key` | `.siminfo` resource key |
+| `_traits.explicit` | explicit 64-bit trait IDs |
+| `_traits.num_random` | number of randomized traits (baked into SimInfo) |
+| `_skills.explicit` | skill IDs with ranges |
+| `primary_aspiration` | aspiration tuning ID (when pinned) |
+| `career_level` | career-level tuning ID (when pinned) |
+| `dynasty` | dynasty seed / head / heir / black-sheep flags |
+| `occult`, `pregnancy` | occult SimInfo and pregnancy data |
+
+`PremadeHouseholdTemplate` stores `_household_members` (member tag + Sim template)
+and `_household_relationship` entries (`is_spouse` or a `family_relationship`
+enum such as `FATHER` / `MOTHER` / `MOTHERS_MOM`).
+
+`TunablePremadeAncestor` stores an ancestor's localized full name, gender, death
+trait, and thumbnail.
+
+## Verified static extraction (base game + EP13)
+
+| Item | Count |
+| --- | --- |
+| Traits | 745 |
+| Preferences | 166 |
+| Aspirations | 191 |
+| Careers | 46 |
+| Career levels | 223 |
+| Developmental milestones | 109 |
+| Relationship bits | 268 |
+| Merged English strings | 168,469 |
+| Pre-made Sims | 36 |
+| Pre-made households | 15 |
+| Pre-made ancestors | 21 |
+| Extraction errors | 0 |
+
+## Verified full static scan (base + all packs + mods)
+
+| Item | Count |
+| --- | --- |
+| Packages scanned | 616 |
+| Tuning entries | 179,499 |
+| Traits | 2,795 |
+| Preferences | 334 |
+| Aspirations | 392 |
+| Careers | 146 |
+| Career levels | 671 |
+| Developmental milestones | 201 |
+| Relationship bits | 766 |
+| Pre-made Sims | 400 |
+| Pre-made households | 191 |
+| Pre-made ancestors | 41 |
+| Extraction errors | 0 |
+| First build time | ~255 s (cached afterwards) |
+
+The full scan includes mods by default. Use `Installation(include_mods=False)` or
+`Sims4Workspace(include_mods=False)` for game-only data.
+
+## Verified binary readers
 
 | Check | Result |
 | --- | --- |

@@ -17,8 +17,9 @@ COMBINED_TUNING_TYPE_ID: Final = 0x62E94D38
 STRING_TABLE_TYPE_ID: Final = 0x220557DA
 #: Binary SimData / binary tuning companion (the ``DATA`` table format).
 SIMDATA_TYPE_ID: Final = 0x545AC67A
-#: Sim outfit resource.
+#: SimInfo (a.k.a. SIMO) — baked Sim data / outfits.
 SIMOUTFIT_TYPE_ID: Final = 0x025ED6F4
+SIMINFO_TYPE_ID: Final = SIMOUTFIT_TYPE_ID
 #: Tray item metadata.
 TRAYITEM_TYPE_ID: Final = 0x2A8A5E22
 
@@ -28,7 +29,7 @@ RESOURCE_TYPE_LABELS: Final[dict[int, str]] = {
     COMBINED_TUNING_TYPE_ID: "Combined Tuning",
     STRING_TABLE_TYPE_ID: "String Table (STBL)",
     SIMDATA_TYPE_ID: "SimData (DATA)",
-    SIMOUTFIT_TYPE_ID: "Sim Outfit (SIMO)",
+    SIMOUTFIT_TYPE_ID: "SimInfo (SIMO)",
     TRAYITEM_TYPE_ID: "Tray Item",
     0x00B2D882: "DDS Image",
     0x0166038C: "Name Map",
