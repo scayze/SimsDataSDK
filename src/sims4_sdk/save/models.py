@@ -11,6 +11,7 @@ from ..catalog.models import (
     Career,
     CareerLevel,
     CareerTrack,
+    GenderOptions,
     Milestone,
     Preference,
     Trait,
@@ -27,6 +28,7 @@ __all__ = [
     "SavedRelationshipTrack",
     "SavedRelationship",
     "SavedFamilyRelation",
+    "SavedRelationshipTrope",
     "SavedMilestone",
     "SavedTimedAspiration",
     "SavedStatistic",
@@ -160,6 +162,23 @@ class SavedFamilyRelation:
 
 
 @dataclass
+class SavedRelationshipTrope:
+    """A family/romance dynamic stored in the genealogy tracker."""
+
+    sim_id: int
+    trope_id: int
+    sim_name: Optional[str] = None
+    trope_name: Optional[str] = None
+    kind: str = "UNKNOWN"  # FAMILY | ROMANCE | UNKNOWN
+
+    def __repr__(self) -> str:
+        return (
+            f"SavedRelationshipTrope({self.sim_name!r}, "
+            f"{self.trope_name!r}, kind={self.kind!r})"
+        )
+
+
+@dataclass
 class SavedMilestone:
     milestone_id: int
     milestone: Optional[Milestone] = None
@@ -225,6 +244,10 @@ class SavedSim:
     spouse_id: Optional[int] = None
     spouse_name: Optional[str] = None
     fiance_id: Optional[int] = None
+    fiance_name: Optional[str] = None
+    steady_ids: list[int] = field(default_factory=list)
+    steady_names: list[str] = field(default_factory=list)
+    tropes: list[SavedRelationshipTrope] = field(default_factory=list)
     parents: list[SavedFamilyRelation] = field(default_factory=list)
     children: list[SavedFamilyRelation] = field(default_factory=list)
     siblings: list[SavedFamilyRelation] = field(default_factory=list)
@@ -254,6 +277,10 @@ class SavedSim:
     @property
     def personality_traits(self) -> list[Trait]:
         return [trait for trait in self.traits if trait.trait_type == "PERSONALITY"]
+
+    @property
+    def gender_options(self) -> GenderOptions:
+        return GenderOptions.from_traits(self.traits)
 
     @property
     def hidden_traits(self) -> list[Trait]:

@@ -56,7 +56,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-8"
+CACHE_VERSION = "step2-9"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
@@ -282,6 +282,11 @@ def extract_catalog(
         catalog.relationship_defaults = relationship_tuning.defaults
         catalog.premade_relationships = relationship_tuning.pairs
         catalog.relationship_track_ranges = relationship_tuning.track_ranges
+        catalog.steady_bit_id = relationship_tuning.steady_bit_id
+        catalog.engagement_bit_id = relationship_tuning.engagement_bit_id
+        catalog.marriage_bit_id = relationship_tuning.marriage_bit_id
+        catalog.family_trope_ids = relationship_tuning.family_trope_ids
+        catalog.romance_trope_ids = relationship_tuning.romance_trope_ids
     catalog.finalize()
     return catalog
 

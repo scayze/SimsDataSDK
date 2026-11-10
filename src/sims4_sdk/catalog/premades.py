@@ -33,6 +33,7 @@ from .models import (
     CareerLevel,
     CareerTrack,
     Catalog,
+    GenderOptions,
     PremadeRelationship,
     Preference,
     SkillLevel,
@@ -196,6 +197,10 @@ class PremadeSim:
     @property
     def personality_traits(self) -> list[Trait]:
         return [trait for trait in self.traits if trait.trait_type == "PERSONALITY"]
+
+    @property
+    def gender_options(self) -> GenderOptions:
+        return GenderOptions.from_traits(self.traits)
 
     @property
     def hidden_traits(self) -> list[Trait]:
@@ -1093,6 +1098,7 @@ def _build_household(
         relationships=relationships,
         hidden=view.flag("_hidden"),
         townie_street=view.text("_townie_street") or view.raw_text("_townie_street"),
+        funds=view.number("_household_funds"),
         source=source,
     )
 

@@ -69,7 +69,18 @@ Each `SimData` contains the full state:
 - **Skills:** statistic/skill IDs with raw values and resolved tuning names.
 - **Family:** `genealogy_tracker.family_relations` gives parents/grandparents/etc.
   The SDK adds reverse links (children) and derives siblings from shared parents.
-- **Spouse/fiancé:** from `significant_other` / `fiance`.
+- **Spouse/fiancé/steady:** spouse and fiancé come from `significant_other` /
+  `fiance`; a steady partner is not stored separately, so the SDK derives it from
+  the `STEADY_RELATIONSHIP_BIT` in the relationship bits. Missing spouse/fiancé
+  links are also recovered from the marriage/engagement bits.
+- **Family and romance dynamics:** `genealogy_tracker.relationship_tropes` is
+  decoded into `SavedSim.tropes` (`kind` is `FAMILY` or `ROMANCE`, with the
+  relationship-bit display name).
+- **Gender options / preferences:** the `trait_GenderOptions_*` and
+  `trait_SexualOrientation_*` traits are exposed as
+  `SavedSim.gender_options` (frame, clothing, toilet use, lactation, attraction,
+  WooHoo interests, exploring status, impregnation). These traits are part of the
+  normal trait tracker, so they are also present in `traits`.
 - **Milestones:** developmental milestones from `GameplaySimData`, plus completed
   aspiration objectives/milestones from the event tracker.
 - **Pregnancy, occult, degrees, death, statistics, favorites.**

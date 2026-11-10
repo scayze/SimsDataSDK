@@ -308,6 +308,28 @@ nested loot chain (including `V t="actions"` and `relationship_set`).
 Verified on the BFF, Goth, Pancakes, Roomies, Spencer-Kim-Lewis and Caliente
 households against the same Sims in a real save.
 
+### `relationships.global_relationship_tuning`
+
+`RelationshipGlobalTuning` names the relationship bits the engine uses for the
+special relationship states:
+
+| Field | Bit | Meaning |
+| --- | ---: | --- |
+| `STEADY_RELATIONSHIP_BIT` | 15825 | steady boyfriend/girlfriend |
+| `ENGAGEMENT_RELATIONSHIP_BIT` | 15816 | engaged / fiancé |
+| `MARRIAGE_RELATIONSHIP_BIT` | 15822 | married / spouse |
+
+These are exposed as `Catalog.steady_bit_id`, `Catalog.engagement_bit_id` and
+`Catalog.marriage_bit_id`. `TropeGlobalTuning.TROPES` and `ROMANCE_TROPES` list
+the family/romance dynamic bits (`familyTrope_*` / `romanceTrope_*`), exposed as
+`Catalog.family_trope_ids` / `Catalog.romance_trope_ids` with the helpers
+`Catalog.is_family_trope()` and `Catalog.is_romance_trope()`.
+
+A steady partner has no dedicated save field: the save stores only the steady
+relationship bit, so `SavedSim.steady_ids` / `.steady_names` are derived from
+the bits. Tropes *are* stored, in
+`PersistableGenealogyTracker.relationship_tropes` (`sim_id` + `trope_id`).
+
 ## Verified static extraction (base game + EP13)
 
 | Item | Count |

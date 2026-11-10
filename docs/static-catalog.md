@@ -122,7 +122,9 @@ Each household member message carries:
 
 The SDK merges these into the normal models:
 
-* `PremadeHousehold.funds` is populated;
+* `PremadeHousehold.funds` is populated from tuning
+  (`PremadeHouseholdTemplate._household_funds`) and, when present, from the
+  starter-save resource (`money`);
 * a household whose members are all already defined by tuning (Goth,
   Landgraabs, Zest) is not duplicated — its funds and missing gender/age hints
   are attached to the tuning household instead;
@@ -161,6 +163,30 @@ SDK now exposes them:
   pre-made household links.
 - `PremadeBundle.relationship(a, b)` and `.relationships_for(sim)`.
 
+### Gender options and preferences
+
+`PremadeSim.gender_options` / `SavedSim.gender_options` return a `GenderOptions`
+view built from the `trait_GenderOptions_*` and `trait_SexualOrientation_*`
+traits in the trait tracker:
+
+| Field | Source traits |
+| --- | --- |
+| `gender` | `trait_GenderMale` / `trait_GenderFemale` |
+| `frame` | `trait_GenderOptions_Frame_Masculine` / `_Feminine` |
+| `clothing` | `trait_GenderOptions_Clothing_MensWear` / `_WomensWear` |
+| `toilet_use` | `trait_GenderOptions_Toilet_Standing` / `_Sitting` |
+| `lactation` | `trait_GenderOptions_Lactate_Can` / `_CanNot` |
+| `attracted_to` / `not_attracted_to` | `trait_GenderOptions_AttractedTo_*` |
+| `woohoo_interests` / `not_woohoo_interests` | `trait_SexualOrientation_WooHooInterests_*` |
+| `sexuality` | `trait_GenderOptions_Sexuality_Exploring` / `_NotExploring` |
+| `can_impregnate` | `trait_GenderOptions_Pregnancy_CanImpregnate` / `_CanNotImpregnate` |
+| `can_be_impregnated` | `trait_GenderOptions_Pregnancy_CanBeImpregnated` / `_CanNot_BeImpregnated` |
+
+The attraction and WooHoo interest fields are lists because a Sim can be
+attracted to several genders at once. The remaining fields are single values; if
+conflicting traits are present (some pre-made templates contain more than one
+life-stage configuration), the last trait in the tracker wins.
+
 For a relationship with a tracked bit the game adds a random score inside the
 bit interval, so the final value is the default plus that random increment
 (clamped to the track's -100…100 range).
@@ -174,12 +200,14 @@ household ID.
 
 ### What is and is not available statically
 
-- **Available:** names, baked traits, preferences, household membership,
-  household funds, spouse/parent relationships, ancestors, explicit skills,
-  explicit aspiration and career level, dynasty, occult, pregnancy, gender and
-  age (from starter-save resources), aspiration track, career track, lots,
-  lot↔household links, initial relationship defaults and cross-household
-  relationship values.
+- **Available:** names, baked traits, preferences, gender options / attraction
+  (when the template or SimInfo carries `trait_GenderOptions_*`), household
+  membership, household funds, spouse/parent relationships, ancestors, explicit
+  skills, explicit aspiration and career level, dynasty, occult, pregnancy,
+  gender and age (from starter-save resources), aspiration track, career track,
+  lots, lot↔household links, initial relationship defaults and cross-household
+  relationship values, and the steady/engagement/marriage bits plus family and
+  romance trope IDs.
 - **Template-only:** some newer-pack Sims (EP19+) do not pin an aspiration,
   career, gender or age in tuning and have no starter-save resource; the field
   is `None` rather than guessed.
@@ -211,6 +239,7 @@ for sim in data.sims:
     print("  visible:", [t.display_name for t in sim.visible_traits])
     print("  aspiration track:", sim.aspiration_track.display_name if sim.aspiration_track else None)
     print("  career:", sim.career_track.display_name if sim.career_track else None)
+    print("  gender options:", sim.gender_options)
 
 # Base-game households that have no tuning template
 bff = data.household("BFF")
@@ -224,6 +253,8 @@ for lot in data.lots:
 pancakes = data.household("Pancakes")
 spouse = next(rel for rel in pancakes.relationships if rel.kind == "spouse")
 print(spouse.friendship, spouse.romance)      # 45.0 75.0
+
+print(catalog.steady_bit_id, catalog.family_trope_ids, catalog.romance_trope_ids)
 
 for relationship in data.premades.relationships_for(data.sim("Megumi Ito")):
     print(relationship.sim_a_name, "->", relationship.sim_b_name,

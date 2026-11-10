@@ -16,6 +16,7 @@ from .models import (
     CareerLevel,
     CareerTrack,
     Catalog,
+    GenderOptions,
     Milestone,
     PremadeRelationship,
     Preference,
@@ -79,6 +80,7 @@ __all__ = [
     "RelationshipTrackValue",
     "RelationshipDefault",
     "PremadeRelationship",
+    "GenderOptions",
     "SkillLevel",
     "TuningSource",
     # premades

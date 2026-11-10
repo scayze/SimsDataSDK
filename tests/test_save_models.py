@@ -6,9 +6,14 @@ from sims4_sdk.catalog import (
     Catalog,
     Milestone,
     Preference,
+    RelationshipBit,
     Trait,
 )
-from sims4_sdk.save.reader import sim_from_dict
+from sims4_sdk.save.models import SavedRelationship, SavedSim
+from sims4_sdk.save.reader import (
+    _link_special_relationships,
+    sim_from_dict,
+)
 
 
 def build_catalog() -> Catalog:
@@ -177,3 +182,128 @@ def test_sim_from_dict() -> None:
     assert sim.completed_milestone_ids == [3]
     assert sim.pregnancy["seed"] == 123
     assert sim.is_dead is False
+
+
+def test_sim_gender_options_from_traits() -> None:
+    def trait(trait_id: int, name: str) -> Trait:
+        return Trait(
+            id=trait_id,
+            name=name,
+            display_name=name,
+            description=None,
+            trait_type="GENDER_OPTIONS",
+        )
+
+    catalog = Catalog(
+        traits={
+            1: trait(1, "trait_GenderOptions_Frame_Masculine"),
+            2: trait(2, "trait_GenderOptions_Clothing_MensWear"),
+            3: trait(3, "trait_GenderOptions_AttractedTo_Female"),
+            4: trait(4, "trait_GenderOptions_AttractedTo_NotFemale"),
+            5: trait(5, "trait_SexualOrientation_WooHooInterests_Male"),
+            6: trait(6, "trait_GenderOptions_Pregnancy_CanImpregnate"),
+            7: trait(7, "trait_GenderOptions_Pregnancy_CanNot_BeImpregnated"),
+        }
+    ).finalize()
+
+    sim = sim_from_dict(
+        {
+            "sim_id": 1,
+            "first_name": "Test",
+            "attributes": {"trait_tracker": {"trait_ids": [1, 2, 3, 4, 5, 6, 7]}},
+        },
+        catalog,
+    )
+
+    options = sim.gender_options
+    assert options.frame == "MASCULINE"
+    assert options.clothing == "MENSWEAR"
+    assert options.attracted_to == ["FEMALE"]
+    assert options.not_attracted_to == ["FEMALE"]
+    assert options.woohoo_interests == ["MALE"]
+    assert options.can_impregnate is True
+    assert options.can_be_impregnated is False
+
+
+def test_sim_relationship_tropes() -> None:
+    catalog = Catalog(
+        relationship_bits={
+            362476: RelationshipBit(
+                id=362476,
+                name="romanceTrope_steamy",
+                display_name="Steamy",
+                description=None,
+            ),
+            306293: RelationshipBit(
+                id=306293,
+                name="familyTrope_close",
+                display_name="Close",
+                description=None,
+            ),
+        },
+        family_trope_ids=[306293],
+        romance_trope_ids=[362476],
+    ).finalize()
+
+    sim = sim_from_dict(
+        {
+            "sim_id": 1,
+            "first_name": "Test",
+            "attributes": {
+                "genealogy_tracker": {
+                    "relationship_tropes": [
+                        {"sim_id": 2, "trope_id": 362476},
+                        {"sim_id": 3, "trope_id": 306293},
+                    ]
+                }
+            },
+        },
+        catalog,
+        {2: "Partner Sim", 3: "Relative Sim"},
+    )
+
+    assert [trope.kind for trope in sim.tropes] == ["ROMANCE", "FAMILY"]
+    assert [trope.trope_name for trope in sim.tropes] == ["Steamy", "Close"]
+    assert [trope.sim_name for trope in sim.tropes] == ["Partner Sim", "Relative Sim"]
+
+
+def test_link_special_relationships_from_bits() -> None:
+    catalog = Catalog(
+        steady_bit_id=15825,
+        engagement_bit_id=15816,
+        marriage_bit_id=15822,
+    ).finalize()
+
+    sims = {
+        1: SavedSim(
+            sim_id=1,
+            first_name="One",
+            relationships=[SavedRelationship(target_id=2, bits=[15825])],
+        ),
+        2: SavedSim(sim_id=2, first_name="Two"),
+        3: SavedSim(sim_id=3, first_name="Three"),
+        4: SavedSim(
+            sim_id=4,
+            first_name="Four",
+            relationships=[SavedRelationship(target_id=5, bits=[15816])],
+        ),
+        5: SavedSim(sim_id=5, first_name="Five"),
+        6: SavedSim(
+            sim_id=6,
+            first_name="Six",
+            relationships=[SavedRelationship(target_id=7, bits=[15822])],
+        ),
+        7: SavedSim(sim_id=7, first_name="Seven"),
+    }
+    sims[3].fiance_id = 1
+    sims[1].fiance_id = 3
+
+    _link_special_relationships(sims, catalog)
+
+    assert sims[1].steady_ids == [2]
+    assert sims[1].steady_names == ["Two"]
+    assert sims[1].fiance_name == "Three"
+    assert sims[4].fiance_id == 5
+    assert sims[4].fiance_name == "Five"
+    assert sims[6].spouse_id == 7
+    assert sims[6].spouse_name == "Seven"

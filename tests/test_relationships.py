@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sims4_sdk.catalog import extract_relationship_tuning
+from sims4_sdk.catalog.relationships import GLOBAL_MODULE
 from sims4_sdk.core import CombinedTuning
 
 XML = """<?xml version="1.0"?>
@@ -44,6 +45,17 @@ XML = """<?xml version="1.0"?>
           </L>
         </U>
       </L>
+    </C>
+  </M>
+  <M n="relationships.global_relationship_tuning">
+    <C n="RelationshipGlobalTuning">
+      <T n="STEADY_RELATIONSHIP_BIT">15825</T>
+      <T n="ENGAGEMENT_RELATIONSHIP_BIT">15816</T>
+      <T n="MARRIAGE_RELATIONSHIP_BIT">15822</T>
+    </C>
+    <C n="TropeGlobalTuning">
+      <L n="TROPES"><T>306293</T><T>310888</T></L>
+      <L n="ROMANCE_TROPES"><T>362476</T><T>362475</T></L>
     </C>
   </M>
   <M n="world.premade_sim_relationships">
@@ -89,6 +101,7 @@ def _extract():
         name: tuning for name in (
             "relationships.relationship_tracker_tuning",
             "world.premade_sim_relationships",
+            GLOBAL_MODULE,
         )
     }
     return extract_relationship_tuning(modules, entries)
@@ -130,3 +143,12 @@ def test_relationship_track_ranges() -> None:
     assert lovebirds.track_id == 16651
     assert lovebirds.min_value == 25
     assert lovebirds.max_value == 75
+
+
+def test_global_relationship_bits_and_tropes() -> None:
+    data = _extract()
+    assert data.steady_bit_id == 15825
+    assert data.engagement_bit_id == 15816
+    assert data.marriage_bit_id == 15822
+    assert data.family_trope_ids == [306293, 310888]
+    assert data.romance_trope_ids == [362476, 362475]

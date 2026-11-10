@@ -83,3 +83,46 @@ def test_premade_sim_derived_species_gender_occult() -> None:
     assert sim.species == "Dog"
     assert sim.gender == "MALE"
     assert sim.occult == "NoOccult"
+
+
+def test_premade_sim_gender_options() -> None:
+    def trait(name: str, type_: str = "GENDER_OPTIONS") -> Trait:
+        return Trait(
+            id=abs(hash(name)) & 0xFFFFFFFF,
+            name=name,
+            display_name=name,
+            description=None,
+            trait_type=type_,
+        )
+
+    sim = PremadeSim(
+        id=1,
+        name="premadeSimTemplate_Test",
+        first_name="Alex",
+        last_name="Test",
+        traits=[
+            trait("trait_GenderOptions_Frame_Feminine"),
+            trait("trait_GenderOptions_Clothing_WomensWear"),
+            trait("trait_GenderOptions_Toilet_Sitting"),
+            trait("trait_GenderOptions_Lactate_CanNot"),
+            trait("trait_GenderOptions_AttractedTo_Male"),
+            trait("trait_GenderOptions_AttractedTo_Female"),
+            trait("trait_GenderOptions_AttractedTo_NotMale"),
+            trait("trait_SexualOrientation_WooHooInterests_Female"),
+            trait("trait_GenderOptions_Sexuality_Exploring"),
+            trait("trait_GenderOptions_Pregnancy_CanNotImpregnate"),
+            trait("trait_GenderOptions_Pregnancy_CanBeImpregnated"),
+        ],
+    )
+
+    options = sim.gender_options
+    assert options.frame == "FEMININE"
+    assert options.clothing == "WOMENSWEAR"
+    assert options.toilet_use == "SITTING"
+    assert options.lactation == "CANNOT"
+    assert options.attracted_to == ["MALE", "FEMALE"]
+    assert options.not_attracted_to == ["MALE"]
+    assert options.woohoo_interests == ["FEMALE"]
+    assert options.sexuality == "EXPLORING"
+    assert options.can_impregnate is False
+    assert options.can_be_impregnated is True

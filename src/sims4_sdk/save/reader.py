@@ -29,6 +29,7 @@ from .models import (
     SavedMilestone,
     SavedRelationship,
     SavedRelationshipTrack,
+    SavedRelationshipTrope,
     SavedSim,
     SavedSkill,
     SavedStatistic,
@@ -137,6 +138,7 @@ def _build_save(path: Path, root: Mapping[str, Any], catalog: Optional[Catalog])
                 sim.household_name = household.name
 
     _link_family(sims)
+    _link_special_relationships(sims, catalog)
 
     return SaveFile(
         path=path,
@@ -213,9 +215,9 @@ def sim_from_dict(
     relationships = _relationships(
         attributes.get("relationship_tracker", {}) or {}, catalog, names
     )
-    parents, siblings, extended = _family_relations(
-        attributes.get("genealogy_tracker", {}) or {}, names
-    )
+    genealogy = attributes.get("genealogy_tracker", {}) or {}
+    parents, siblings, extended = _family_relations(genealogy, names)
+    tropes = _relationship_tropes(genealogy, catalog, names)
 
     event_data = attributes.get("event_data_tracker", {}) or {}
     milestone_tracker = gameplay.get("developmental_milestone_tracker", {}) or {}
@@ -265,6 +267,7 @@ def sim_from_dict(
         relationships=relationships,
         spouse_id=data.get("significant_other") or None,
         fiance_id=data.get("fiance") or None,
+        tropes=tropes,
         parents=parents,
         siblings=siblings,
         extended_family=extended,
@@ -409,6 +412,44 @@ def _family_relations(
     return parents, siblings, extended
 
 
+def _relationship_tropes(
+    raw: Mapping[str, Any],
+    catalog: Optional[Catalog],
+    names: Mapping[int, str],
+) -> list[SavedRelationshipTrope]:
+    """Decode family/romance dynamics stored in the genealogy tracker."""
+    tropes: list[SavedRelationshipTrope] = []
+    for entry in raw.get("relationship_tropes", []) or []:
+        target_id = entry.get("sim_id", 0)
+        trope_id = entry.get("trope_id", 0)
+        bit = catalog.relationship_bits.get(trope_id) if catalog else None
+        kind = "UNKNOWN"
+        if catalog is not None:
+            if trope_id in catalog.family_trope_ids:
+                kind = "FAMILY"
+            elif trope_id in catalog.romance_trope_ids:
+                kind = "ROMANCE"
+        if kind == "UNKNOWN" and bit is not None:
+            if bit.name.startswith("familyTrope"):
+                kind = "FAMILY"
+            elif bit.name.startswith("romanceTrope"):
+                kind = "ROMANCE"
+        tropes.append(
+            SavedRelationshipTrope(
+                sim_id=target_id,
+                trope_id=trope_id,
+                sim_name=names.get(target_id),
+                trope_name=(
+                    (bit.display_name or bit.name)
+                    if bit is not None
+                    else (catalog.tuning_names.get(trope_id) if catalog else None)
+                ),
+                kind=kind,
+            )
+        )
+    return tropes
+
+
 def _milestones(raw: Mapping[str, Any], catalog: Optional[Catalog]) -> list[SavedMilestone]:
     milestones: list[SavedMilestone] = []
     for entry in [*(raw.get("active_milestones", []) or []), *(raw.get("archived_milestones", []) or [])]:
@@ -532,6 +573,65 @@ def _link_family(sims: Mapping[int, SavedSim]) -> None:
                         kind="SIBLING", sim_id=candidate.sim_id, name=candidate.full_name
                     )
                 )
+
+
+def _link_special_relationships(
+    sims: Mapping[int, SavedSim],
+    catalog: Optional[Catalog],
+) -> None:
+    """Fill fiancé/steady data and derive missing links from relationship bits."""
+    steady_bit = catalog.steady_bit_id if catalog is not None else None
+    engagement_bit = catalog.engagement_bit_id if catalog is not None else None
+    marriage_bit = catalog.marriage_bit_id if catalog is not None else None
+
+    def bits_of(sim: SavedSim, target_id: int) -> list[int]:
+        for relationship in sim.relationships:
+            if relationship.target_id == target_id:
+                return relationship.bits
+        return []
+
+    def has_bit(sim: SavedSim, target_id: int, bit_id: Optional[int]) -> bool:
+        return bit_id is not None and bit_id in bits_of(sim, target_id)
+
+    for sim in sims.values():
+        if sim.spouse_id and sim.spouse_id in sims:
+            sim.spouse_name = sims[sim.spouse_id].full_name
+        if sim.fiance_id and sim.fiance_id in sims:
+            sim.fiance_name = sims[sim.fiance_id].full_name
+            fiance = sims[sim.fiance_id]
+            if fiance.fiance_id is None:
+                fiance.fiance_id = sim.sim_id
+                fiance.fiance_name = sim.full_name
+
+        # Steady partners are not stored in their own field; they are the Sims
+        # whose relationship entry carries the steady relationship bit.
+        steady_ids: list[int] = []
+        for relationship in sim.relationships:
+            target_id = relationship.target_id
+            if target_id == sim.sim_id or target_id not in sims:
+                continue
+            if steady_bit is not None and steady_bit in relationship.bits:
+                if target_id not in steady_ids:
+                    steady_ids.append(target_id)
+        sim.steady_ids = steady_ids
+        sim.steady_names = [sims[target_id].full_name for target_id in steady_ids]
+
+        if marriage_bit is not None:
+            if sim.spouse_id is None:
+                for target_id in sims:
+                    if target_id != sim.sim_id and has_bit(sim, target_id, marriage_bit):
+                        sim.spouse_id = target_id
+                        sim.spouse_name = sims[target_id].full_name
+                        break
+            elif sim.spouse_name is None and sim.spouse_id in sims:
+                sim.spouse_name = sims[sim.spouse_id].full_name
+
+        if engagement_bit is not None and sim.fiance_id is None:
+            for target_id in sims:
+                if target_id != sim.sim_id and has_bit(sim, target_id, engagement_bit):
+                    sim.fiance_id = target_id
+                    sim.fiance_name = sims[target_id].full_name
+                    break
 
 
 def _as_list(value: Any) -> list[Any]:

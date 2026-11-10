@@ -68,14 +68,21 @@ forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder
 - **Relationship bits**.
 - **Pre-made Sims** — names, traits, likes/dislikes baked into SimInfo, skills,
   explicit aspiration/career level, dynasty, occult, household membership.
-- **Pre-made households** — members and spouse/family relationships.
-- **Starter-save households** — the older-pack pre-mades that have no tuning
+- **Pre-made households** - members, funds and spouse/family relationships.
+- **Gender options / preferences** - frame, clothing, toilet use, lactation,
+  attraction and WooHoo interests, exploring status and impregnation, derived from
+  the `trait_GenderOptions_*` / `trait_SexualOrientation_*` traits.
+- **Starter-save households** - the older-pack pre-mades that have no tuning
   template (BFF, Pancakes, Caliente, Roomies, Spencer-Kim-Lewis, …), including
   funds, gender, age, aspiration track, career **and starting level**, raw skill
   values, spouse and parent/grandparent genealogy.
-- **Initial relationship values** — household defaults (Roommate 15, Family 45,
+- **Initial relationship values** - household defaults (Roommate 15, Family 45,
   Spouse romance 75), cross-household pairs from `PremadeSimRelationships`, and
   the value interval of relationship bits.
+- **Steady / fiancé / marriage bits** - the bit IDs the engine uses for steady,
+  engaged and married states, plus the family/romance trope ID lists
+  (`Catalog.steady_bit_id`, `.engagement_bit_id`, `.marriage_bit_id`,
+  `.family_trope_ids`, `.romance_trope_ids`).
 - **Lots** — lot names/descriptions and the pre-made household occupying them.
 - **Pre-made ancestors** — names, gender, death traits, thumbnails.
 
@@ -84,11 +91,13 @@ forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder
 - **Save metadata** — slot name, timestamps, active household, account, version.
 - **Live Sims** — age, gender, species, occult, traits, likes/dislikes, skills,
   careers, aspiration track, pregnancy, degrees, death, statistics, favorites.
-- **Family** — spouse/fiancé, parents, children, siblings, grandparents and other
-  genealogy relations.
-- **Milestones** — developmental milestones and completed aspiration objectives.
-- **Relationships** — per-Sim relationship tracker entries when present (bits,
-  friendship/romance tracks, target names).
+- **Family** - spouse/fiancé/steady, parents, children, siblings, grandparents
+  and other genealogy relations, including family/romance relationship tropes.
+- **Gender options / preferences** - same `GenderOptions` view as static Sims.
+- **Milestones** - developmental milestones and completed aspiration objectives.
+- **Relationships** - per-Sim relationship tracker entries when present (bits,
+  friendship/romance tracks, target names). Steady partners are derived from the
+  steady relationship bit because the save has no dedicated field.
 - **Households and zones** — members, funds, home zone, premade template IDs.
 - **Tray/Gallery** — `.trayitem` metadata plus full Sims from `.householdbinary`,
   using the same `SavedSim` model.

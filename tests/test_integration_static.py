@@ -313,6 +313,42 @@ def test_relationship_defaults_and_values(static_data) -> None:
     assert sachiko_rel.romance is None
 
 
+def test_global_relationship_tuning(static_data) -> None:
+    catalog = static_data.catalog
+
+    assert catalog.steady_bit_id == 15825
+    assert catalog.engagement_bit_id == 15816
+    assert catalog.marriage_bit_id == 15822
+    assert set(catalog.family_trope_ids) == {
+        306293,
+        306291,
+        306294,
+        310888,
+        306282,
+        306279,
+        306356,
+        306357,
+        306289,
+        306296,
+    }
+    assert set(catalog.romance_trope_ids) == {362476, 362478, 362477, 362475}
+    assert catalog.is_family_trope(306293)
+    assert catalog.is_romance_trope(362476)
+    assert not catalog.is_family_trope(362476)
+
+
+def test_premade_gender_options(static_data) -> None:
+    mortimer = static_data.sim("Mortimer Goth")
+    assert mortimer is not None
+
+    options = mortimer.gender_options
+    assert options.frame == "MASCULINE"
+    assert options.clothing == "MENSWEAR"
+    assert options.toilet_use == "STANDING"
+    assert options.can_impregnate is True
+    assert options.can_be_impregnated is False
+
+
 def test_relationship_track_ranges(static_data) -> None:
     catalog = static_data.catalog
 

@@ -35,6 +35,7 @@ from .values import TuningView
 
 __all__ = [
     "DEFAULTS_MODULE",
+    "GLOBAL_MODULE",
     "RELATIONSHIPS_MODULE",
     "RELATIONSHIP_MODULES",
     "FRIENDSHIP_TRACK_ID",
@@ -46,7 +47,8 @@ __all__ = [
 
 DEFAULTS_MODULE = "relationships.relationship_tracker_tuning"
 RELATIONSHIPS_MODULE = "world.premade_sim_relationships"
-RELATIONSHIP_MODULES = (DEFAULTS_MODULE, RELATIONSHIPS_MODULE)
+GLOBAL_MODULE = "relationships.global_relationship_tuning"
+RELATIONSHIP_MODULES = (DEFAULTS_MODULE, RELATIONSHIPS_MODULE, GLOBAL_MODULE)
 
 FRIENDSHIP_TRACK_ID = 16650
 ROMANCE_TRACK_ID = 16651
@@ -63,11 +65,17 @@ class RelationshipTuningData:
     track_ranges: dict[int, RelationshipTrackValue] = field(
         default_factory=dict, repr=False
     )
+    steady_bit_id: Optional[int] = None
+    engagement_bit_id: Optional[int] = None
+    marriage_bit_id: Optional[int] = None
+    family_trope_ids: list[int] = field(default_factory=list)
+    romance_trope_ids: list[int] = field(default_factory=list)
 
     def __repr__(self) -> str:
         return (
             f"RelationshipTuningData(defaults={len(self.defaults)}, "
-            f"pairs={len(self.pairs)}, ranges={len(self.track_ranges)})"
+            f"pairs={len(self.pairs)}, ranges={len(self.track_ranges)}, "
+            f"tropes={len(self.family_trope_ids) + len(self.romance_trope_ids)})"
         )
 
 
@@ -421,6 +429,42 @@ def has_interval_data(element: TuningElement) -> bool:
 
 
 # ----------------------------------------------------------------------
+# global relationship tuning (steady / fiance / marriage / tropes)
+# ----------------------------------------------------------------------
+def _parse_global(ct: CombinedTuning, data: RelationshipTuningData) -> None:
+    module = ct.find_module(GLOBAL_MODULE)
+    if module is None:
+        return
+
+    relationship = _class_node(module, "RelationshipGlobalTuning")
+    if relationship is not None:
+        fields = {child.get("n"): child for child in relationship}
+        data.steady_bit_id = _integer(ct, fields.get("STEADY_RELATIONSHIP_BIT"))
+        data.engagement_bit_id = _integer(
+            ct, fields.get("ENGAGEMENT_RELATIONSHIP_BIT")
+        )
+        data.marriage_bit_id = _integer(ct, fields.get("MARRIAGE_RELATIONSHIP_BIT"))
+
+    tropes = _class_node(module, "TropeGlobalTuning")
+    if tropes is not None:
+        fields = {child.get("n"): child for child in tropes}
+        data.family_trope_ids = _list_ids(ct, fields.get("TROPES"))
+        data.romance_trope_ids = _list_ids(ct, fields.get("ROMANCE_TROPES"))
+
+
+def _list_ids(ct: CombinedTuning, element) -> list[int]:
+    values = _resolve(ct, element)
+    if values is None:
+        return []
+    ids: list[int] = []
+    for item in values:
+        number = _integer(ct, item)
+        if number is not None and number not in ids:
+            ids.append(number)
+    return ids
+
+
+# ----------------------------------------------------------------------
 # entry point
 # ----------------------------------------------------------------------
 def extract_relationship_tuning(
@@ -440,6 +484,10 @@ def extract_relationship_tuning(
     pairs_ct = modules.get(RELATIONSHIPS_MODULE)
     if pairs_ct is not None:
         data.pairs = _parse_pairs(pairs_ct, entries, strings)
+
+    global_ct = modules.get(GLOBAL_MODULE)
+    if global_ct is not None:
+        _parse_global(global_ct, data)
 
     data.track_ranges = _parse_track_ranges(entries, strings, track_sources)
 

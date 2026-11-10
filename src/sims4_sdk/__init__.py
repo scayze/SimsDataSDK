@@ -115,7 +115,7 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 __all__ = [
     "__version__",

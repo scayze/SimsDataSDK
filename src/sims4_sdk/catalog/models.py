@@ -8,7 +8,7 @@ with the game.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Optional
 
 __all__ = [
     "TuningSource",
@@ -26,6 +26,7 @@ __all__ = [
     "RelationshipTrackValue",
     "RelationshipDefault",
     "PremadeRelationship",
+    "GenderOptions",
     "Catalog",
 ]
 
@@ -274,6 +275,94 @@ class PremadeRelationship:
         )
 
 
+_GENDER_SINGLE = {
+    "trait_genderoptions_frame_masculine": ("frame", "MASCULINE"),
+    "trait_genderoptions_frame_feminine": ("frame", "FEMININE"),
+    "trait_genderoptions_clothing_menswear": ("clothing", "MENSWEAR"),
+    "trait_genderoptions_clothing_womenswear": ("clothing", "WOMENSWEAR"),
+    "trait_genderoptions_toilet_standing": ("toilet_use", "STANDING"),
+    "trait_genderoptions_toilet_sitting": ("toilet_use", "SITTING"),
+    "trait_genderoptions_lactate_can": ("lactation", "CAN"),
+    "trait_genderoptions_lactate_cannot": ("lactation", "CANNOT"),
+    "trait_genderoptions_sexuality_exploring": ("sexuality", "EXPLORING"),
+    "trait_genderoptions_sexuality_notexploring": ("sexuality", "NOT_EXPLORING"),
+    "trait_gendermale": ("gender", "MALE"),
+    "trait_genderfemale": ("gender", "FEMALE"),
+}
+
+_GENDER_LISTS = {
+    "trait_genderoptions_attractedto_male": ("attracted_to", "MALE"),
+    "trait_genderoptions_attractedto_female": ("attracted_to", "FEMALE"),
+    "trait_genderoptions_attractedto_notmale": ("not_attracted_to", "MALE"),
+    "trait_genderoptions_attractedto_notfemale": ("not_attracted_to", "FEMALE"),
+    "trait_sexualorientation_woohoointerests_male": ("woohoo_interests", "MALE"),
+    "trait_sexualorientation_woohoointerests_female": ("woohoo_interests", "FEMALE"),
+    "trait_sexualorientation_woohoointerests_notmale": (
+        "not_woohoo_interests",
+        "MALE",
+    ),
+    "trait_sexualorientation_woohoointerests_notfemale": (
+        "not_woohoo_interests",
+        "FEMALE",
+    ),
+}
+
+_GENDER_BOOLS = {
+    "trait_genderoptions_pregnancy_canimpregnate": ("can_impregnate", True),
+    "trait_genderoptions_pregnancy_cannotimpregnate": ("can_impregnate", False),
+    "trait_genderoptions_pregnancy_canbeimpregnated": ("can_be_impregnated", True),
+    "trait_genderoptions_pregnancy_cannot_beimpregnated": (
+        "can_be_impregnated",
+        False,
+    ),
+}
+
+
+@dataclass
+class GenderOptions:
+    """Structured view of the ``trait_GenderOptions_*`` trait family."""
+
+    gender: Optional[str] = None
+    frame: Optional[str] = None
+    clothing: Optional[str] = None
+    toilet_use: Optional[str] = None
+    lactation: Optional[str] = None
+    attracted_to: list[str] = field(default_factory=list)
+    not_attracted_to: list[str] = field(default_factory=list)
+    woohoo_interests: list[str] = field(default_factory=list)
+    not_woohoo_interests: list[str] = field(default_factory=list)
+    sexuality: Optional[str] = None
+    can_impregnate: Optional[bool] = None
+    can_be_impregnated: Optional[bool] = None
+
+    @classmethod
+    def from_traits(cls, traits: Iterable["Trait"]) -> "GenderOptions":
+        options = cls()
+        for trait in traits:
+            key = trait.name.casefold()
+            single = _GENDER_SINGLE.get(key)
+            if single is not None:
+                setattr(options, single[0], single[1])
+                continue
+            listed = _GENDER_LISTS.get(key)
+            if listed is not None:
+                values = getattr(options, listed[0])
+                if listed[1] not in values:
+                    values.append(listed[1])
+                continue
+            boolean = _GENDER_BOOLS.get(key)
+            if boolean is not None:
+                setattr(options, boolean[0], boolean[1])
+        return options
+
+    def __repr__(self) -> str:
+        return (
+            f"GenderOptions(gender={self.gender!r}, frame={self.frame!r}, "
+            f"clothing={self.clothing!r}, attracted_to={self.attracted_to}, "
+            f"woohoo_interests={self.woohoo_interests})"
+        )
+
+
 @dataclass
 class SkillLevel:
     """A skill value assigned to a pre-made Sim.
@@ -312,6 +401,11 @@ class Catalog:
     relationship_track_ranges: dict[int, RelationshipTrackValue] = field(
         default_factory=dict, repr=False
     )
+    steady_bit_id: Optional[int] = None
+    engagement_bit_id: Optional[int] = None
+    marriage_bit_id: Optional[int] = None
+    family_trope_ids: list[int] = field(default_factory=list)
+    romance_trope_ids: list[int] = field(default_factory=list)
     strings: dict[int, str] = field(default_factory=dict)
     tuning_names: dict[int, str] = field(default_factory=dict, repr=False)
     tuning_classes: dict[int, str] = field(default_factory=dict, repr=False)
@@ -419,6 +513,12 @@ class Catalog:
             ):
                 return relationship
         return None
+
+    def is_family_trope(self, bit_id: int) -> bool:
+        return bit_id in self.family_trope_ids
+
+    def is_romance_trope(self, bit_id: int) -> bool:
+        return bit_id in self.romance_trope_ids
 
     def resolve_string(self, value: Optional[str]) -> Optional[str]:
         """Resolve a ``0x...`` localization key against the merged STBL."""
