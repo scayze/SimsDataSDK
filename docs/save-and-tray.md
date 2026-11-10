@@ -83,6 +83,12 @@ type-`0x00000006` “LDNB” persistence chunks rather than in `SaveGameData`. T
 chunks are not decoded yet. Such saves still expose spouse, family, traits,
 careers, skills, milestones, and all other per-Sim data.
 
+The *initial* friendship/romance values are not authored per save; they come from
+tuning (`DefaultRelationshipInHousehold.RelationshipSetupMap` and
+`PremadeSimRelationships.RELATIONSHIP_MAP`). The save only records how those
+values have changed through play. See
+[`binary-formats.md`](binary-formats.md#module-level-tuning-blocks-and-initial-relationship-values).
+
 ## Tray files
 
 | File | Contents |

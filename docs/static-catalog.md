@@ -159,6 +159,10 @@ household ID.
   explicit aspiration and career level, dynasty, occult, pregnancy, gender and
   age (from starter-save resources), aspiration track, career track, lots and
   lot↔household links.
+- **In tuning, not yet exposed:** the initial relationship *values*
+  (`DefaultRelationshipInHousehold` and `PremadeSimRelationships` module blocks).
+  The relationship bits and spouse/parent links are extracted; the numeric
+  friendship/romance defaults are documented but not folded into `Catalog`.
 - **Template-only:** some newer-pack Sims (EP19+) do not pin an aspiration,
   career, gender or age in tuning and have no starter-save resource; the field
   is `None` rather than guessed.

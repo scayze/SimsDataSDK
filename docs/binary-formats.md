@@ -255,6 +255,53 @@ Packages differ in how much they fill in: EP02–EP09-era resources carry names,
 while some later ones (for example EP10) leave the name strings empty and are
 meant to be paired with the tuning template, so the SDK falls back to positional
 matching by household name.
+
+## Module-level tuning blocks and initial relationship values
+
+`CombinedTuning` exposes the `<I>` elements, but the game also ships
+module-level `<M n="module">` blocks. Two of them define the starting
+relationship values, so those values are **tuning data, not hardcoded in the
+engine**. They are reachable through `CombinedTuning.root` and the shared
+`<g>` reference table; the SDK does not fold them into `Catalog` yet.
+
+### `relationships.relationship_tracker_tuning`
+
+`DefaultRelationshipInHousehold.RelationshipSetupMap` maps the genealogy link
+between two household members to default track values:
+
+| Link | Track | Value |
+| --- | --- | ---: |
+| Roommate | `LTR_Friendship_Main` | 15 |
+| FamilyMember | `LTR_Friendship_Main` | 45 |
+| Spouse | `LTR_Romance_Main` | 75 |
+| Fiance | `LTR_Romance_Main` | 75 |
+| Steady | `LTR_Romance_Main` | 40 |
+| Pet owner / owned | `LTR_SimToPet_Friendship_Main` | 33 |
+| Pet ↔ pet | `LTR_PetToPet_Friendship_Main` | 33 |
+
+`HouseholdTemplate.set_household_relationships_by_tags` calls
+`household.set_default_relationships()`, which applies the family/roommate
+default first and then the spouse/fiancé/steady default. A spouse therefore ends
+up with **friendship 45 + romance 75**; a parent/child has **friendship 45**.
+
+### `world.premade_sim_relationships`
+
+`PremadeSimRelationships.RELATIONSHIP_MAP` maps pairs of pre-made Sims in
+*different* households to a `LootActions` resource. The loot sets the values:
+
+| Loot | Friendship | Romance |
+| --- | ---: | ---: |
+| `loot_Relationship_Starting_NPC_GoodFriend` | 50 | — |
+| `loot_Relationship_Starting_NPC_SignificantOther` | 50 | 50 |
+| `loot_Relationship_Starting_NPC_CloseFriends` | 60 | — |
+| `loot_Relationship_Starting_NPC_Lovebirds` | 35 | 25 |
+| `loot_Relationship_Starting_NPC_VeryAwkward` | 10 | -60 |
+| `loot_Relationship_Starting_NPC_Despised` | -70 | — |
+
+Pack-specific `loot_PremadesSetup_*` actions (for example EP10) combine one of
+these with a sentiment loot. This is how cross-household pairs such as Megumi
+Ito ↔ Sachiko Nishidake (60) or Megumi ↔ Kado Akiyama (10 / -60) get their
+values.
 Verified on the BFF, Goth, Pancakes, Roomies, Spencer-Kim-Lewis and Caliente
 households against the same Sims in a real save.
 
