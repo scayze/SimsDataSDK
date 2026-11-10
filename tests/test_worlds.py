@@ -66,6 +66,10 @@ def _member(
         gameplay += _bytes_field(10, _bytes_field(1, packed))
     if career is not None:
         entry = _varint_field(1, career[0]) + _varint_field(2, career[1])
+        if len(career) > 2:
+            entry += _varint_field(3, career[2])
+        if len(career) > 3:
+            entry += _varint_field(4, career[3])
         gameplay += _bytes_field(12, _bytes_field(1, entry))
     if skills:
         entries = b"".join(
@@ -119,7 +123,7 @@ MEMBERS = [
         age=16,
         traits=(27086, 34318, 16841),
         skills=((16704, 100.0), (16703, 1540.0)),
-        career=(27932, 32475),
+        career=(27932, 32475, 1, 2),
         aspiration=25441,
     ),
     _member(
@@ -154,6 +158,8 @@ def test_parse_premade_household_v0() -> None:
     assert travis.aspiration_track_id == 25441
     assert travis.career_id == 27932
     assert travis.career_track_id == 32475
+    assert travis.career_track_level == 1
+    assert travis.career_display_level == 2
     assert travis.skills == [(16704, 100.0), (16703, 1540.0)]
     assert travis.body_blend == "0.1,0.0,"
 

@@ -48,7 +48,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-3"
+CACHE_VERSION = "step2-4"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")

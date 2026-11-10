@@ -88,6 +88,21 @@ class LotRecord:
 
 
 @dataclass
+class StarterCareer:
+    """One career entry inside a ``0xB3C438F0`` household resource.
+
+    ``track_level`` is the 0-based index into the career track's level list and
+    matches ``SavedCareer.track_level``; ``display_level`` is the 1-based number
+    shown in-game.
+    """
+
+    career_id: int
+    track_id: int
+    track_level: Optional[int] = None
+    display_level: Optional[int] = None
+
+
+@dataclass
 class StarterMember:
     """One Sim inside a ``0xB3C438F0`` household resource."""
 
@@ -101,7 +116,9 @@ class StarterMember:
     aspiration_track_id: Optional[int] = None
     career_id: Optional[int] = None
     career_track_id: Optional[int] = None
-    careers: list[tuple[int, int]] = field(default_factory=list)
+    career_track_level: Optional[int] = None
+    career_display_level: Optional[int] = None
+    careers: list[StarterCareer] = field(default_factory=list)
     skills: list[tuple[int, float]] = field(default_factory=list)
 
     @property
@@ -393,7 +410,11 @@ def _parse_gameplay(data: bytes, member: StarterMember) -> None:
 
     member.trait_ids = _dedupe(member.trait_ids)
     if member.careers:
-        member.career_id, member.career_track_id = member.careers[0]
+        first = member.careers[0]
+        member.career_id = first.career_id
+        member.career_track_id = first.track_id
+        member.career_track_level = first.track_level
+        member.career_display_level = first.display_level
 
 
 def _packed_traits(data: bytes) -> list[int]:
@@ -421,13 +442,18 @@ def _submessages(data: bytes) -> list[bytes]:
     return [data]
 
 
-def _parse_career(data: bytes) -> Optional[tuple[int, int]]:
+def _parse_career(data: bytes) -> Optional[StarterCareer]:
     fields = _fields(data, "career")
     career_id = _varint(fields, 1)
     track_id = _varint(fields, 2)
     if career_id is None or track_id is None:
         return None
-    return career_id, track_id
+    return StarterCareer(
+        career_id=career_id,
+        track_id=track_id,
+        track_level=_varint(fields, 3),
+        display_level=_varint(fields, 4),
+    )
 
 
 def _parse_skill(data: bytes) -> Optional[tuple[int, float]]:

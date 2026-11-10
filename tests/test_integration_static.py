@@ -173,6 +173,10 @@ def test_starter_save_household_bff(static_data) -> None:
     assert liberty.aspiration_track is not None
     assert liberty.aspiration_track.display_name == "Nerd Brain"
     assert liberty.career is not None
+    assert liberty.career_level is not None
+    assert liberty.career_level.title == "Module Cleaner"
+    assert liberty.career_track_level == 1
+    assert liberty.career_display_level == 2
     assert liberty.skills
     assert any(skill.value and skill.value > 100 for skill in liberty.skills)
 
@@ -202,6 +206,8 @@ def test_starter_hints_enrich_tuning_households(static_data) -> None:
     bella = static_data.sim("Bella Goth")
     assert bella is not None
     assert bella.gender == "FEMALE"
+    assert bella.career_level is not None
+    assert bella.career_level.title == "Intelligence Researcher"
 
 
 def test_lot_manifest(static_data) -> None:

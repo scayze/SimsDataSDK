@@ -221,14 +221,18 @@ field 1  message   household
       12   string   body/genetics float list
       30   message  gameplay
             10  message  { 1: packed trait IDs }
-            12  message  { 1: repeated { 1: career, 2: track } }
+            12  message  { 1: repeated { 1: career, 2: track, 3: track level, 4: display level } }
             13  message  { 1: repeated { 1: skill statistic, 2: float value } }
       34   varint   aspiration track ID
 ```
 
 The age also appears as a trait (`trait_youngAdult`, `trait_adult`, ...), which
-the SDK prefers.  Verified on the BFF, Goth, Pancakes, Roomies,
-Spencer-Kim-Lewis, Caliente and EP02–EP18 households with zero parse errors.
+the SDK prefers.  The career entry's field 3 is the 0-based track level (it
+matches the save's `SavedCareer.track_level`) and field 4 is the 1-based display
+level; indexing `CareerTrack.level_ids` with field 3 gives the exact starting
+job title (Quality Assurance, Module Cleaner, Intelligence Researcher, ...).
+Verified on the BFF, Goth, Pancakes, Roomies, Spencer-Kim-Lewis and Caliente
+households against the same Sims in a real save.
 
 ## Verified static extraction (base game + EP13)
 

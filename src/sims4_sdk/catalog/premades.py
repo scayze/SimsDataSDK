@@ -159,6 +159,10 @@ class PremadeSim:
     career: Optional[Career] = None
     career_track_id: Optional[int] = None
     career_track: Optional[CareerTrack] = None
+    #: Starting career level from a starter-save resource (0-based index and
+    #: 1-based in-game display level).
+    career_track_level: Optional[int] = None
+    career_display_level: Optional[int] = None
     #: Raw hints from starter-save household resources (``0xB3C438F0``).
     gender_hint: Optional[str] = None
     age_hint: Optional[str] = None
@@ -455,9 +459,20 @@ def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> No
     if sim.career_id is None and member.career_id:
         sim.career_id = member.career_id
         sim.career = catalog.careers.get(member.career_id)
+    if sim.career_track_id is None and member.career_track_id:
         sim.career_track_id = member.career_track_id
-        if member.career_track_id:
-            sim.career_track = catalog.career_tracks.get(member.career_track_id)
+        sim.career_track = catalog.career_tracks.get(member.career_track_id)
+    if sim.career_track_level is None and member.career_track_level is not None:
+        sim.career_track_level = member.career_track_level
+        sim.career_display_level = member.career_display_level
+    if (
+        sim.career_level_id is None
+        and sim.career_track is not None
+        and sim.career_track_level is not None
+        and 0 <= sim.career_track_level < len(sim.career_track.level_ids)
+    ):
+        sim.career_level_id = sim.career_track.level_ids[sim.career_track_level]
+        sim.career_level = catalog.career_levels.get(sim.career_level_id)
 
 
 def _starter_sim(
@@ -495,6 +510,13 @@ def _starter_sim(
         if member.career_track_id
         else None
     )
+    career_level_id = None
+    career_level = None
+    if career_track is not None and member.career_track_level is not None:
+        index = member.career_track_level
+        if 0 <= index < len(career_track.level_ids):
+            career_level_id = career_track.level_ids[index]
+            career_level = catalog.career_levels.get(career_level_id)
     aspiration_track = (
         catalog.aspiration_tracks.get(member.aspiration_track_id)
         if member.aspiration_track_id
@@ -517,6 +539,10 @@ def _starter_sim(
         career=career,
         career_track_id=member.career_track_id,
         career_track=career_track,
+        career_track_level=member.career_track_level,
+        career_display_level=member.career_display_level,
+        career_level_id=career_level_id,
+        career_level=career_level,
         gender_hint=member.gender,
         age_hint=member.age,
         body_blend=member.body_blend,

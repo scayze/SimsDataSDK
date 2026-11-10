@@ -114,7 +114,7 @@ Each household member message carries:
 | `8` | age flag (`4` child, `8` teen, `16` young adult, `32` adult, `64` elder) |
 | `12` | body/genetics float list |
 | `30.10` | packed trait IDs (the age trait is included) |
-| `30.12` | career + career track IDs |
+| `30.12` | career, career track, start level (`3` = 0-based track level, `4` = display level) |
 | `30.13` | skill statistic ID + raw skill value |
 | `34` | aspiration track ID |
 
@@ -126,7 +126,8 @@ The SDK merges these into the normal models:
   are attached to the tuning household instead;
 * otherwise a `PremadeHousehold` plus one `PremadeSim` per member is added, with
   `gender`, `age`, `personality_traits`, `aspiration_track`, `career`,
-  `career_track` and raw skill values (`SkillLevel.value`);
+  `career_track`, `career_level` (the exact starting job title), and raw skill
+  values (`SkillLevel.value`);
 * `PremadeBundle.lots` exposes the lot records and their household links.
 
 `PremadeSim.id` for these Sims is the 64-bit Sim ID from the resource, so it does
