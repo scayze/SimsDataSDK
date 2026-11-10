@@ -59,6 +59,8 @@ def _member(
     career: tuple[int, int] | None = None,
     aspiration: int | None = None,
     body_blend: str = "0.1,0.0,",
+    spouse_id: int | None = None,
+    relations: tuple[tuple[int, int], ...] = (),
 ) -> bytes:
     gameplay = b""
     if traits:
@@ -77,6 +79,14 @@ def _member(
             for skill_id, value in skills
         )
         gameplay += _bytes_field(13, entries)
+    if relations:
+        entries = b"".join(
+            _bytes_field(
+                1, _varint_field(1, relation_type) + _varint_field(2, target_id)
+            )
+            for relation_type, target_id in relations
+        )
+        gameplay += _bytes_field(14, entries)
 
     message = (
         _fixed64_field(1, sim_id)
@@ -86,6 +96,8 @@ def _member(
         + _varint_field(8, age)
         + _bytes_field(12, body_blend.encode("utf-8"))
     )
+    if spouse_id is not None:
+        message += _fixed64_field(15, spouse_id)
     if gameplay:
         message += _bytes_field(30, gameplay)
     if aspiration is not None:
@@ -173,6 +185,33 @@ def test_parse_premade_household_v2_header() -> None:
     record = parse_premade_household(_v2resource(payload), instance=1)
     assert record.name == "BFF"
     assert len(record.members) == 2
+
+
+def test_parse_premade_household_family() -> None:
+    mother = _member("Bella", "Goth", sim_id=2, gender=0x2000, age=32)
+    father = _member(
+        "Mortimer", "Goth", sim_id=3, gender=0x1000, age=32, spouse_id=2
+    )
+    child = _member(
+        "Cassandra",
+        "Goth",
+        sim_id=4,
+        gender=0x2000,
+        age=8,
+        relations=((0, 2), (1, 3), (3, 5)),
+    )
+    payload = _bytes_field(1, _household([mother, father, child], name="Goth", funds=45500))
+    record = parse_premade_household(_v0resource(payload), instance=2)
+
+    mortimer = record.members[1]
+    assert mortimer.spouse_id == 2
+
+    cassandra = record.members[2]
+    assert [(rel.kind, rel.target_id) for rel in cassandra.relations] == [
+        ("MOTHER", 2),
+        ("FATHER", 3),
+        ("MOTHERS_FATHER", 5),
+    ]
 
 
 def test_parse_premade_household_rejects_garbage() -> None:

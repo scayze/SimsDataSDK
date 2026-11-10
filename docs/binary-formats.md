@@ -219,12 +219,30 @@ field 1  message   household
        7   varint   gender flag   (0x1000 male, 0x2000 female)
        8   varint   age flag      (4 child, 8 teen, 16 YA, 32 adult, 64 elder)
       12   string   body/genetics float list
+      14   fixed64  spouse Sim ID (0 = none)
       30   message  gameplay
-            10  message  { 1: packed trait IDs }
+            10  message  { 1: packed trait IDs (including preference IDs) }
             12  message  { 1: repeated { 1: career, 2: track, 3: track level, 4: display level } }
             13  message  { 1: repeated { 1: skill statistic, 2: float value } }
+            14  message  { 1: repeated { 1: relation type, 2: ancestor Sim ID } }
       34   varint   aspiration track ID
 ```
+
+The genealogy field stores only **ancestors**, on the descendant's message:
+
+| Relation type | Name |
+| --- | --- |
+| `0` | MOTHER |
+| `1` | FATHER |
+| `2` | MOTHERS_MOM |
+| `3` | MOTHERS_FATHER |
+| `4` | FATHERS_MOM |
+| `5` | FATHERS_FATHER |
+| `7` | PARENT |
+| `13` | GRANDPARENT |
+
+Field `15` is the spouse.  Children and siblings are not stored separately; the
+SDK derives them from the parent links (and the save reader does the same).
 
 The age also appears as a trait (`trait_youngAdult`, `trait_adult`, ...), which
 the SDK prefers.  The career entry's field 3 is the 0-based track level (it

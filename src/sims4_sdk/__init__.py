@@ -41,8 +41,10 @@ from .catalog import (
     PremadeSim,
     RelationshipBit,
     SkillLevel,
+    StarterCareer,
     StarterHouseholdRecord,
     StarterMember,
+    StarterRelation,
     StaticData,
     Trait,
     WorldData,
@@ -110,7 +112,7 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 __all__ = [
     "__version__",
@@ -140,8 +142,10 @@ __all__ = [
     "WorldData",
     "WorldDataError",
     "LotRecord",
+    "StarterCareer",
     "StarterHouseholdRecord",
     "StarterMember",
+    "StarterRelation",
     "build_catalog",
     "build_static",
     "SimInfo",

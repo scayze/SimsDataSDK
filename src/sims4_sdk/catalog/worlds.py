@@ -30,13 +30,16 @@ from typing import Iterable, Mapping, Optional
 
 from ..core import DBPF, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID
 from ..installation import PackageInfo
+from ..save.enums import FAMILY_RELATION_NAMES
 from ..save.protobuf import ProtobufError, iter_fields
 from .models import TuningSource
 
 __all__ = [
     "WorldDataError",
     "LotRecord",
+    "StarterCareer",
     "StarterMember",
+    "StarterRelation",
     "StarterHouseholdRecord",
     "WorldData",
     "parse_lot_manifest",
@@ -103,6 +106,23 @@ class StarterCareer:
 
 
 @dataclass
+class StarterRelation:
+    """One genealogy entry (parent/grandparent) inside a household resource."""
+
+    relation_type: int
+    target_id: int
+
+    @property
+    def kind(self) -> str:
+        return FAMILY_RELATION_NAMES.get(
+            self.relation_type, f"UNKNOWN_{self.relation_type}"
+        )
+
+    def __repr__(self) -> str:
+        return f"StarterRelation({self.kind}, target=0x{self.target_id:016X})"
+
+
+@dataclass
 class StarterMember:
     """One Sim inside a ``0xB3C438F0`` household resource."""
 
@@ -112,6 +132,7 @@ class StarterMember:
     gender: Optional[str] = None
     age: Optional[str] = None
     body_blend: Optional[str] = None
+    spouse_id: Optional[int] = None
     trait_ids: list[int] = field(default_factory=list)
     aspiration_track_id: Optional[int] = None
     career_id: Optional[int] = None
@@ -120,6 +141,7 @@ class StarterMember:
     career_display_level: Optional[int] = None
     careers: list[StarterCareer] = field(default_factory=list)
     skills: list[tuple[int, float]] = field(default_factory=list)
+    relations: list[StarterRelation] = field(default_factory=list)
 
     @property
     def full_name(self) -> str:
@@ -379,6 +401,7 @@ def _parse_member(data: bytes, index: int) -> StarterMember:
         gender=_GENDER_FLAGS.get(_varint(fields, 7) or 0),
         age=_AGE_FLAGS.get(_varint(fields, 8) or 0),
         body_blend=_text(fields, 12),
+        spouse_id=_integer(fields, 15) or None,
         aspiration_track_id=_varint(fields, 34),
     )
 
@@ -407,6 +430,11 @@ def _parse_gameplay(data: bytes, member: StarterMember) -> None:
                 skill = _parse_skill(entry)
                 if skill is not None:
                     member.skills.append(skill)
+        elif number == 14 and wire == 2:
+            for entry in _submessages(value):
+                relation = _parse_relation(entry)
+                if relation is not None:
+                    member.relations.append(relation)
 
     member.trait_ids = _dedupe(member.trait_ids)
     if member.careers:
@@ -454,6 +482,15 @@ def _parse_career(data: bytes) -> Optional[StarterCareer]:
         track_level=_varint(fields, 3),
         display_level=_varint(fields, 4),
     )
+
+
+def _parse_relation(data: bytes) -> Optional[StarterRelation]:
+    fields = _fields(data, "family relation")
+    relation_type = _integer(fields, 1)
+    target_id = _integer(fields, 2)
+    if relation_type is None or target_id is None:
+        return None
+    return StarterRelation(relation_type=relation_type, target_id=target_id)
 
 
 def _parse_skill(data: bytes) -> Optional[tuple[int, float]]:
@@ -550,6 +587,20 @@ def _varint(fields, number: int) -> Optional[int]:
     for field_number, wire, value in fields:
         if field_number == number and wire == 0:
             return int(value)
+    return None
+
+
+def _integer(fields, number: int) -> Optional[int]:
+    """Read a field encoded as varint, fixed64 or fixed32."""
+    for field_number, wire, value in fields:
+        if field_number != number:
+            continue
+        if wire == 0:
+            return int(value)
+        if wire == 1 and len(value) == 8:
+            return int.from_bytes(value, "little")
+        if wire == 5 and len(value) == 4:
+            return int.from_bytes(value, "little")
     return None
 
 

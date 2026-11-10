@@ -210,6 +210,39 @@ def test_starter_hints_enrich_tuning_households(static_data) -> None:
     assert bella.career_level.title == "Intelligence Researcher"
 
 
+def test_starter_save_genealogy(static_data) -> None:
+    bob = static_data.sim("Bob Pancakes")
+    eliza = static_data.sim("Eliza Pancakes")
+    assert bob.spouse_name == "Eliza Pancakes"
+    assert eliza.spouse_name == "Bob Pancakes"
+    pancakes = static_data.household("Pancakes")
+    assert ("spouse", None) in {
+        (rel.kind, rel.family_relationship) for rel in pancakes.relationships
+    }
+
+    dina = static_data.sim("Dina Caliente")
+    nina = static_data.sim("Nina Caliente")
+    katrina = static_data.sim("Katrina Caliente")
+    assert dina.parents == ["Katrina Caliente"]
+    assert nina.parents == ["Katrina Caliente"]
+    assert "Dina Caliente" in katrina.children
+    assert "Nina Caliente" in katrina.children
+    assert "Nina Caliente" in dina.siblings
+    assert "Dina Caliente" in nina.siblings
+
+    olivia = static_data.sim("Olivia Spencer-Kim")
+    assert {"Alice Spencer-Kim", "Eric Lewis"} <= set(olivia.parents)
+    assert {"Dennis Kim", "Vivian Lewis"} <= set(olivia.extended_family)
+
+    # Goth uses tuning for the household relationships, but the starter
+    # resource still supplies the Sim-level family fields.
+    bella = static_data.sim("Bella Goth")
+    cassandra = static_data.sim("Cassandra Goth")
+    assert bella.spouse_name == "Mortimer Goth"
+    assert {"Bella Goth", "Mortimer Goth"} <= set(cassandra.parents)
+    assert "Alexander Goth" in cassandra.siblings
+
+
 def test_lot_manifest(static_data) -> None:
     lots = static_data.lots
     assert lots

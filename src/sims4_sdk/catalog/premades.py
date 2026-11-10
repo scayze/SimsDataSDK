@@ -153,6 +153,12 @@ class PremadeSim:
     pronouns: Optional[str] = None
     household_id: Optional[int] = None
     household_name: Optional[str] = None
+    spouse_id: Optional[int] = None
+    spouse_name: Optional[str] = None
+    parents: list[str] = field(default_factory=list)
+    children: list[str] = field(default_factory=list)
+    siblings: list[str] = field(default_factory=list)
+    extended_family: list[str] = field(default_factory=list)
     aspiration_track_id: Optional[int] = None
     aspiration_track: Optional[AspirationTrack] = None
     career_id: Optional[int] = None
@@ -411,6 +417,12 @@ def _merge_world(
                 existing = by_name.get(member.full_name.casefold())
                 if existing is not None:
                     _apply_hints(catalog, existing, member)
+            sim_by_tag = {
+                f"household_member_{index}": by_name[member.full_name.casefold()]
+                for index, member in enumerate(record.members, start=1)
+                if member.full_name.casefold() in by_name
+            }
+            _link_starter_family(None, record.members, sim_by_tag)
             continue
         if record.name and record.name.casefold() in taken_names:
             continue
@@ -423,24 +435,126 @@ def _merge_world(
         )
         taken_names.add(household.name.casefold())
 
+        sim_by_tag: dict[str, PremadeSim] = {}
         for index, member in enumerate(record.members, start=1):
+            tag = f"household_member_{index}"
             existing = by_name.get(member.full_name.casefold())
             if existing is None:
                 existing = _starter_sim(catalog, household, member, index)
                 sims[existing.id] = existing
                 by_name[member.full_name.casefold()] = existing
+            sim_by_tag[tag] = existing
             household.members.append(
                 HouseholdMember(
-                    tag=f"household_member_{index}",
+                    tag=tag,
                     sim_template_id=existing.id,
                     sim_name=existing.name,
                     full_name=existing.full_name,
                 )
             )
 
+        _link_starter_family(household, record.members, sim_by_tag)
         households[household.id] = household
 
     return aliases
+
+
+def _link_starter_family(
+    household: Optional[PremadeHousehold],
+    members: list[StarterMember],
+    sim_by_tag: dict[str, PremadeSim],
+) -> None:
+    """Attach spouse/parent/child/sibling links from ``0xB3C438F0``.
+
+    The resource stores the spouse in member field 15 and ancestor relations in
+    ``gameplay.14`` as ``(relation_type, target_sim_id)`` pairs.  ``None`` for
+    ``household`` means the tuning household already owns the relationship list
+    (Goth/Landgraabs/Zest); only the Sim-level fields are filled then.
+    """
+    tag_by_id = {
+        member.sim_id: f"household_member_{index}"
+        for index, member in enumerate(members, start=1)
+        if member.sim_id
+    }
+
+    spouse_pairs: set[frozenset[str]] = set()
+    for index, member in enumerate(members, start=1):
+        tag = f"household_member_{index}"
+        if not member.spouse_id:
+            continue
+        spouse_tag = tag_by_id.get(member.spouse_id)
+        if not spouse_tag:
+            continue
+        pair = frozenset((tag, spouse_tag))
+        if pair in spouse_pairs:
+            continue
+        spouse_pairs.add(pair)
+        if household is not None:
+            household.relationships.append(
+                HouseholdRelationship(kind="spouse", a_tag=tag, b_tag=spouse_tag)
+            )
+
+    parent_links: list[tuple[str, str, str]] = []
+    for index, member in enumerate(members, start=1):
+        child_tag = f"household_member_{index}"
+        for relation in member.relations:
+            parent_tag = tag_by_id.get(relation.target_id)
+            if not parent_tag:
+                continue
+            parent_links.append((parent_tag, child_tag, relation.kind))
+            if household is not None:
+                household.relationships.append(
+                    HouseholdRelationship(
+                        kind="family",
+                        a_tag=parent_tag,
+                        b_tag=child_tag,
+                        family_relationship=relation.kind,
+                    )
+                )
+
+    for parent_tag, child_tag, kind in parent_links:
+        parent = sim_by_tag.get(parent_tag)
+        child = sim_by_tag.get(child_tag)
+        if parent is None or child is None:
+            continue
+        if kind in ("MOTHER", "FATHER", "PARENT"):
+            _append_unique(child.parents, parent.full_name)
+            _append_unique(parent.children, child.full_name)
+        else:
+            _append_unique(child.extended_family, parent.full_name)
+
+    for relationship in spouse_pairs:
+        a_tag, b_tag = tuple(relationship)
+        a = sim_by_tag.get(a_tag)
+        b = sim_by_tag.get(b_tag)
+        if a is None or b is None:
+            continue
+        a.spouse_id = b.id
+        a.spouse_name = b.full_name
+        b.spouse_id = a.id
+        b.spouse_name = a.full_name
+
+    children_by_parent: dict[str, list[str]] = {}
+    for parent_tag, child_tag, kind in parent_links:
+        if kind in ("MOTHER", "FATHER", "PARENT"):
+            children_by_parent.setdefault(parent_tag, []).append(child_tag)
+
+    for child_tags in children_by_parent.values():
+        for child_tag in child_tags:
+            sim = sim_by_tag.get(child_tag)
+            if sim is None:
+                continue
+            for sibling_tag in child_tags:
+                if sibling_tag == child_tag:
+                    continue
+                sibling = sim_by_tag.get(sibling_tag)
+                if sibling is not None:
+                    _append_unique(sim.siblings, sibling.full_name)
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    if value and value not in values:
+        values.append(value)
 
 
 def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> None:

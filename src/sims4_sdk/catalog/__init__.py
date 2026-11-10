@@ -37,8 +37,10 @@ from .premades import (
 from .static import StaticData, build_static, load_static
 from .worlds import (
     LotRecord,
+    StarterCareer,
     StarterHouseholdRecord,
     StarterMember,
+    StarterRelation,
     WorldData,
     WorldDataError,
     collect_world_data,
@@ -86,8 +88,10 @@ __all__ = [
     "WorldData",
     "WorldDataError",
     "LotRecord",
+    "StarterCareer",
     "StarterHouseholdRecord",
     "StarterMember",
+    "StarterRelation",
     "parse_lot_manifest",
     "parse_premade_household",
     "collect_world_data",

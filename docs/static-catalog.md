@@ -113,9 +113,11 @@ Each household member message carries:
 | `7` | gender flag (`0x1000` male, `0x2000` female) |
 | `8` | age flag (`4` child, `8` teen, `16` young adult, `32` adult, `64` elder) |
 | `12` | body/genetics float list |
-| `30.10` | packed trait IDs (the age trait is included) |
+| `30.10` | packed trait IDs (the age trait is included; preference IDs share this list) |
 | `30.12` | career, career track, start level (`3` = 0-based track level, `4` = display level) |
 | `30.13` | skill statistic ID + raw skill value |
+| `30.14` | genealogy: repeated `(relation type, ancestor Sim ID)` — `0` mother, `1` father, `2/3` maternal grandparents, `4/5` paternal grandparents |
+| `15` | spouse Sim ID |
 | `34` | aspiration track ID |
 
 The SDK merges these into the normal models:
@@ -128,7 +130,17 @@ The SDK merges these into the normal models:
   `gender`, `age`, `personality_traits`, `aspiration_track`, `career`,
   `career_track`, `career_level` (the exact starting job title), and raw skill
   values (`SkillLevel.value`);
+* `spouse_id`/`spouse_name`, `parents`, `children`, `siblings` and
+  `extended_family` are filled from the resource's spouse field and genealogy
+  entries (children and siblings are derived). This also enriches tuning
+  households such as Goth, which have both a template and a starter resource;
 * `PremadeBundle.lots` exposes the lot records and their household links.
+
+Preferences are stored as preference IDs in the *same* trait list. They are
+present for households whose resource defines them (for example Caliente and
+the Martínez scenario) and for tuning-based pre-mades through SimInfo. Some
+older households — BFF, Pancakes, Roomies, Spencer-Kim-Lewis — define neither,
+so their likes/dislikes only appear once the save has assigned them.
 
 `PremadeSim.id` for these Sims is the 64-bit Sim ID from the resource, so it does
 not collide with 32-bit tuning instance IDs.

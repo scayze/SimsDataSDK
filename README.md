@@ -71,7 +71,8 @@ forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder
 - **Pre-made households** — members and spouse/family relationships.
 - **Starter-save households** — the older-pack pre-mades that have no tuning
   template (BFF, Pancakes, Caliente, Roomies, Spencer-Kim-Lewis, …), including
-  funds, gender, age, aspiration track, career and raw skill values.
+  funds, gender, age, aspiration track, career **and starting level**, raw skill
+  values, spouse and parent/grandparent genealogy.
 - **Lots** — lot names/descriptions and the pre-made household occupying them.
 - **Pre-made ancestors** — names, gender, death traits, thumbnails.
 
