@@ -145,6 +145,13 @@ so their likes/dislikes only appear once the save has assigned them.
 `PremadeSim.id` for these Sims is the 64-bit Sim ID from the resource, so it does
 not collide with 32-bit tuning instance IDs.
 
+Some packs (for example EP10) store the household resource under the **same name**
+as the tuning template but leave the member names empty.  In that case the SDK
+matches members by position, so the resource still supplies gender, age, body
+blend, spouse and funds.  When such a record is merged into a tuning household,
+lot references that point at the legacy resource ID are remapped to the tuning
+household ID.
+
 ### What is and is not available statically
 
 - **Available:** names, baked traits, preferences, household membership,

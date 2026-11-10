@@ -37,6 +37,12 @@ def _selected_packages(installation: Installation):
         for info in installation.packages
         if info.pack == "EP13" and info.path.name == "SimulationDeltaBuild0.package"
     )
+    selected.extend(
+        info
+        for info in installation.packages
+        if info.pack == "EP10"
+        and info.path.name in {"SimulationDeltaBuild0.package", "ClientDeltaBuild0.package"}
+    )
     return selected
 
 
@@ -243,6 +249,31 @@ def test_starter_save_genealogy(static_data) -> None:
     assert "Alexander Goth" in cassandra.siblings
 
 
+def test_ep10_household_uses_positional_hints(static_data) -> None:
+    """EP10 household resources have unnamed members; match them by position."""
+    megumi = static_data.sim("Megumi Ito")
+    assert megumi is not None
+    assert megumi.household_name == "premadeHouseholdTemplate_EP10_Affluent"
+    assert megumi.age == "YOUNGADULT"
+    assert megumi.gender == "FEMALE"
+    assert megumi.spouse_name == "Naoki Ito"
+    assert {"Kiyoshi Ito", "Nanami Ito"} <= set(megumi.children)
+    assert megumi.career is not None
+    assert megumi.career.name == "career_Adult_Business"
+    assert megumi.career_track is not None
+    assert megumi.career_track.display_name == "Business"
+    assert megumi.career_level is not None
+    assert megumi.career_level.title == "Senior Manager"
+
+    household = static_data.household("premadeHouseholdTemplate_EP10_Affluent")
+    assert household is not None
+    assert household.funds == 40000
+    lot = static_data.lot("2-5-1 Wakabamori")
+    assert lot is not None
+    assert lot.household_name == "Ito"
+    assert lot.household_id == household.id
+
+
 def test_lot_manifest(static_data) -> None:
     lots = static_data.lots
     assert lots
@@ -256,7 +287,7 @@ def test_lot_manifest(static_data) -> None:
     ophelia = static_data.lot("Ophelia Villa")
     assert ophelia is not None
     assert ophelia.household_name == "Goth"
-    assert ophelia.household_id is not None
+    assert ophelia.household_id == static_data.household("premadeHouseholdTemplate_Goth").id
 
 
 def test_cache_roundtrip(static_context) -> None:

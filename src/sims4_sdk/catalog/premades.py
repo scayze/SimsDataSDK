@@ -338,15 +338,17 @@ def build_premades(
                 sim.household_name = household.name
 
     if world is not None:
-        aliases = _merge_world(catalog, sims, households, world)
+        aliases, household_id_aliases = _merge_world(catalog, sims, households, world)
     else:
-        aliases = {}
+        aliases, household_id_aliases = {}, {}
+
+    _link_household_relationships(households.values(), sims)
 
     bundle = PremadeBundle(
         sims=sorted(sims.values(), key=lambda sim: sim.full_name.casefold()),
         households=sorted(households.values(), key=lambda hh: hh.name.casefold()),
         ancestors=sorted(ancestors.values(), key=lambda anc: anc.full_name.casefold()),
-        lots=_build_lots(catalog, world),
+        lots=_build_lots(catalog, world, household_id_aliases),
     )
     for sim in bundle.sims:
         bundle.sims_by_name.setdefault(sim.name, sim)
@@ -369,7 +371,7 @@ def _merge_world(
     sims: dict[int, PremadeSim],
     households: dict[int, PremadeHousehold],
     world: WorldData,
-) -> dict[str, PremadeHousehold]:
+) -> tuple[dict[str, PremadeHousehold], dict[int, int]]:
     """Merge ``0xB3C438F0`` households into the tuning-derived population.
 
     A legacy household is skipped when tuning already defines every one of its
@@ -377,10 +379,11 @@ def _merge_world(
     ``PremadeHouseholdTemplate`` and a starter-save resource).  Partially
     covered households link the existing tuning Sims and add the rest.
 
-    Returns aliases: the resource's household name for households that already
-    existed under a tuning name.
+    Returns the household-name aliases and a map from legacy resource instance
+    IDs to the household ID they were merged into (used to resolve lot links).
     """
     aliases: dict[str, PremadeHousehold] = {}
+    household_id_aliases: dict[int, int] = {}
     by_name: dict[str, PremadeSim] = {}
     for sim in sims.values():
         if sim.full_name:
@@ -391,6 +394,9 @@ def _merge_world(
         for household in households.values()
         if household.members
     }
+    households_by_name = {
+        household.name.casefold(): household for household in households.values()
+    }
     taken_names = {household.name.casefold() for household in households.values()}
 
     for record in sorted(
@@ -398,6 +404,32 @@ def _merge_world(
     ):
         if not record.members:
             continue
+
+        # Some packs (for example EP10) store the household resource under the
+        # same name as the tuning template but with unnamed members.  In that
+        # case the members line up by position; just attach the hints.
+        match = households_by_name.get(record.name.casefold()) if record.name else None
+        if (
+            match is not None
+            and match.members
+            and len(match.members) == len(record.members)
+        ):
+            for household_member, member in zip(match.members, record.members):
+                sim = sims.get(household_member.sim_template_id)
+                if sim is not None:
+                    _apply_hints(catalog, sim, member)
+            if match.funds is None and record.funds is not None:
+                match.funds = record.funds
+            sim_by_tag = {
+                member.tag: sims[member.sim_template_id]
+                for member in match.members
+                if member.sim_template_id in sims
+            }
+            _link_starter_family(None, record.members, sim_by_tag)
+            aliases.setdefault(record.name, match)
+            household_id_aliases[record.instance] = match.id
+            continue
+
         covered = sum(
             1 for member in record.members if member.full_name.casefold() in by_name
         )
@@ -413,6 +445,7 @@ def _merge_world(
                     match.funds = record.funds
                 if record.name:
                     aliases.setdefault(record.name, match)
+                household_id_aliases[record.instance] = match.id
             for member in record.members:
                 existing = by_name.get(member.full_name.casefold())
                 if existing is not None:
@@ -456,7 +489,7 @@ def _merge_world(
         _link_starter_family(household, record.members, sim_by_tag)
         households[household.id] = household
 
-    return aliases
+    return aliases, household_id_aliases
 
 
 def _link_starter_family(
@@ -555,6 +588,66 @@ def _link_starter_family(
 def _append_unique(values: list[str], value: str) -> None:
     if value and value not in values:
         values.append(value)
+
+
+def _link_household_relationships(
+    households,
+    sims: dict[int, PremadeSim],
+) -> None:
+    """Fill Sim-level spouse/parent/child/sibling fields from household links.
+
+    Works for tuning households (``PremadeHouseholdTemplate``) and for starter
+    households whose links were decoded from ``0xB3C438F0``.  In both formats
+    ``a_tag`` is the parent/spouse and ``b_tag`` is the child/spouse.
+    """
+    for household in households:
+        tag_to_sim: dict[str, PremadeSim] = {}
+        for member in household.members:
+            sim = sims.get(member.sim_template_id)
+            if sim is not None:
+                tag_to_sim[member.tag] = sim
+
+        for relationship in household.relationships:
+            if relationship.kind != "spouse":
+                continue
+            a = tag_to_sim.get(relationship.a_tag)
+            b = tag_to_sim.get(relationship.b_tag)
+            if a is None or b is None:
+                continue
+            a.spouse_id = b.id
+            a.spouse_name = b.full_name
+            b.spouse_id = a.id
+            b.spouse_name = a.full_name
+
+        children_by_parent: dict[str, list[str]] = {}
+        for relationship in household.relationships:
+            if relationship.kind != "family":
+                continue
+            parent = tag_to_sim.get(relationship.a_tag)
+            child = tag_to_sim.get(relationship.b_tag)
+            if parent is None or child is None:
+                continue
+            kind = relationship.family_relationship or "PARENT"
+            if kind in ("MOTHER", "FATHER", "PARENT"):
+                _append_unique(child.parents, parent.full_name)
+                _append_unique(parent.children, child.full_name)
+                children_by_parent.setdefault(relationship.a_tag, []).append(
+                    relationship.b_tag
+                )
+            elif kind not in ("SPOUSE", "FIANCE", "SIBLING"):
+                _append_unique(child.extended_family, parent.full_name)
+
+        for child_tags in children_by_parent.values():
+            for child_tag in child_tags:
+                sim = tag_to_sim.get(child_tag)
+                if sim is None:
+                    continue
+                for sibling_tag in child_tags:
+                    if sibling_tag == child_tag:
+                        continue
+                    sibling = tag_to_sim.get(sibling_tag)
+                    if sibling is not None:
+                        _append_unique(sim.siblings, sibling.full_name)
 
 
 def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> None:
@@ -683,9 +776,14 @@ def _household_display_name(name: str) -> Optional[str]:
     return None
 
 
-def _build_lots(catalog: Catalog, world: Optional[WorldData]) -> list[PremadeLot]:
+def _build_lots(
+    catalog: Catalog,
+    world: Optional[WorldData],
+    household_id_aliases: Optional[dict[int, int]] = None,
+) -> list[PremadeLot]:
     if world is None:
         return []
+    household_id_aliases = household_id_aliases or {}
     lots = [
         PremadeLot(
             id=record.instance,
@@ -701,7 +799,11 @@ def _build_lots(catalog: Catalog, world: Optional[WorldData]) -> list[PremadeLot
             household_description=catalog.strings.get(record.household_description_key)
             if record.household_description_key
             else None,
-            household_id=record.household_id,
+            household_id=household_id_aliases.get(
+                record.household_id, record.household_id
+            )
+            if record.household_id
+            else None,
             lot_name_key=record.lot_name_key,
             lot_description_key=record.lot_description_key,
             source=record.source,
@@ -739,6 +841,21 @@ def _build_sim(
         if aspiration_track is not None:
             aspiration_track_id = aspiration_id
     career_level_id = view.enabled_value("career_level")
+    career_level = catalog.career_levels.get(career_level_id) if career_level_id else None
+    career_track = None
+    career = None
+    if career_level is not None and career_level.track_id:
+        career_track = catalog.career_tracks.get(career_level.track_id)
+        if career_track is not None:
+            career = next(
+                (
+                    item
+                    for item in catalog.careers.values()
+                    if item.start_track_id == career_track.id
+                    or career_track.id in item.track_ids
+                ),
+                None,
+            )
 
     dynasty = _dynasty(view)
     occult_type, _occult_siminfo = _occult(view)
@@ -794,9 +911,11 @@ def _build_sim(
         aspiration_track_id=aspiration_track_id,
         aspiration_track=aspiration_track,
         career_level_id=career_level_id,
-        career_level=(
-            catalog.career_levels.get(career_level_id) if career_level_id else None
-        ),
+        career_level=career_level,
+        career_id=career.id if career is not None else None,
+        career=career,
+        career_track_id=career_track.id if career_track is not None else None,
+        career_track=career_track,
         dynasty=dynasty,
         occult_type=occult_type,
         pregnancy=pregnancy,

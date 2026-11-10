@@ -268,19 +268,24 @@ def _sdk_spouse(sim: Any) -> list[str]:
 
 
 def _sdk_children(sim: Any) -> list[str]:
-    return [
-        relation.name
-        for relation in getattr(sim, "children", []) or []
-        if getattr(relation, "name", None)
-    ]
+    return _relation_names(getattr(sim, "children", []))
 
 
 def _sdk_parents(sim: Any) -> list[str]:
-    return [
-        relation.name
-        for relation in getattr(sim, "parents", []) or []
-        if getattr(relation, "name", None)
-    ]
+    return _relation_names(getattr(sim, "parents", []))
+
+
+def _relation_names(relations: Any) -> list[str]:
+    """Accept both saved relations (objects) and static name lists."""
+    names: list[str] = []
+    for relation in relations or []:
+        if isinstance(relation, str):
+            name = relation
+        else:
+            name = getattr(relation, "name", None)
+        if name:
+            names.append(name)
+    return names
 
 
 def _sdk_skills(sim: Any) -> list[str]:

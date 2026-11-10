@@ -174,6 +174,17 @@ def test_sdk_career_uses_track_display_name() -> None:
     assert _sdk_career(sim) == "Astronaut"
 
 
+def test_sdk_family_accepts_name_lists() -> None:
+    from sims4_sdk.validation.reconcile import _sdk_children, _sdk_parents
+
+    sim = SimpleNamespace(
+        children=["Kiyoshi Ito", "Nanami Ito"],
+        parents=["Naoki Ito"],
+    )
+    assert _sdk_children(sim) == ["Kiyoshi Ito", "Nanami Ito"]
+    assert _sdk_parents(sim) == ["Naoki Ito"]
+
+
 def test_compare_catalog_coverage() -> None:
     coverage = compare_catalog(
         "traits",

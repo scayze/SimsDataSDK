@@ -249,6 +249,12 @@ the SDK prefers.  The career entry's field 3 is the 0-based track level (it
 matches the save's `SavedCareer.track_level`) and field 4 is the 1-based display
 level; indexing `CareerTrack.level_ids` with field 3 gives the exact starting
 job title (Quality Assurance, Module Cleaner, Intelligence Researcher, ...).
+Field 15 is the spouse and `gameplay.14` is the ancestor list.
+
+Packages differ in how much they fill in: EP02–EP09-era resources carry names,
+while some later ones (for example EP10) leave the name strings empty and are
+meant to be paired with the tuning template, so the SDK falls back to positional
+matching by household name.
 Verified on the BFF, Goth, Pancakes, Roomies, Spencer-Kim-Lewis and Caliente
 households against the same Sims in a real save.
 
