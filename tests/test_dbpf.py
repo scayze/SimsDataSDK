@@ -16,6 +16,28 @@ def _write(tmp_path, data: bytes) -> str:
     return str(path)
 
 
+def test_read_entry_without_index_parse(tmp_path) -> None:
+    payload = b"direct entry read " * 16
+    path = _write(
+        tmp_path,
+        build_package(
+            [
+                {
+                    "type": STRING_TABLE_TYPE_ID,
+                    "group": 0,
+                    "instance": 1,
+                    "data": payload,
+                    "compression": "zlib",
+                }
+            ]
+        ),
+    )
+    package = DBPF(path)
+    entry = package.entries[0]
+
+    assert DBPF.read_entry(path, entry) == payload
+
+
 def test_read_uncompressed_entry(tmp_path) -> None:
     payload = b"hello package"
     package = DBPF(

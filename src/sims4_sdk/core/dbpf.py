@@ -312,22 +312,31 @@ class DBPF:
             if found is None:
                 raise KeyError(f"resource not found: {entry}")
             entry = found
+        return self.read_entry(self.path, entry)
 
+    @staticmethod
+    def read_entry(path: str | Path, entry: ResourceEntry) -> bytes:
+        """Read one resource using an index entry, without parsing the index.
+
+        This is useful when the entry came from a previous index scan: it avoids
+        reopening and re-parsing the whole package for every resource.
+        """
         if entry.is_null:
             return b""
 
-        with open(self.path, "rb") as fp:
+        path = Path(path)
+        with open(path, "rb") as fp:
             fp.seek(entry.offset)
             raw = fp.read(entry.size)
         if len(raw) != entry.size:
             raise DBPFError(
-                f"{self.path.name}: truncated resource {entry.key} "
+                f"{path.name}: truncated resource {entry.key} "
                 f"(wanted {entry.size} bytes, got {len(raw)})"
             )
 
         if not entry.compressed:
             return raw
-        return self.decompress(entry.compression, raw, entry.mem_size)
+        return DBPF.decompress(entry.compression, raw, entry.mem_size)
 
     @staticmethod
     def decompress(compression: int, raw: bytes, mem_size: int = 0) -> bytes:

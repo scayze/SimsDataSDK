@@ -252,7 +252,7 @@ builds are cached, so the first run is the slow one.
 | Full game scan | 629 packages, 2,581,974 index entries, 0 failures |
 | All English string tables | 117 packages, 163,302 strings, 0 failures |
 | Node test set (base + EP13) | 745 traits, 166 preferences, 191 aspirations, 223 career levels, 109 milestones, 36 pre-made Sims, 15 households, 21 ancestors, 0 errors |
-| Full static scan (base + all packs, no mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 431 pre-made Sims, 204 households, 41 ancestors, 548 lots, 16 relationship defaults, 348 premade relationship pairs, 25 bit ranges, 0 errors, 602 packages; ~285 s first build, cached afterwards |
+| Full static scan (base + all packs, no mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 431 pre-made Sims, 204 households, 41 ancestors, 548 lots, 16 relationship defaults, 348 premade relationship pairs, 25 bit ranges, 0 errors, 602 packages; ~130 s first build, cached afterwards |
 | Starter-save households | BFF (9,000), Pancakes (20,000), Roomies (14,000), Spencer-Kim-Lewis (55,500), Caliente (28,500); 0 parse errors |
 | Initial relationships | Pancakes spouse 45/75; Caliente parent/child 45/0; Megumi ↔ Kado 10/-60; Megumi ↔ Sachiko 60; Bjergsen spouse romance range 25–75 |
 | Save files | 6 parsed (`Slot_*` + `ver0`–`ver4`), 0 failures; example save: 59 Sims / 32 households / 59 zones |

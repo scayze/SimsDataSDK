@@ -120,6 +120,13 @@ Each household member message carries:
 | `15` | spouse Sim ID |
 | `34` | aspiration track ID |
 
+Builds cache Combined Tuning parsing per unique resource content: several packs
+ship the same blob in both `SimulationPreload.package` and
+`SimulationDeltaBuild0.package`, so identical bytes are decoded once. SimInfo
+lookups also read directly from their existing index entry instead of re-parsing
+each package index. On a full install this cuts the cold build from roughly 285 s
+to 130 s.
+
 The SDK merges these into the normal models:
 
 * `PremadeHousehold.funds` is populated from tuning

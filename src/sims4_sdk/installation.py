@@ -187,11 +187,12 @@ class Installation:
         if found is None:
             return None
         info, entry = found
-        package = DBPF(info.path)
-        return package.read_resource(entry)
+        # The index entry already has the offset/size/compression, so read it
+        # directly instead of re-parsing the package index for every Sim.
+        return DBPF.read_entry(info.path, entry)
 
     def read_resource(self, info: PackageInfo, entry: ResourceEntry) -> bytes:
-        return DBPF(info.path).read_resource(entry)
+        return DBPF.read_entry(info.path, entry)
 
     def find_resource(
         self,
