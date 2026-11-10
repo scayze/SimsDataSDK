@@ -33,6 +33,7 @@ from .catalog import (
     Catalog,
     LotRecord,
     Milestone,
+    PremadeRelationship,
     Preference,
     PremadeAncestor,
     PremadeBundle,
@@ -40,6 +41,8 @@ from .catalog import (
     PremadeLot,
     PremadeSim,
     RelationshipBit,
+    RelationshipDefault,
+    RelationshipTrackValue,
     SkillLevel,
     StarterCareer,
     StarterHouseholdRecord,
@@ -112,7 +115,7 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 __all__ = [
     "__version__",
@@ -133,6 +136,9 @@ __all__ = [
     "CareerLevel",
     "Milestone",
     "RelationshipBit",
+    "RelationshipTrackValue",
+    "RelationshipDefault",
+    "PremadeRelationship",
     "SkillLevel",
     "PremadeSim",
     "PremadeHousehold",

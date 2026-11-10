@@ -17,8 +17,11 @@ from .models import (
     CareerTrack,
     Catalog,
     Milestone,
+    PremadeRelationship,
     Preference,
     RelationshipBit,
+    RelationshipDefault,
+    RelationshipTrackValue,
     SkillLevel,
     Trait,
     TuningSource,
@@ -34,6 +37,7 @@ from .premades import (
     build_premades,
     parse_resource_key,
 )
+from .relationships import RelationshipTuningData, extract_relationship_tuning
 from .static import StaticData, build_static, load_static
 from .worlds import (
     LotRecord,
@@ -72,6 +76,9 @@ __all__ = [
     "CareerLevel",
     "Milestone",
     "RelationshipBit",
+    "RelationshipTrackValue",
+    "RelationshipDefault",
+    "PremadeRelationship",
     "SkillLevel",
     "TuningSource",
     # premades
@@ -95,4 +102,7 @@ __all__ = [
     "parse_lot_manifest",
     "parse_premade_household",
     "collect_world_data",
+    # relationships
+    "RelationshipTuningData",
+    "extract_relationship_tuning",
 ]

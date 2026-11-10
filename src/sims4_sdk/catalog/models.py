@@ -23,6 +23,9 @@ __all__ = [
     "SkillLevel",
     "Milestone",
     "RelationshipBit",
+    "RelationshipTrackValue",
+    "RelationshipDefault",
+    "PremadeRelationship",
     "Catalog",
 ]
 
@@ -211,6 +214,67 @@ class RelationshipBit:
 
 
 @dataclass
+class RelationshipTrackValue:
+    """One relationship track with a fixed value or a min/max range."""
+
+    track_id: int
+    track_name: Optional[str] = None
+    value: Optional[float] = None
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+
+
+@dataclass
+class RelationshipDefault:
+    """Default relationship values for a genealogy link (Roommate, Spouse, ...)."""
+
+    link: str
+    tracks: list[RelationshipTrackValue] = field(default_factory=list)
+    bit_ids: list[int] = field(default_factory=list)
+    loot_ids: list[int] = field(default_factory=list)
+
+    def track(self, track_id: int) -> Optional[RelationshipTrackValue]:
+        return next((item for item in self.tracks if item.track_id == track_id), None)
+
+    def __repr__(self) -> str:
+        return f"RelationshipDefault({self.link!r}, tracks={len(self.tracks)})"
+
+
+@dataclass
+class PremadeRelationship:
+    """An initial relationship between two pre-made Sims in different households."""
+
+    sim_a: int
+    sim_b: int
+    tracks: list[RelationshipTrackValue] = field(default_factory=list)
+    bit_ids: list[int] = field(default_factory=list)
+    sentiment_track_ids: list[int] = field(default_factory=list)
+    loot_id: Optional[int] = None
+    sim_a_name: Optional[str] = None
+    sim_b_name: Optional[str] = None
+
+    def track(self, track_id: int) -> Optional[RelationshipTrackValue]:
+        return next((item for item in self.tracks if item.track_id == track_id), None)
+
+    @property
+    def friendship(self) -> Optional[float]:
+        item = self.track(16650)
+        return item.value if item is not None else None
+
+    @property
+    def romance(self) -> Optional[float]:
+        item = self.track(16651)
+        return item.value if item is not None else None
+
+    def __repr__(self) -> str:
+        return (
+            f"PremadeRelationship({self.sim_a_name or hex(self.sim_a)!r} -> "
+            f"{self.sim_b_name or hex(self.sim_b)!r}, "
+            f"friendship={self.friendship}, romance={self.romance})"
+        )
+
+
+@dataclass
 class SkillLevel:
     """A skill value assigned to a pre-made Sim.
 
@@ -243,6 +307,11 @@ class Catalog:
     career_levels: dict[int, CareerLevel] = field(default_factory=dict)
     milestones: dict[int, Milestone] = field(default_factory=dict)
     relationship_bits: dict[int, RelationshipBit] = field(default_factory=dict)
+    relationship_defaults: dict[str, RelationshipDefault] = field(default_factory=dict)
+    premade_relationships: list[PremadeRelationship] = field(default_factory=list)
+    relationship_track_ranges: dict[int, RelationshipTrackValue] = field(
+        default_factory=dict, repr=False
+    )
     strings: dict[int, str] = field(default_factory=dict)
     tuning_names: dict[int, str] = field(default_factory=dict, repr=False)
     tuning_classes: dict[int, str] = field(default_factory=dict, repr=False)
@@ -287,6 +356,18 @@ class Catalog:
                     level.track_id = track.id
                     if level.level is None:
                         level.level = index
+
+        for default in self.relationship_defaults.values():
+            for item in default.tracks:
+                if item.track_name is None:
+                    item.track_name = self.tuning_names.get(item.track_id)
+        for relationship in self.premade_relationships:
+            for item in relationship.tracks:
+                if item.track_name is None:
+                    item.track_name = self.tuning_names.get(item.track_id)
+        for item in self.relationship_track_ranges.values():
+            if item.track_name is None:
+                item.track_name = self.tuning_names.get(item.track_id)
         return self
 
     # ------------------------------------------------------------------
@@ -321,6 +402,23 @@ class Catalog:
         if isinstance(key, int):
             return self.milestones.get(key)
         return self.milestones_by_name.get(key)
+
+    def relationship_default(self, link: str) -> Optional[RelationshipDefault]:
+        return self.relationship_defaults.get(link)
+
+    def premade_relationship(
+        self, sim_a: int, sim_b: int
+    ) -> Optional[PremadeRelationship]:
+        for relationship in self.premade_relationships:
+            if (
+                relationship.sim_a == sim_a
+                and relationship.sim_b == sim_b
+            ) or (
+                relationship.sim_a == sim_b
+                and relationship.sim_b == sim_a
+            ):
+                return relationship
+        return None
 
     def resolve_string(self, value: Optional[str]) -> Optional[str]:
         """Resolve a ``0x...`` localization key against the merged STBL."""

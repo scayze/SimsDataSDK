@@ -43,6 +43,12 @@ def _selected_packages(installation: Installation):
         if info.pack == "EP10"
         and info.path.name in {"SimulationDeltaBuild0.package", "ClientDeltaBuild0.package"}
     )
+    selected.extend(
+        info
+        for info in installation.packages
+        if info.pack == "EP02"
+        and info.path.name in {"SimulationDeltaBuild0.package", "ClientDeltaBuild0.package"}
+    )
     return selected
 
 
@@ -272,6 +278,58 @@ def test_ep10_household_uses_positional_hints(static_data) -> None:
     assert lot is not None
     assert lot.household_name == "Ito"
     assert lot.household_id == household.id
+
+
+def test_relationship_defaults_and_values(static_data) -> None:
+    catalog = static_data.catalog
+
+    family = catalog.relationship_defaults["FamilyMember"].track(16650)
+    spouse = catalog.relationship_defaults["Spouse"].track(16651)
+    roommate = catalog.relationship_defaults["Roommate"].track(16650)
+    assert (family.value, spouse.value, roommate.value) == (45, 75, 15)
+
+    pancakes = static_data.household("Pancakes")
+    pancakes_spouse = next(
+        rel for rel in pancakes.relationships if rel.kind == "spouse"
+    )
+    assert (pancakes_spouse.friendship, pancakes_spouse.romance) == (45, 75)
+
+    caliente = static_data.household("Caliente")
+    mother = next(
+        rel
+        for rel in caliente.relationships
+        if rel.kind == "family" and rel.family_relationship == "MOTHER"
+    )
+    assert (mother.friendship, mother.romance) == (45, 0)
+
+    megumi = static_data.sim("Megumi Ito")
+    kado = static_data.sim("Kado Akiyama")
+    sachiko = static_data.sim("Sachiko Nishidake")
+    kado_rel = static_data.premades.relationship(megumi.id, kado.id)
+    sachiko_rel = static_data.premades.relationship(megumi.id, sachiko.id)
+    assert kado_rel is not None and sachiko_rel is not None
+    assert (kado_rel.friendship, kado_rel.romance) == (10, -60)
+    assert sachiko_rel.friendship == 60
+    assert sachiko_rel.romance is None
+
+
+def test_relationship_track_ranges(static_data) -> None:
+    catalog = static_data.catalog
+
+    lovebirds = catalog.relationship_track_ranges[15829]
+    assert (lovebirds.min_value, lovebirds.max_value) == (25, 75)
+    complicated = catalog.relationship_track_ranges[15834]
+    assert (complicated.min_value, complicated.max_value) == (-50, -10)
+
+    bjergsen = static_data.household("HH_Template_Bjergsen")
+    spouse = next(rel for rel in bjergsen.relationships if rel.kind == "spouse")
+    assert (spouse.romance_min, spouse.romance_max) == (25, 75)
+
+    partihaus = static_data.household("HH_Template_Partihaus")
+    relation = next(
+        rel for rel in partihaus.relationships if 15834 in rel.bit_ids
+    )
+    assert (relation.romance_min, relation.romance_max) == (-50, -10)
 
 
 def test_lot_manifest(static_data) -> None:

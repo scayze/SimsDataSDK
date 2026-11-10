@@ -33,11 +33,13 @@ from .models import (
     CareerLevel,
     CareerTrack,
     Catalog,
+    PremadeRelationship,
     Preference,
     SkillLevel,
     Trait,
     TuningSource,
 )
+from .relationships import FRIENDSHIP_TRACK_ID, ROMANCE_TRACK_ID
 from .values import TuningView
 from .worlds import StarterMember, WorldData
 
@@ -94,6 +96,13 @@ class HouseholdRelationship:
     a_tag: str
     b_tag: str
     family_relationship: Optional[str] = None
+    friendship: Optional[float] = None
+    romance: Optional[float] = None
+    friendship_min: Optional[float] = None
+    friendship_max: Optional[float] = None
+    romance_min: Optional[float] = None
+    romance_max: Optional[float] = None
+    bit_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -273,6 +282,7 @@ class PremadeBundle:
     households: list[PremadeHousehold] = field(default_factory=list)
     ancestors: list[PremadeAncestor] = field(default_factory=list)
     lots: list[PremadeLot] = field(default_factory=list)
+    premade_relationships: list[PremadeRelationship] = field(default_factory=list)
     sims_by_name: dict[str, PremadeSim] = field(default_factory=dict, repr=False)
     households_by_name: dict[str, PremadeHousehold] = field(
         default_factory=dict, repr=False
@@ -293,6 +303,22 @@ class PremadeBundle:
         if isinstance(key, int):
             return next((lot for lot in self.lots if lot.id == key), None)
         return self.lots_by_name.get(key)
+
+    def relationship(
+        self, sim_a: int, sim_b: int
+    ) -> Optional[PremadeRelationship]:
+        for relationship in self.premade_relationships:
+            if {relationship.sim_a, relationship.sim_b} == {sim_a, sim_b}:
+                return relationship
+        return None
+
+    def relationships_for(self, sim: int | PremadeSim) -> list[PremadeRelationship]:
+        sim_id = sim.id if isinstance(sim, PremadeSim) else sim
+        return [
+            relationship
+            for relationship in self.premade_relationships
+            if sim_id in (relationship.sim_a, relationship.sim_b)
+        ]
 
     def __len__(self) -> int:
         return len(self.sims)
@@ -343,13 +369,22 @@ def build_premades(
         aliases, household_id_aliases = {}, {}
 
     _link_household_relationships(households.values(), sims)
+    _apply_relationship_defaults(households.values(), catalog)
 
     bundle = PremadeBundle(
         sims=sorted(sims.values(), key=lambda sim: sim.full_name.casefold()),
         households=sorted(households.values(), key=lambda hh: hh.name.casefold()),
         ancestors=sorted(ancestors.values(), key=lambda anc: anc.full_name.casefold()),
         lots=_build_lots(catalog, world, household_id_aliases),
+        premade_relationships=list(catalog.premade_relationships),
     )
+    for relationship in bundle.premade_relationships:
+        a = sims.get(relationship.sim_a)
+        b = sims.get(relationship.sim_b)
+        if a is not None:
+            relationship.sim_a_name = a.full_name
+        if b is not None:
+            relationship.sim_b_name = b.full_name
     for sim in bundle.sims:
         bundle.sims_by_name.setdefault(sim.name, sim)
         bundle.sims_by_name.setdefault(sim.full_name, sim)
@@ -776,6 +811,73 @@ def _household_display_name(name: str) -> Optional[str]:
     return None
 
 
+def _apply_relationship_defaults(
+    households,
+    catalog: Catalog,
+) -> None:
+    """Fill initial friendship/romance values from household relationship defaults.
+
+    The game calls ``household.set_default_relationships()``: family members get
+    the ``FamilyMember`` default (friendship 45), spouses additionally get the
+    ``Spouse`` default (romance 75), and unrelated household members get the
+    ``Roommate`` default (friendship 15).
+    """
+    family = catalog.relationship_defaults.get("FamilyMember")
+    spouse = catalog.relationship_defaults.get("Spouse")
+    roommate = catalog.relationship_defaults.get("Roommate")
+
+    family_friendship = _default_track_value(family, FRIENDSHIP_TRACK_ID)
+    spouse_romance = _default_track_value(spouse, ROMANCE_TRACK_ID)
+    roommate_friendship = _default_track_value(roommate, FRIENDSHIP_TRACK_ID)
+
+    for household in households:
+        for relationship in household.relationships:
+            if relationship.kind == "spouse":
+                relationship.friendship = family_friendship
+                relationship.romance = spouse_romance
+                _merge_default_bits(relationship, family)
+                _merge_default_bits(relationship, spouse)
+            elif relationship.kind == "family":
+                relationship.friendship = family_friendship
+                relationship.romance = 0.0
+                _merge_default_bits(relationship, family)
+            else:
+                relationship.friendship = roommate_friendship
+                _merge_default_bits(relationship, roommate)
+            _apply_bit_ranges(relationship, catalog)
+
+
+def _default_track_value(default, track_id: int) -> Optional[float]:
+    if default is None:
+        return None
+    item = default.track(track_id)
+    return item.value if item is not None else None
+
+
+def _merge_default_bits(relationship: HouseholdRelationship, default) -> None:
+    if default is None:
+        return
+    for bit_id in default.bit_ids:
+        if bit_id not in relationship.bit_ids:
+            relationship.bit_ids.append(bit_id)
+
+
+def _apply_bit_ranges(
+    relationship: HouseholdRelationship,
+    catalog: Catalog,
+) -> None:
+    for bit_id in relationship.bit_ids:
+        item = catalog.relationship_track_ranges.get(bit_id)
+        if item is None:
+            continue
+        if item.track_id == FRIENDSHIP_TRACK_ID:
+            relationship.friendship_min = item.min_value
+            relationship.friendship_max = item.max_value
+        elif item.track_id == ROMANCE_TRACK_ID:
+            relationship.romance_min = item.min_value
+            relationship.romance_max = item.max_value
+
+
 def _build_lots(
     catalog: Catalog,
     world: Optional[WorldData],
@@ -951,9 +1053,15 @@ def _build_household(
                 continue
             x_tag = view.text_of(_child(item, "x")) or ""
             y_tag = view.text_of(_child(item, "y")) or ""
+            bit_ids = _relationship_bits(view, item)
             if view.flag_of(_child(item, "is_spouse")):
                 relationships.append(
-                    HouseholdRelationship(kind="spouse", a_tag=x_tag, b_tag=y_tag)
+                    HouseholdRelationship(
+                        kind="spouse",
+                        a_tag=x_tag,
+                        b_tag=y_tag,
+                        bit_ids=bit_ids,
+                    )
                 )
                 continue
             family_element = _child(item, "family_relationship")
@@ -965,6 +1073,16 @@ def _build_household(
                         a_tag=x_tag,
                         b_tag=y_tag,
                         family_relationship=family,
+                        bit_ids=bit_ids,
+                    )
+                )
+            elif bit_ids:
+                relationships.append(
+                    HouseholdRelationship(
+                        kind="relationship",
+                        a_tag=x_tag,
+                        b_tag=y_tag,
+                        bit_ids=bit_ids,
                     )
                 )
 
@@ -1004,6 +1122,21 @@ def _child(element, name: str):
     if element is None:
         return None
     return next((child for child in element if child.get("n") == name), None)
+
+
+def _relationship_bits(view: TuningView, item) -> list[int]:
+    element = _child(item, "relationship_bits")
+    if element is None:
+        return []
+    resolved = view.resolve(element)
+    if resolved is None:
+        return []
+    bit_ids: list[int] = []
+    for child in resolved:
+        number = view.number_of(child)
+        if number is not None and number not in bit_ids:
+            bit_ids.append(number)
+    return bit_ids
 
 
 def _localized_child(view: TuningView, element, name: str) -> Optional[str]:

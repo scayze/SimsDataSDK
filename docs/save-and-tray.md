@@ -85,7 +85,9 @@ careers, skills, milestones, and all other per-Sim data.
 
 The *initial* friendship/romance values are not authored per save; they come from
 tuning (`DefaultRelationshipInHousehold.RelationshipSetupMap` and
-`PremadeSimRelationships.RELATIONSHIP_MAP`). The save only records how those
+`PremadeSimRelationships.RELATIONSHIP_MAP`) and are exposed statically through
+`Catalog.relationship_defaults`, `Catalog.premade_relationships` and
+`HouseholdRelationship.friendship` / `.romance`. The save only records how those
 values have changed through play. See
 [`binary-formats.md`](binary-formats.md#module-level-tuning-blocks-and-initial-relationship-values).
 

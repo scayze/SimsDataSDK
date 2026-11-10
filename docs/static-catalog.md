@@ -145,6 +145,26 @@ so their likes/dislikes only appear once the save has assigned them.
 `PremadeSim.id` for these Sims is the 64-bit Sim ID from the resource, so it does
 not collide with 32-bit tuning instance IDs.
 
+### Initial relationship values
+
+The numeric friendship/romance values are tuning data, not hardcoded, and the
+SDK now exposes them:
+
+- `Catalog.relationship_defaults` — per genealogy link (`Roommate` 15,
+  `FamilyMember` 45, `Spouse` 75 romance, `Fiance` 75, `Steady` 40, pets 33).
+- `Catalog.premade_relationships` — cross-household pairs from
+  `PremadeSimRelationships.RELATIONSHIP_MAP`, with the resolved loot values.
+- `Catalog.relationship_track_ranges` — the value interval of a relationship bit
+  (for example `Lovebirds` romance 25–75, `It's Complicated` -50…-10).
+- `HouseholdRelationship.friendship` / `.romance` and
+  `.friendship_min` / `.friendship_max` / `.romance_min` / `.romance_max` on
+  pre-made household links.
+- `PremadeBundle.relationship(a, b)` and `.relationships_for(sim)`.
+
+For a relationship with a tracked bit the game adds a random score inside the
+bit interval, so the final value is the default plus that random increment
+(clamped to the track's -100…100 range).
+
 Some packs (for example EP10) store the household resource under the **same name**
 as the tuning template but leave the member names empty.  In that case the SDK
 matches members by position, so the resource still supplies gender, age, body
@@ -157,12 +177,9 @@ household ID.
 - **Available:** names, baked traits, preferences, household membership,
   household funds, spouse/parent relationships, ancestors, explicit skills,
   explicit aspiration and career level, dynasty, occult, pregnancy, gender and
-  age (from starter-save resources), aspiration track, career track, lots and
-  lot↔household links.
-- **In tuning, not yet exposed:** the initial relationship *values*
-  (`DefaultRelationshipInHousehold` and `PremadeSimRelationships` module blocks).
-  The relationship bits and spouse/parent links are extracted; the numeric
-  friendship/romance defaults are documented but not folded into `Catalog`.
+  age (from starter-save resources), aspiration track, career track, lots,
+  lot↔household links, initial relationship defaults and cross-household
+  relationship values.
 - **Template-only:** some newer-pack Sims (EP19+) do not pin an aspiration,
   career, gender or age in tuning and have no starter-save resource; the field
   is `None` rather than guessed.
@@ -203,6 +220,15 @@ print(bff.funds, [member.full_name for member in bff.members])
 for lot in data.lots:
     print(lot.lot_name, "->", lot.household_name)
 
+# Initial relationship values
+pancakes = data.household("Pancakes")
+spouse = next(rel for rel in pancakes.relationships if rel.kind == "spouse")
+print(spouse.friendship, spouse.romance)      # 45.0 75.0
+
+for relationship in data.premades.relationships_for(data.sim("Megumi Ito")):
+    print(relationship.sim_a_name, "->", relationship.sim_b_name,
+          relationship.friendship, relationship.romance)
+
 # Build a subset (useful for tests or single-pack tools)
 from sims4_sdk import Installation
 inst = Installation()
@@ -229,6 +255,9 @@ produces:
 | Pre-made households | 204 |
 | Pre-made ancestors | 41 |
 | Lots (lot manifest) | 548 |
+| Relationship defaults | 16 |
+| Premade relationship pairs | 348 |
+| Relationship bit ranges | 25 |
 | Errors | 0 |
 
 The first build takes about four and a half minutes; the cached load is under a

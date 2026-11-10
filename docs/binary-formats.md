@@ -258,11 +258,11 @@ matching by household name.
 
 ## Module-level tuning blocks and initial relationship values
 
-`CombinedTuning` exposes the `<I>` elements, but the game also ships
-module-level `<M n="module">` blocks. Two of them define the starting
-relationship values, so those values are **tuning data, not hardcoded in the
-engine**. They are reachable through `CombinedTuning.root` and the shared
-`<g>` reference table; the SDK does not fold them into `Catalog` yet.
+`CombinedTuning` exposes the `<I>` elements and indexes module-level
+`<M n="module">` blocks (`find_module()`). Two of those modules define the
+starting relationship values, so those values are **tuning data, not hardcoded
+in the engine**. They are extracted into `Catalog.relationship_defaults`,
+`Catalog.premade_relationships` and `Catalog.relationship_track_ranges`.
 
 ### `relationships.relationship_tracker_tuning`
 
@@ -302,6 +302,9 @@ Pack-specific `loot_PremadesSetup_*` actions (for example EP10) combine one of
 these with a sentiment loot. This is how cross-household pairs such as Megumi
 Ito ↔ Sachiko Nishidake (60) or Megumi ↔ Kado Akiyama (10 / -60) get their
 values.
+
+The SDK maps the pair entries to `PremadeRelationship` objects and resolves the
+nested loot chain (including `V t="actions"` and `relationship_set`).
 Verified on the BFF, Goth, Pancakes, Roomies, Spencer-Kim-Lewis and Caliente
 households against the same Sims in a real save.
 

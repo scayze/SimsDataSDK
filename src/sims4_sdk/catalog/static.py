@@ -115,12 +115,19 @@ def build_static(
         progress(
             f"extracted {len(entries):,} tuning entries, "
             f"{len(world.households):,} household resources, "
-            f"{len(world.lots):,} lot records"
+            f"{len(world.lots):,} lot records, "
+            f"{len(collected.relationship_tuning.defaults):,} relationship defaults, "
+            f"{len(collected.relationship_tuning.pairs):,} premade relationships"
         )
 
     if progress:
         progress("extracting catalog")
-    catalog = extract_catalog(entries, sources, strings)
+    catalog = extract_catalog(
+        entries,
+        sources,
+        strings,
+        relationship_tuning=collected.relationship_tuning,
+    )
     catalog.errors.extend(world.errors)
 
     if progress:

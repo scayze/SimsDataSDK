@@ -199,6 +199,7 @@ class CombinedTuning:
     root: ET.Element
     references: _ReferenceTable
     entries: list[TuningElement]
+    modules: dict[str, ET.Element] = field(default_factory=dict)
     xml: str = ""
 
     TYPE_ID = COMBINED_TUNING_TYPE_ID
@@ -228,7 +229,18 @@ class CombinedTuning:
             for element in root.iter("I")
             if element.get("c") is not None
         ]
-        return cls(root=root, references=references, entries=entries, xml=xml_text)
+        modules = {
+            node.get("n"): node
+            for node in root.iter("M")
+            if node.get("n")
+        }
+        return cls(
+            root=root,
+            references=references,
+            entries=entries,
+            modules=modules,
+            xml=xml_text,
+        )
 
     # ------------------------------------------------------------------
     # queries
@@ -253,6 +265,10 @@ class CombinedTuning:
             if entry.instance_id == instance_id:
                 return entry
         return None
+
+    def find_module(self, name: str) -> Optional[ET.Element]:
+        """Return a module-level ``<M n="...">`` block, if present."""
+        return self.modules.get(name)
 
     def index_by_instance_id(self) -> dict[int, TuningElement]:
         return {entry.instance_id: entry for entry in self.entries}

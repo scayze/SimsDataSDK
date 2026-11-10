@@ -35,6 +35,14 @@ from .models import (
 )
 from .strings import load_strings
 from .values import TuningView
+from .relationships import (
+    FRIENDSHIP_TRACK_ID,
+    RELATIONSHIP_MODULES,
+    ROMANCE_TRACK_ID,
+    RelationshipTuningData,
+    extract_relationship_tuning,
+    has_interval_data,
+)
 from .worlds import WorldData, add_package_world_resources
 
 __all__ = [
@@ -48,7 +56,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-7"
+CACHE_VERSION = "step2-8"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
@@ -123,11 +131,14 @@ def build_catalog(
 
     if progress:
         progress(f"scanning {len(selected)} tuning packages")
-    entries, sources = collect_entries(selected, progress=progress)
+    collected = collect_package_data(selected, progress=progress, include_world=False)
+    entries, sources = collected.entries, collected.sources
     if progress:
         progress(f"extracted {len(entries):,} tuning entries")
 
-    catalog = extract_catalog(entries, sources, strings)
+    catalog = extract_catalog(
+        entries, sources, strings, relationship_tuning=collected.relationship_tuning
+    )
 
     if progress:
         progress("linking catalog entries")
@@ -156,6 +167,15 @@ class CollectedPackageData:
     entries: dict[int, TuningElement] = field(default_factory=dict)
     sources: dict[int, TuningSource] = field(default_factory=dict)
     world: WorldData = field(default_factory=WorldData)
+    relationship_modules: dict[str, CombinedTuning] = field(
+        default_factory=dict, repr=False
+    )
+    relationship_track_sources: dict[int, TuningElement] = field(
+        default_factory=dict, repr=False
+    )
+    relationship_tuning: RelationshipTuningData = field(
+        default_factory=RelationshipTuningData
+    )
 
 
 def collect_package_data(
@@ -163,6 +183,7 @@ def collect_package_data(
     *,
     progress: ProgressCallback = None,
     include_world: bool = True,
+    include_relationships: bool = True,
 ) -> CollectedPackageData:
     """Open every package once and collect tuning and world resources."""
     data = CollectedPackageData()
@@ -207,12 +228,26 @@ def collect_package_data(
             for tuning in combined:
                 data.entries[tuning.instance_id] = tuning
                 data.sources[tuning.instance_id] = source
+            if include_relationships:
+                for module_name in RELATIONSHIP_MODULES:
+                    if module_name in combined.modules:
+                        data.relationship_modules[module_name] = combined
+                for track_id in (FRIENDSHIP_TRACK_ID, ROMANCE_TRACK_ID):
+                    element = combined.find_by_instance_id(track_id)
+                    if element is not None and has_interval_data(element):
+                        data.relationship_track_sources[track_id] = element
 
         if include_world:
             add_package_world_resources(data.world, package, source)
 
     if include_world:
         data.world.finalize()
+    if include_relationships and data.relationship_modules:
+        data.relationship_tuning = extract_relationship_tuning(
+            data.relationship_modules,
+            data.entries,
+            track_sources=data.relationship_track_sources,
+        )
     return data
 
 
@@ -222,7 +257,12 @@ def collect_entries(
     progress: ProgressCallback = None,
 ) -> tuple[dict[int, TuningElement], dict[int, TuningSource]]:
     """Collect only tuning entries (kept for backwards compatibility)."""
-    data = collect_package_data(packages, progress=progress, include_world=False)
+    data = collect_package_data(
+        packages,
+        progress=progress,
+        include_world=False,
+        include_relationships=False,
+    )
     return data.entries, data.sources
 
 
@@ -233,9 +273,15 @@ def extract_catalog(
     entries: dict[int, TuningElement],
     sources: dict[int, TuningSource],
     strings: dict[int, str],
+    *,
+    relationship_tuning: Optional[RelationshipTuningData] = None,
 ) -> Catalog:
     catalog = Catalog(strings=strings)
     _build_models(catalog, entries, sources, strings)
+    if relationship_tuning is not None:
+        catalog.relationship_defaults = relationship_tuning.defaults
+        catalog.premade_relationships = relationship_tuning.pairs
+        catalog.relationship_track_ranges = relationship_tuning.track_ranges
     catalog.finalize()
     return catalog
 
