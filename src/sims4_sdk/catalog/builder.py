@@ -59,6 +59,20 @@ ProgressCallback = Optional[Callable[[str], None]]
 CACHE_VERSION = "step2-9"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
+_MODEL_CLASSES = frozenset(
+    {
+        "Trait",
+        "Preference",
+        "Aspiration",
+        "AspirationTrack",
+        "AspirationCategory",
+        "Career",
+        "TunableCareerTrack",
+        "CareerLevel",
+        "DevelopmentalMilestone",
+        "RelationshipBit",
+    }
+)
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
 
 
@@ -187,6 +201,11 @@ def collect_package_data(
 ) -> CollectedPackageData:
     """Open every package once and collect tuning and world resources."""
     data = CollectedPackageData()
+    # Several packs ship the same Combined Tuning blob in both their
+    # ``SimulationPreload`` and ``SimulationDeltaBuild0`` packages.  Parsing
+    # the DATA tables is the most expensive part of a cold build, so reuse the
+    # parsed object when the raw bytes are identical.
+    combined_cache: dict[bytes, CombinedTuning] = {}
 
     for info in packages:
         if progress:
@@ -222,9 +241,16 @@ def collect_package_data(
         for entry in package.iter_entries(type_id=COMBINED_TUNING_TYPE_ID):
             try:
                 raw = package.read_resource(entry)
-                combined = CombinedTuning.parse(raw)
             except Exception:
                 continue
+            content_key = hashlib.blake2b(raw, digest_size=16).digest()
+            combined = combined_cache.get(content_key)
+            if combined is None:
+                try:
+                    combined = CombinedTuning.parse(raw)
+                except Exception:
+                    continue
+                combined_cache[content_key] = combined
             for tuning in combined:
                 data.entries[tuning.instance_id] = tuning
                 data.sources[tuning.instance_id] = source
@@ -298,12 +324,14 @@ def _build_models(
     strings: dict[int, str],
 ) -> None:
     for instance_id, entry in entries.items():
-        view = TuningView(entry, strings)
         source = sources.get(instance_id)
+        cls = entry.cls
         catalog.tuning_names[instance_id] = entry.name
-        catalog.tuning_classes[instance_id] = entry.cls
+        catalog.tuning_classes[instance_id] = cls
+        if cls not in _MODEL_CLASSES:
+            continue
         try:
-            cls = entry.cls
+            view = TuningView(entry, strings)
             if cls == "Trait":
                 catalog.traits[instance_id] = _build_trait(entry, view, source)
             elif cls == "Preference":
