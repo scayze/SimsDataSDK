@@ -11,13 +11,15 @@ import urllib.request
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ..exceptions import Sims4SDKError
+
 __all__ = ["WikiClient", "WikiError", "DEFAULT_API"]
 
 DEFAULT_API = "https://sims.fandom.com/api.php"
 _USER_AGENT = "sims4-sdk/0.3 (wiki validation)"
 
 
-class WikiError(RuntimeError):
+class WikiError(Sims4SDKError, RuntimeError):
     """Raised when the wiki API cannot be reached or returns invalid JSON."""
 
 

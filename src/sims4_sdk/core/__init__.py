@@ -5,9 +5,18 @@ from .combined_tuning import (
     CombinedTuningError,
     TuningElement,
     decode_binary_tuning,
+    decode_binary_tuning_tree,
     is_binary_tuning,
 )
-from .data_tables import DataTableError, DataTables, DataType, Schema, SchemaColumn, TableInfo
+from .data_tables import (
+    DataTableError,
+    DataTables,
+    DataType,
+    Schema,
+    SchemaColumn,
+    TableInfo,
+    TableRows,
+)
 from .dbpf import (
     COMPRESSION_NONE,
     COMPRESSION_REFPACK,
@@ -65,12 +74,14 @@ __all__ = [
     "CombinedTuningError",
     "TuningElement",
     "decode_binary_tuning",
+    "decode_binary_tuning_tree",
     "is_binary_tuning",
     # data tables
     "DataTables",
     "DataTableError",
     "DataType",
     "TableInfo",
+    "TableRows",
     "Schema",
     "SchemaColumn",
     # simdata

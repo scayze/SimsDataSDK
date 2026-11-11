@@ -3,10 +3,11 @@
 A Python SDK for reading **The Sims 4** data so it can be used by other tools:
 game packages, DLC packages, mods, save files, and Tray files.
 
-> Status: **Step 4 — Sims Wiki validation.** The SDK can now reconcile its static
-> catalog, pre-made Sims, and save data against The Sims Wiki, with a cached
-> MediaWiki client, wikitext parsers, field-by-field comparisons, and Markdown/JSON
-> reports.
+> Status: **Step 5 — public library API.** The SDK is now designed to be
+> embedded in other Python projects: every model serializes to JSON-safe
+> dictionaries, catalog and save lookups accept IDs *or* names, static data can
+> be saved as a portable snapshot and reopened on a machine without the game,
+> and all SDK errors share one base class.
 
 ## Quick start (no save file required)
 
@@ -136,6 +137,95 @@ print(report.to_markdown()[:2000])
 See [`docs/wiki-validation.md`](docs/wiki-validation.md) for methodology,
 results, and known gaps.
 
+### Portable library API (Step 5)
+
+The SDK is library-first: no external data tooling is required at runtime, and
+every public model can be handed to another Python application or written to
+JSON.
+
+**Serialization.** Every model has `to_dict()` and `to_json()`:
+
+```python
+save = ws.read_save(ws.save_files()[0])
+
+save.to_dict()                      # JSON-safe dict, raw payloads excluded
+save.to_json("save.json")           # pretty JSON on disk
+ws.catalog.to_json("catalog.json")  # traits, careers, milestones, ...
+ws.static_data().to_dict()          # catalog + pre-mades in one document
+
+# Opt in to data that is omitted by default
+ws.static_data().to_dict(include_strings=True)       # catalog STBL table
+ws.catalog.to_dict(include_tuning_index=True)        # every tuning ID → name
+save.to_dict(include_raw=True)                       # decoded protobuf payloads
+```
+
+The output is plain JSON: `Path` becomes a string, `bytes` becomes lowercase
+hex, resource keys become `TTTTTTTT!GGGGGGGG!IIIIIIIIIIIIIIII`, computed
+properties (`full_name`, `age`, `gender_options`, `personality_traits`,
+`likes`, …) are included, and references to catalog definitions are emitted as
+compact `{id, name, display_name}` objects rather than duplicating the catalog.
+`sims4_sdk.to_dict()` / `to_json()` accept any model or nested structure, and
+`Sims4JSONEncoder` plugs into `json.dumps`.
+
+**Name lookups and filters.** Catalog and save accessors accept IDs or names,
+try an exact match first, and then fall back to case-insensitive matching.
+`find_*` methods do substring filtering:
+
+```python
+catalog.trait("TRAIT_MEAN")          # exact name, case-insensitive fallback
+catalog.career_track("career_criminal")
+catalog.tuning_name(123456)          # arbitrary tuning ID → name
+
+catalog.find_traits("vampire", trait_type="OCCULT", pack="EP01")
+catalog.find_preferences(preference_type="DISLIKE")
+catalog.find_careers(pack="BASE")
+catalog.packs()                      # packs represented in the catalog
+
+save.sim("Bella Goth")               # exact, then fragment
+save.household_sims("Goth")
+save.find_sims(age="ADULT", occult="VAMPIRE")
+tray.find_households(creator="Maxis")
+```
+
+**Portable snapshots.** A catalog or the complete static data can be pickled
+once and reopened without an installation:
+
+```python
+from sims4_sdk.catalog import Catalog
+
+ws.save_static("sims4-static.pkl")   # catalog + pre-made Sims/households/lots
+
+offline = Sims4Workspace.from_static(
+    "sims4-static.pkl",
+    user_dir=r"C:\Users\me\Documents\Electronic Arts\The Sims 4",
+)
+save = offline.read_save(offline.latest_save_path())
+
+# Or just the catalog
+ws.catalog.save("catalog.pkl")
+catalog = Catalog.load("catalog.pkl")
+```
+
+Snapshots are trusted local artifacts produced by the SDK; use `to_dict()` /
+`to_json()` when another program needs to consume the data. Reading a Tray
+folder or a save only needs the catalog, so `from_static` works for archives and
+CI without the game installed.
+
+**Unified exceptions.** Every SDK-specific error subclasses
+`sims4_sdk.Sims4SDKError`, while keeping its historical builtin base:
+
+```python
+from sims4_sdk import Sims4SDKError
+
+try:
+    save = ws.read_save(path)
+except Sims4SDKError as exc:
+    ...
+```
+
+`ValueError` and `RuntimeError` handlers written against earlier versions keep
+working. Snapshot failures raise `CatalogError` / `StaticDataError`.
+
 ### Low-level binary readers (Step 1)
 
 ```python
@@ -195,6 +285,8 @@ src/sims4_sdk/
 │   └── models.py       # report/comparison models
 ├── installation.py     # package discovery and load order
 ├── siminfo.py          # SimInfo trait-list reader
+├── export.py           # to_dict / to_json serialization
+├── exceptions.py       # Sims4SDKError base class
 ├── workspace.py        # Sims4Workspace facade
 └── paths.py            # install / user directory discovery
 tests/                  # unit tests + optional local integration tests
@@ -209,7 +301,9 @@ examples/
    careers, skills, pregnancy, occult).
 4. **Step 4 — Sims Wiki validation** (done; catalog, pre-made/played Sim
    reconciliation, Markdown/JSON reports).
-5. **Step 5 — public API/export tooling** (CLI, JSON/SQLite/Polars helpers).
+5. **Step 5 — public library API** (done; model serialization, name/ID lookups
+   and filters, portable static snapshots, `Sims4Workspace.from_static`, unified
+   exceptions).
 
 > Note on pre-made Sim values: where the game bakes values into the SimInfo
 > resource (for example randomized traits), those values are surfaced. Where the
@@ -239,6 +333,26 @@ automatically when no Sims 4 install is found. Set `SIMS4_INSTALL_DIR` and
 `SIMS4_USER_DIR` to point at a specific installation/user folder. Full catalog
 builds are cached, so the first run is the slow one.
 
+## Performance
+
+A cold full scan (602 packages, 2.58M index entries, ~300 MB of tuning data)
+takes roughly **7 seconds** on a 6-core desktop CPU; the cached load afterwards
+is immediate.  The hot path is built around four ideas:
+
+- **One index pass.** Package indexes are read in one block and scanned in
+  place; only the entries whose resource type is actually needed are turned
+  into `ResourceEntry` objects.
+- **No XML detour.** Binary Combined Tuning blobs are decoded straight from the
+  seven `DATA` tables into an `ElementTree`. Round-tripping through a ~200 MB
+  XML string used to be about two thirds of the whole build.
+- **Lazy subtrees.** Tuning entries, the shared `<g>` value table and the `<M>`
+  tuning modules are built on first access, so only the few thousand entries a
+  catalog build actually reads are ever materialised. `CombinedTuning.root`
+  materialises everything if you ask for it.
+- **Fused resource collection.** Strings, tuning, world resources and the
+  SimInfo index are gathered in a single pass per package, so pre-made Sim
+  extraction never re-opens the installation.
+
 ### Verified against the local installation
 
 | Check | Result |
@@ -252,7 +366,7 @@ builds are cached, so the first run is the slow one.
 | Full game scan | 629 packages, 2,581,974 index entries, 0 failures |
 | All English string tables | 117 packages, 163,302 strings, 0 failures |
 | Node test set (base + EP13) | 745 traits, 166 preferences, 191 aspirations, 223 career levels, 109 milestones, 36 pre-made Sims, 15 households, 21 ancestors, 0 errors |
-| Full static scan (base + all packs, no mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 431 pre-made Sims, 204 households, 41 ancestors, 548 lots, 16 relationship defaults, 348 premade relationship pairs, 25 bit ranges, 0 errors, 602 packages; ~130 s first build, cached afterwards |
+| Full static scan (base + all packs, no mods) | 2,795 traits, 334 preferences, 392 aspirations, 146 careers, 671 career levels, 201 milestones, 766 relationship bits, 431 pre-made Sims, 204 households, 41 ancestors, 548 lots, 16 relationship defaults, 348 premade relationship pairs, 25 bit ranges, 0 errors, 602 packages; ~7 s first build, cached afterwards |
 | Starter-save households | BFF (9,000), Pancakes (20,000), Roomies (14,000), Spencer-Kim-Lewis (55,500), Caliente (28,500); 0 parse errors |
 | Initial relationships | Pancakes spouse 45/75; Caliente parent/child 45/0; Megumi ↔ Kado 10/-60; Megumi ↔ Sachiko 60; Bjergsen spouse romance range 25–75 |
 | Save files | 6 parsed (`Slot_*` + `ver0`–`ver4`), 0 failures; example save: 59 Sims / 32 households / 59 zones |

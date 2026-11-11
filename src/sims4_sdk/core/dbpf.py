@@ -29,10 +29,10 @@ from __future__ import annotations
 
 import struct
 import zlib
-from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterator, Optional
+from typing import Iterator, NamedTuple, Optional
 
+from ..exceptions import Sims4SDKError
 from . import refpack
 
 __all__ = [
@@ -66,13 +66,19 @@ _CONST_INSTANCE_HIGH = 0x04
 _CONST_INSTANCE_LOW = 0x08
 _KNOWN_INDEX_FLAGS = _CONST_TYPE | _CONST_GROUP | _CONST_INSTANCE_HIGH | _CONST_INSTANCE_LOW
 
+#: Largest possible index entry (all four key fields stored inline).
+_MAX_ENTRY_SIZE = 32
+#: The index may begin with a 4-byte flag word plus four constant fields.
+_INDEX_PREFIX = 20
 
-class DBPFError(ValueError):
+_U32 = struct.Struct("<I").unpack_from
+
+
+class DBPFError(Sims4SDKError, ValueError):
     """Raised when a DBPF container cannot be parsed or decompressed."""
 
 
-@dataclass(frozen=True, order=True)
-class ResourceKey:
+class ResourceKey(NamedTuple):
     """A resource identifier: ``type`` / ``group`` / ``instance``."""
 
     type_id: int
@@ -91,8 +97,7 @@ class ResourceKey:
         return cls(int(parts[0], 16), int(parts[1], 16), int(parts[2], 16))
 
 
-@dataclass(frozen=True)
-class ResourceEntry:
+class ResourceEntry(NamedTuple):
     """One resource in a package index."""
 
     key: ResourceKey
@@ -113,8 +118,7 @@ class ResourceEntry:
         return self.size
 
 
-@dataclass(frozen=True)
-class DBPFHeader:
+class DBPFHeader(NamedTuple):
     magic: bytes
     major_version: int
     minor_version: int
@@ -122,6 +126,143 @@ class DBPFHeader:
     index_offset: int
     index_size: int
     file_size: int
+
+
+class _IndexView:
+    """A package index that materialises entries on demand."""
+
+    __slots__ = (
+        "buffer",
+        "position",
+        "count",
+        "step",
+        "has_type",
+        "has_group",
+        "has_high",
+        "has_low",
+        "const_type",
+        "const_group",
+        "const_high",
+        "const_low",
+        "_unpack",
+        "_entry",
+    )
+
+    def __init__(
+        self,
+        buffer: bytes,
+        position: int,
+        count: int,
+        flags: int,
+        constants: dict[int, int],
+    ):
+        fields = []
+        if not flags & _CONST_TYPE:
+            fields.append("I")
+        if not flags & _CONST_GROUP:
+            fields.append("I")
+        if not flags & _CONST_INSTANCE_HIGH:
+            fields.append("I")
+        if not flags & _CONST_INSTANCE_LOW:
+            fields.append("I")
+        entry_struct = struct.Struct("<" + "".join(fields) + "IIIHH")
+        step = entry_struct.size
+        if position + step * count > len(buffer):
+            raise DBPFError("unexpected end of index (truncated entry table)")
+
+        self.buffer = buffer
+        self.position = position
+        self.count = count
+        self.step = step
+        self.has_type = not flags & _CONST_TYPE
+        self.has_group = not flags & _CONST_GROUP
+        self.has_high = not flags & _CONST_INSTANCE_HIGH
+        self.has_low = not flags & _CONST_INSTANCE_LOW
+        self.const_type = constants.get(_CONST_TYPE, 0)
+        self.const_group = constants.get(_CONST_GROUP, 0)
+        self.const_high = constants.get(_CONST_INSTANCE_HIGH, 0)
+        self.const_low = constants.get(_CONST_INSTANCE_LOW, 0)
+        self._unpack = _U32
+        self._entry = entry_struct.unpack_from
+
+    def type_at(self, position: int) -> int:
+        if self.has_type:
+            return self._unpack(self.buffer, position)[0]
+        return self.const_type
+
+    def entry_at(self, position: int) -> ResourceEntry:
+        values = self._entry(self.buffer, position)
+        cursor = 0
+        if self.has_type:
+            type_id = values[cursor]
+            cursor += 1
+        else:
+            type_id = self.const_type
+        if self.has_group:
+            group = values[cursor]
+            cursor += 1
+        else:
+            group = self.const_group
+        if self.has_high:
+            instance_high = values[cursor]
+            cursor += 1
+        else:
+            instance_high = self.const_high
+        if self.has_low:
+            instance_low = values[cursor]
+            cursor += 1
+        else:
+            instance_low = self.const_low
+
+        stored_size = values[cursor + 1]
+        return ResourceEntry(
+            ResourceKey(type_id, group, (instance_high << 32) | instance_low),
+            values[cursor],
+            stored_size & _SIZE_MASK,
+            values[cursor + 2],
+            values[cursor + 3],
+            values[cursor + 4] != 0,
+            bool(stored_size & _COMPRESSED_FLAG),
+        )
+
+    def __iter__(self) -> Iterator[ResourceEntry]:
+        entry_at = self.entry_at
+        for position in range(
+            self.position, self.position + self.step * self.count, self.step
+        ):
+            yield entry_at(position)
+
+    def __len__(self) -> int:
+        return self.count
+
+    def iter_typed(self, type_ids, group) -> Iterator[ResourceEntry]:
+        """Yield entries matching ``type_ids`` and/or ``group`` without building the rest."""
+        if group is not None:
+            if type_ids is None:
+                for entry in self:
+                    if entry.key.group == group:
+                        yield entry
+                return
+            for entry in self.iter_typed(type_ids, None):
+                if entry.key.group == group:
+                    yield entry
+            return
+
+        buffer = self.buffer
+        step = self.step
+        entry_at = self.entry_at
+        if type_ids is None:
+            yield from self
+        elif self.has_type:
+            unpack = self._unpack
+            for position in range(
+                self.position, self.position + step * self.count, step
+            ):
+                if unpack(buffer, position)[0] not in type_ids:
+                    continue
+                yield entry_at(position)
+        elif self.const_type in type_ids:
+            yield from self
 
 
 class DBPF:
@@ -134,9 +275,9 @@ class DBPF:
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.header: DBPFHeader
-        self.entries: list[ResourceEntry]
         self._index_flags = 0
-        self.header, self.entries, self._index_flags = self._parse()
+        self.header, self._index_view = self._parse()
+        self._entries: Optional[list[ResourceEntry]] = None
 
     # ------------------------------------------------------------------
     # construction
@@ -145,7 +286,7 @@ class DBPF:
     def open(cls, path: str | Path) -> "DBPF":
         return cls(path)
 
-    def _parse(self) -> tuple[DBPFHeader, list[ResourceEntry], int]:
+    def _parse(self):
         try:
             fp = open(self.path, "rb")
         except OSError as exc:
@@ -175,22 +316,31 @@ class DBPF:
                     f"{self.path.name}: index offset {index_offset} is past EOF"
                 )
 
+            # Read the whole index once; entry-wise reads dominated the scan.
             fp.seek(index_offset)
-            index_start = fp.tell()
-            raw_flags = fp.read(4)
-            if len(raw_flags) < 4:
-                raise DBPFError(f"{self.path.name}: truncated index header")
-            (index_flags,) = struct.unpack("<I", raw_flags)
+            available = file_size - index_offset
+            wanted = min(available, _INDEX_PREFIX + entry_count * _MAX_ENTRY_SIZE)
+            index_data = fp.read(wanted)
 
-            if index_flags & ~_KNOWN_INDEX_FLAGS:
-                # No constant-field bitmask: this is a plain entry array.
-                fp.seek(index_start)
-                index_flags = 0
-                entries = self._read_entries(fp, entry_count, index_flags)
-            else:
-                constants = self._read_constants(fp, index_flags)
-                entries = self._read_entries(fp, entry_count, index_flags, constants)
+        if len(index_data) < 4:
+            raise DBPFError(f"{self.path.name}: truncated index header")
 
+        (index_flags,) = struct.unpack_from("<I", index_data, 0)
+        position = 4
+        constants: dict[int, int] = {}
+        if index_flags & ~_KNOWN_INDEX_FLAGS:
+            # No constant-field bitmask: this is a plain entry array.
+            index_flags = 0
+            position = 0
+        else:
+            for bit in (_CONST_TYPE, _CONST_GROUP, _CONST_INSTANCE_HIGH, _CONST_INSTANCE_LOW):
+                if index_flags & bit:
+                    if position + 4 > len(index_data):
+                        raise DBPFError("truncated constant index field")
+                    constants[bit] = struct.unpack_from("<I", index_data, position)[0]
+                    position += 4
+
+        self._index_flags = index_flags
         header = DBPFHeader(
             magic=data[:4],
             major_version=major,
@@ -200,68 +350,20 @@ class DBPF:
             index_size=index_size,
             file_size=file_size,
         )
-        return header, entries, index_flags
+        return header, _IndexView(index_data, position, entry_count, index_flags, constants)
 
-    @staticmethod
-    def _read_constants(fp: BinaryIO, flags: int) -> dict[int, int]:
-        constants: dict[int, int] = {}
-        for bit, field in (
-            (_CONST_TYPE, "type"),
-            (_CONST_GROUP, "group"),
-            (_CONST_INSTANCE_HIGH, "instance_high"),
-            (_CONST_INSTANCE_LOW, "instance_low"),
-        ):
-            if flags & bit:
-                raw = fp.read(4)
-                if len(raw) < 4:
-                    raise DBPFError("truncated constant index field")
-                constants[bit] = struct.unpack("<I", raw)[0]
-        return constants
+    @property
+    def entries(self) -> list[ResourceEntry]:
+        """Every index entry, materialised on first use."""
+        cached = self._entries
+        if cached is None:
+            cached = list(self._index_view)
+            self._entries = cached
+        return cached
 
-    @staticmethod
-    def _read_entries(
-        fp: BinaryIO,
-        count: int,
-        flags: int,
-        constants: Optional[dict[int, int]] = None,
-    ) -> list[ResourceEntry]:
-        constants = constants or {}
-        entries: list[ResourceEntry] = []
-        for _ in range(count):
-            type_id = constants.get(_CONST_TYPE)
-            if type_id is None:
-                type_id = struct.unpack("<I", _read_exact(fp, 4))[0]
-            group = constants.get(_CONST_GROUP)
-            if group is None:
-                group = struct.unpack("<I", _read_exact(fp, 4))[0]
-            instance_high = constants.get(_CONST_INSTANCE_HIGH)
-            if instance_high is None:
-                instance_high = struct.unpack("<I", _read_exact(fp, 4))[0]
-            instance_low = constants.get(_CONST_INSTANCE_LOW)
-            if instance_low is None:
-                instance_low = struct.unpack("<I", _read_exact(fp, 4))[0]
-
-            offset = struct.unpack("<I", _read_exact(fp, 4))[0]
-            stored_size = struct.unpack("<I", _read_exact(fp, 4))[0]
-            mem_size = struct.unpack("<I", _read_exact(fp, 4))[0]
-            compression, committed = struct.unpack("<HH", _read_exact(fp, 4))
-
-            entries.append(
-                ResourceEntry(
-                    key=ResourceKey(
-                        type_id=type_id,
-                        group=group,
-                        instance=(instance_high << 32) | instance_low,
-                    ),
-                    offset=offset,
-                    size=stored_size & _SIZE_MASK,
-                    mem_size=mem_size,
-                    compression=compression,
-                    committed=committed != 0,
-                    compressed=bool(stored_size & _COMPRESSED_FLAG),
-                )
-            )
-        return entries
+    @entries.setter
+    def entries(self, value: list[ResourceEntry]) -> None:
+        self._entries = value
 
     # ------------------------------------------------------------------
     # lookup
@@ -273,20 +375,27 @@ class DBPF:
 
     @property
     def resource_count(self) -> int:
-        return len(self.entries)
+        return self.header.entry_count
 
     def iter_entries(
         self,
         type_id: Optional[int] = None,
         group: Optional[int] = None,
     ) -> Iterator[ResourceEntry]:
-        """Yield entries, optionally filtered by type and/or group."""
-        for entry in self.entries:
-            if type_id is not None and entry.key.type_id != type_id:
-                continue
-            if group is not None and entry.key.group != group:
-                continue
-            yield entry
+        """Yield entries, optionally filtered by type and/or group.
+
+        Filtering happens against the raw index, so entries that do not match
+        are never materialised.
+        """
+        if type_id is None and group is None:
+            yield from self.entries
+            return
+        type_ids = None if type_id is None else {type_id}
+        yield from self._index_view.iter_typed(type_ids, group)
+
+    def iter_entries_for_types(self, type_ids) -> Iterator[ResourceEntry]:
+        """Yield every entry whose type is in ``type_ids``."""
+        return self._index_view.iter_typed(set(type_ids), None)
 
     def find_entry(self, key: ResourceKey) -> Optional[ResourceEntry]:
         for entry in self.entries:
@@ -391,13 +500,6 @@ class DBPF:
             f"DBPF({self.path.name!r}, entries={len(self.entries)}, "
             f"version={self.header.major_version}.{self.header.minor_version})"
         )
-
-
-def _read_exact(fp: BinaryIO, count: int) -> bytes:
-    data = fp.read(count)
-    if len(data) != count:
-        raise DBPFError(f"unexpected end of index (wanted {count} bytes)")
-    return data
 
 
 def _zlib_or_fail(raw: bytes, mem_size: int = 0) -> bytes:

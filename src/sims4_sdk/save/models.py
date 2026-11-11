@@ -16,6 +16,7 @@ from ..catalog.models import (
     Preference,
     Trait,
 )
+from ..export import Serializable
 
 __all__ = [
     "SaveSlot",
@@ -41,8 +42,17 @@ __all__ = [
 ]
 
 
+def _exact_name(mapping, attribute: str, key: str):
+    needle = key.casefold()
+    for value in mapping.values():
+        name = getattr(value, attribute, None)
+        if name and name.casefold() == needle:
+            return value
+    return None
+
+
 @dataclass
-class SaveSlot:
+class SaveSlot(Serializable):
     slot_id: Optional[int] = None
     slot_name: Optional[str] = None
     timestamp: Optional[int] = None
@@ -55,7 +65,7 @@ class SaveSlot:
 
 
 @dataclass
-class SaveAccount:
+class SaveAccount(Serializable):
     email: Optional[str] = None
     client_version: Optional[str] = None
     save_slot_id: Optional[int] = None
@@ -67,7 +77,7 @@ class SaveAccount:
 
 
 @dataclass
-class SaveZone:
+class SaveZone(Serializable):
     zone_id: int
     name: Optional[str] = None
     world_id: Optional[int] = None
@@ -78,7 +88,7 @@ class SaveZone:
 
 
 @dataclass
-class SaveNeighborhood:
+class SaveNeighborhood(Serializable):
     neighborhood_id: int
     name: Optional[str] = None
     region_id: Optional[int] = None
@@ -86,7 +96,7 @@ class SaveNeighborhood:
 
 
 @dataclass
-class SavedSkill:
+class SavedSkill(Serializable):
     skill_id: int
     name: Optional[str] = None
     tuning_class: Optional[str] = None
@@ -95,7 +105,7 @@ class SavedSkill:
 
 
 @dataclass
-class SavedCareerHistory:
+class SavedCareerHistory(Serializable):
     career_id: int
     track_id: int
     track_level: int
@@ -106,7 +116,7 @@ class SavedCareerHistory:
 
 
 @dataclass
-class SavedCareer:
+class SavedCareer(Serializable):
     career_id: int
     track_id: int
     track_level: int
@@ -136,7 +146,7 @@ class SavedCareer:
 
 
 @dataclass
-class SavedRelationshipTrack:
+class SavedRelationshipTrack(Serializable):
     track_id: int
     value: float = 0.0
     name: Optional[str] = None
@@ -144,7 +154,7 @@ class SavedRelationshipTrack:
 
 
 @dataclass
-class SavedRelationship:
+class SavedRelationship(Serializable):
     target_id: int
     target_name: Optional[str] = None
     value: float = 0.0
@@ -155,14 +165,14 @@ class SavedRelationship:
 
 
 @dataclass
-class SavedFamilyRelation:
+class SavedFamilyRelation(Serializable):
     kind: str
     sim_id: int
     name: Optional[str] = None
 
 
 @dataclass
-class SavedRelationshipTrope:
+class SavedRelationshipTrope(Serializable):
     """A family/romance dynamic stored in the genealogy tracker."""
 
     sim_id: int
@@ -179,7 +189,7 @@ class SavedRelationshipTrope:
 
 
 @dataclass
-class SavedMilestone:
+class SavedMilestone(Serializable):
     milestone_id: int
     milestone: Optional[Milestone] = None
     state: Optional[int] = None
@@ -196,7 +206,7 @@ class SavedMilestone:
 
 
 @dataclass
-class SavedTimedAspiration:
+class SavedTimedAspiration(Serializable):
     aspiration_id: int
     name: Optional[str] = None
     end_time: Optional[int] = None
@@ -204,14 +214,14 @@ class SavedTimedAspiration:
 
 
 @dataclass
-class SavedStatistic:
+class SavedStatistic(Serializable):
     statistic_id: int
     name: Optional[str] = None
     value: float = 0.0
 
 
 @dataclass
-class SavedSim:
+class SavedSim(Serializable):
     sim_id: int
     first_name: str = ""
     last_name: str = ""
@@ -317,7 +327,7 @@ class SavedSim:
 
 
 @dataclass
-class SavedHousehold:
+class SavedHousehold(Serializable):
     household_id: int
     name: Optional[str] = None
     money: Optional[int] = None
@@ -341,7 +351,7 @@ class SavedHousehold:
 
 
 @dataclass
-class SaveFile:
+class SaveFile(Serializable):
     path: Path
     slot: SaveSlot = field(default_factory=SaveSlot)
     account: SaveAccount = field(default_factory=SaveAccount)
@@ -351,9 +361,34 @@ class SaveFile:
     neighborhoods: dict[int, SaveNeighborhood] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
+    @property
+    def active_household(self) -> Optional[SavedHousehold]:
+        """The household that was active when the save was written."""
+        if self.slot.active_household_id is None:
+            return None
+        return self.households.get(self.slot.active_household_id)
+
+    def household_sims(
+        self, household: SavedHousehold | int | str
+    ) -> list[SavedSim]:
+        """Return the member Sims of a household (in member order)."""
+        if not isinstance(household, SavedHousehold):
+            household = self.household(household) if household is not None else None
+        if household is None:
+            return []
+        return [
+            self.sims[sim_id]
+            for sim_id in household.member_ids
+            if sim_id in self.sims
+        ]
+
     def sim(self, key: str | int) -> Optional[SavedSim]:
+        """Look up a Sim by ID, exact name, or name fragment."""
         if isinstance(key, int):
             return self.sims.get(key)
+        exact = _exact_name(self.sims, "full_name", key)
+        if exact is not None:
+            return exact
         needle = key.casefold()
         return next(
             (
@@ -365,8 +400,12 @@ class SaveFile:
         )
 
     def household(self, key: str | int) -> Optional[SavedHousehold]:
+        """Look up a household by ID, exact name, or name fragment."""
         if isinstance(key, int):
             return self.households.get(key)
+        exact = _exact_name(self.households, "name", key)
+        if exact is not None:
+            return exact
         needle = key.casefold()
         return next(
             (
@@ -377,13 +416,64 @@ class SaveFile:
             None,
         )
 
-    def find_sims(self, query: str) -> list[SavedSim]:
+    def find_sims(
+        self,
+        query: str = "",
+        *,
+        household: str | int | None = None,
+        age: Optional[str] = None,
+        species: Optional[str] = None,
+        occult: Optional[str] = None,
+        is_dead: Optional[bool] = None,
+    ) -> list[SavedSim]:
+        """Filter live Sims by name and/or common attributes."""
         needle = query.casefold()
-        return [
-            sim
-            for sim in self.sims.values()
-            if needle in sim.full_name.casefold()
-        ]
+        household_id: Optional[int] = None
+        household_name: Optional[str] = None
+        if isinstance(household, int):
+            household_id = household
+        elif household is not None:
+            household_name = household.casefold()
+
+        results: list[SavedSim] = []
+        for sim in self.sims.values():
+            if needle and needle not in sim.full_name.casefold():
+                continue
+            if household_id is not None and sim.household_id != household_id:
+                continue
+            if household_name is not None and (
+                (sim.household_name or "").casefold() != household_name
+            ):
+                continue
+            if age and (sim.age or "").casefold() != age.casefold():
+                continue
+            if species and (sim.species or "").casefold() != species.casefold():
+                continue
+            if occult and occult.casefold() not in {item.casefold() for item in sim.occult}:
+                continue
+            if is_dead is not None and sim.is_dead != is_dead:
+                continue
+            results.append(sim)
+        return results
+
+    def find_households(
+        self,
+        query: str = "",
+        *,
+        is_player: Optional[bool] = None,
+        is_unplayed: Optional[bool] = None,
+    ) -> list[SavedHousehold]:
+        needle = query.casefold()
+        results: list[SavedHousehold] = []
+        for household in self.households.values():
+            if needle and needle not in (household.name or "").casefold():
+                continue
+            if is_player is not None and household.is_player != is_player:
+                continue
+            if is_unplayed is not None and household.is_unplayed != is_unplayed:
+                continue
+            results.append(household)
+        return results
 
     def summary(self) -> str:
         return (
@@ -396,7 +486,7 @@ class SaveFile:
 # Tray
 # ----------------------------------------------------------------------
 @dataclass
-class TrayItem:
+class TrayItem(Serializable):
     path: Path
     item_id: Optional[int] = None
     item_type: Optional[int] = None
@@ -409,7 +499,7 @@ class TrayItem:
 
 
 @dataclass
-class TrayHousehold:
+class TrayHousehold(Serializable):
     path: Path
     item: Optional[TrayItem] = None
     family_name: Optional[str] = None
@@ -426,7 +516,7 @@ class TrayHousehold:
 
 
 @dataclass
-class TrayLibrary:
+class TrayLibrary(Serializable):
     items: list[TrayItem] = field(default_factory=list)
     households: list[TrayHousehold] = field(default_factory=list)
 
@@ -434,6 +524,21 @@ class TrayLibrary:
         if isinstance(key, int):
             return next((hh for hh in self.households if hh.item and hh.item.item_id == key), None)
         needle = key.casefold()
+        exact = next(
+            (
+                hh
+                for hh in self.households
+                if (hh.family_name and hh.family_name.casefold() == needle)
+                or (
+                    hh.item
+                    and hh.item.title
+                    and hh.item.title.casefold() == needle
+                )
+            ),
+            None,
+        )
+        if exact is not None:
+            return exact
         return next(
             (
                 hh
@@ -443,6 +548,36 @@ class TrayLibrary:
             ),
             None,
         )
+
+    def find_households(
+        self,
+        query: str = "",
+        *,
+        creator: Optional[str] = None,
+    ) -> list[TrayHousehold]:
+        """Filter Gallery households by family name/title and creator."""
+        needle = query.casefold()
+        results: list[TrayHousehold] = []
+        for household in self.households:
+            title = household.item.title if household.item else None
+            if needle and needle not in (household.family_name or "").casefold() and needle not in (title or "").casefold():
+                continue
+            if creator:
+                actual = household.item.creator if household.item else None
+                if (actual or "").casefold() != creator.casefold():
+                    continue
+            results.append(household)
+        return results
+
+    def find_sims(self, query: str = "") -> list[SavedSim]:
+        """Return every Tray Sim whose name contains ``query``."""
+        needle = query.casefold()
+        return [
+            sim
+            for household in self.households
+            for sim in household.sims
+            if not needle or needle in sim.full_name.casefold()
+        ]
 
     def summary(self) -> str:
         return f"TrayLibrary(items={len(self.items)}, households={len(self.households)})"

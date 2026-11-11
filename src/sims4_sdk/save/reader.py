@@ -7,6 +7,7 @@ from typing import Any, Mapping, Optional
 
 from ..catalog.models import Catalog
 from ..core import DBPF
+from ..exceptions import Sims4SDKError
 from .enums import (
     AGE_NAMES,
     FAMILY_RELATION_NAMES,
@@ -49,7 +50,7 @@ __all__ = [
 SAVE_RESOURCE_TYPE = 0x0000000D
 
 
-class SaveError(ValueError):
+class SaveError(Sims4SDKError, ValueError):
     """Raised when a save file cannot be parsed."""
 
 

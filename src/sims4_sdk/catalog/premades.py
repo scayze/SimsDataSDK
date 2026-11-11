@@ -23,7 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
-from ..core import ResourceKey, TuningElement
+from ..core import DBPF, ResourceKey, TuningElement
+from ..export import Serializable
 from ..installation import Installation
 from ..siminfo import SimInfo, SimInfoError
 from .models import (
@@ -57,8 +58,28 @@ __all__ = [
 ]
 
 
+def _exact_name(mapping: dict[str, object], key: str):
+    item = mapping.get(key)
+    if item is not None:
+        return item
+    needle = key.casefold()
+    return next(
+        (value for name, value in mapping.items() if name.casefold() == needle),
+        None,
+    )
+
+
+def _source_matches(source: Optional[TuningSource], pack: Optional[str]) -> bool:
+    if not pack:
+        return True
+    if source is None:
+        return False
+    needle = pack.casefold()
+    return needle in (source.pack.casefold(), source.label.casefold())
+
+
 @dataclass
-class PremadeLot:
+class PremadeLot(Serializable):
     """A lot from the world/lot manifest (``0x729F6C4F``).
 
     ``household_id`` is the instance of the ``0xB3C438F0`` household resource
@@ -84,7 +105,7 @@ class PremadeLot:
 
 
 @dataclass
-class HouseholdMember:
+class HouseholdMember(Serializable):
     tag: str
     sim_template_id: int
     sim_name: Optional[str] = None
@@ -92,7 +113,7 @@ class HouseholdMember:
 
 
 @dataclass
-class HouseholdRelationship:
+class HouseholdRelationship(Serializable):
     kind: str
     a_tag: str
     b_tag: str
@@ -107,7 +128,7 @@ class HouseholdRelationship:
 
 
 @dataclass
-class PremadeHousehold:
+class PremadeHousehold(Serializable):
     id: int
     name: str
     members: list[HouseholdMember] = field(default_factory=list)
@@ -126,7 +147,7 @@ class PremadeHousehold:
 
 
 @dataclass
-class PremadeAncestor:
+class PremadeAncestor(Serializable):
     id: int
     name: str
     full_name: str
@@ -140,7 +161,7 @@ class PremadeAncestor:
 
 
 @dataclass
-class PremadeSim:
+class PremadeSim(Serializable):
     id: int
     name: str
     first_name: str
@@ -282,7 +303,7 @@ class PremadeSim:
 
 
 @dataclass
-class PremadeBundle:
+class PremadeBundle(Serializable):
     sims: list[PremadeSim] = field(default_factory=list)
     households: list[PremadeHousehold] = field(default_factory=list)
     ancestors: list[PremadeAncestor] = field(default_factory=list)
@@ -295,19 +316,103 @@ class PremadeBundle:
     lots_by_name: dict[str, PremadeLot] = field(default_factory=dict, repr=False)
 
     def sim(self, key: str | int) -> Optional[PremadeSim]:
+        """Look up a Sim by ID, exact name, or unambiguous name fragment."""
         if isinstance(key, int):
             return next((sim for sim in self.sims if sim.id == key), None)
-        return self.sims_by_name.get(key)
+        exact = _exact_name(self.sims_by_name, key)
+        if exact is not None:
+            return exact
+        found = self.find_sims(key)
+        return found[0] if found else None
 
     def household(self, key: str | int) -> Optional[PremadeHousehold]:
+        """Look up a household by ID, exact name, or name fragment."""
         if isinstance(key, int):
             return next((hh for hh in self.households if hh.id == key), None)
-        return self.households_by_name.get(key)
+        exact = _exact_name(self.households_by_name, key)
+        if exact is not None:
+            return exact
+        needle = key.casefold()
+        return next(
+            (hh for hh in self.households if needle in hh.name.casefold()), None
+        )
 
     def lot(self, key: str | int) -> Optional[PremadeLot]:
+        """Look up a lot by ID, exact name, or name fragment."""
         if isinstance(key, int):
             return next((lot for lot in self.lots if lot.id == key), None)
-        return self.lots_by_name.get(key)
+        exact = _exact_name(self.lots_by_name, key)
+        if exact is not None:
+            return exact
+        needle = key.casefold()
+        return next(
+            (lot for lot in self.lots if needle in (lot.lot_name or "").casefold()),
+            None,
+        )
+
+    def find_sims(
+        self,
+        query: str = "",
+        *,
+        pack: Optional[str] = None,
+        household: str | int | None = None,
+        age: Optional[str] = None,
+        occult: Optional[str] = None,
+    ) -> list[PremadeSim]:
+        """Filter pre-made Sims by name, pack, household, age, or occult."""
+        needle = query.casefold()
+        results: list[PremadeSim] = []
+        for sim in self.sims:
+            if needle and needle not in sim.full_name.casefold() and needle not in sim.name.casefold():
+                continue
+            if not _source_matches(sim.source, pack):
+                continue
+            if household is not None:
+                if isinstance(household, int):
+                    if sim.household_id != household:
+                        continue
+                elif (sim.household_name or "").casefold() != household.casefold():
+                    continue
+            if age and (sim.age or "").casefold() != age.casefold():
+                continue
+            if occult and (sim.occult or "").casefold() != occult.casefold():
+                continue
+            results.append(sim)
+        return results
+
+    def find_households(
+        self,
+        query: str = "",
+        *,
+        pack: Optional[str] = None,
+    ) -> list[PremadeHousehold]:
+        needle = query.casefold()
+        return [
+            household
+            for household in self.households
+            if (not needle or needle in household.name.casefold())
+            and _source_matches(household.source, pack)
+        ]
+
+    def find_lots(
+        self,
+        query: str = "",
+        *,
+        pack: Optional[str] = None,
+        occupied_only: bool = False,
+    ) -> list[PremadeLot]:
+        needle = query.casefold()
+        return [
+            lot
+            for lot in self.lots
+            if (
+                not needle
+                or needle in (lot.lot_name or "").casefold()
+                or needle in (lot.household_name or "").casefold()
+            )
+            and _source_matches(lot.source, pack)
+            and not (occupied_only and not lot.has_household)
+        ]
 
     def relationship(
         self, sim_a: int, sim_b: int
@@ -339,25 +444,34 @@ def build_premades(
     sources: dict[int, TuningSource],
     *,
     world: Optional[WorldData] = None,
+    siminfo_index: Optional[dict[int, tuple]] = None,
 ) -> PremadeBundle:
     sims: dict[int, PremadeSim] = {}
     households: dict[int, PremadeHousehold] = {}
     ancestors: dict[int, PremadeAncestor] = {}
+    # The package scan already indexed every SimInfo resource; re-opening all
+    # package indexes here would cost another full DBPF parse pass.
+    if siminfo_index is None:
+        siminfo_index = installation.siminfo_index()
 
     for instance_id, entry in entries.items():
-        view = TuningView(entry, catalog.strings)
-        source = sources.get(instance_id)
+        cls = entry.cls
         try:
-            if entry.cls == "PremadeSimTemplate":
+            if cls == "PremadeSimTemplate":
+                view = TuningView(entry, catalog.strings)
                 sims[instance_id] = _build_sim(
-                    entry, view, source, installation, catalog
+                    entry, view, sources.get(instance_id), siminfo_index, catalog
                 )
-            elif entry.cls == "PremadeHouseholdTemplate":
-                households[instance_id] = _build_household(entry, view, source)
-            elif entry.cls == "TunablePremadeAncestor":
-                ancestors[instance_id] = _build_ancestor(entry, view, source)
+            elif cls == "PremadeHouseholdTemplate":
+                households[instance_id] = _build_household(
+                    entry, TuningView(entry, catalog.strings), sources.get(instance_id)
+                )
+            elif cls == "TunablePremadeAncestor":
+                ancestors[instance_id] = _build_ancestor(
+                    entry, TuningView(entry, catalog.strings), sources.get(instance_id)
+                )
         except Exception as exc:
-            catalog.errors.append(f"{entry.name} ({entry.cls}): {exc}")
+            catalog.errors.append(f"{entry.name} ({cls}): {exc}")
 
     for household in households.values():
         for member in household.members:
@@ -924,7 +1038,7 @@ def _build_sim(
     entry: TuningElement,
     view: TuningView,
     source: Optional[TuningSource],
-    installation: Installation,
+    siminfo_index: dict[int, tuple],
     catalog: Catalog,
 ) -> PremadeSim:
     info = view.resolved_child("_sim_creation_info")
@@ -971,7 +1085,12 @@ def _build_sim(
 
     siminfo_trait_ids: list[int] = []
     if siminfo_key is not None:
-        raw = installation.find_siminfo(siminfo_key.instance)
+        found = siminfo_index.get(siminfo_key.instance)
+        raw = (
+            DBPF.read_entry(found[0].path, found[1])
+            if found is not None
+            else None
+        )
         if raw:
             known = set(catalog.traits) | set(catalog.preferences)
             try:

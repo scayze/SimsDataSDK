@@ -7,10 +7,16 @@ with the game.
 
 from __future__ import annotations
 
+import pickle
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, Optional
 
+from ..exceptions import Sims4SDKError
+from ..export import Serializable
+
 __all__ = [
+    "CatalogError",
     "TuningSource",
     "Trait",
     "Preference",
@@ -31,8 +37,39 @@ __all__ = [
 ]
 
 
+class CatalogError(Sims4SDKError, ValueError):
+    """Raised when a catalog snapshot cannot be saved or loaded."""
+
+
+def _lookup(mapping: dict[str, object], key: str):
+    """Exact name lookup first, then a case-insensitive fallback."""
+    item = mapping.get(key)
+    if item is not None:
+        return item
+    needle = key.casefold()
+    return next(
+        (value for name, value in mapping.items() if name.casefold() == needle),
+        None,
+    )
+
+
+def _matches_text(name: Optional[str], display_name: Optional[str], needle: str) -> bool:
+    if not needle:
+        return True
+    return needle in (name or "").casefold() or needle in (display_name or "").casefold()
+
+
+def _matches_source(source: Optional["TuningSource"], pack: Optional[str]) -> bool:
+    if not pack:
+        return True
+    if source is None:
+        return False
+    needle = pack.casefold()
+    return needle in (source.pack.casefold(), source.label.casefold())
+
+
 @dataclass(frozen=True)
-class TuningSource:
+class TuningSource(Serializable):
     """Where a definition came from."""
 
     package: str
@@ -47,7 +84,7 @@ class TuningSource:
 
 
 @dataclass
-class Trait:
+class Trait(Serializable):
     """A trait tuning entry (personality, occult, ghost, walk style, ...)."""
 
     id: int
@@ -73,7 +110,7 @@ class Trait:
 
 
 @dataclass
-class Preference:
+class Preference(Serializable):
     """A like / dislike tuning entry (``traits.preference``)."""
 
     id: int
@@ -100,7 +137,7 @@ class Preference:
 
 
 @dataclass
-class AspirationCategory:
+class AspirationCategory(Serializable):
     id: int
     name: str
     display_name: str
@@ -109,7 +146,7 @@ class AspirationCategory:
 
 
 @dataclass
-class AspirationTrack:
+class AspirationTrack(Serializable):
     id: int
     name: str
     display_name: str
@@ -123,7 +160,7 @@ class AspirationTrack:
 
 
 @dataclass
-class Aspiration:
+class Aspiration(Serializable):
     id: int
     name: str
     display_name: str
@@ -141,7 +178,7 @@ class Aspiration:
 
 
 @dataclass
-class CareerTrack:
+class CareerTrack(Serializable):
     id: int
     name: str
     display_name: str
@@ -152,7 +189,7 @@ class CareerTrack:
 
 
 @dataclass
-class CareerLevel:
+class CareerLevel(Serializable):
     id: int
     name: str
     title: str
@@ -173,7 +210,7 @@ class CareerLevel:
 
 
 @dataclass
-class Career:
+class Career(Serializable):
     id: int
     name: str
     start_track_id: Optional[int] = None
@@ -183,7 +220,7 @@ class Career:
 
 
 @dataclass
-class Milestone:
+class Milestone(Serializable):
     id: int
     name: str
     display_name: str
@@ -202,7 +239,7 @@ class Milestone:
 
 
 @dataclass
-class RelationshipBit:
+class RelationshipBit(Serializable):
     id: int
     name: str
     display_name: str
@@ -215,7 +252,7 @@ class RelationshipBit:
 
 
 @dataclass
-class RelationshipTrackValue:
+class RelationshipTrackValue(Serializable):
     """One relationship track with a fixed value or a min/max range."""
 
     track_id: int
@@ -226,7 +263,7 @@ class RelationshipTrackValue:
 
 
 @dataclass
-class RelationshipDefault:
+class RelationshipDefault(Serializable):
     """Default relationship values for a genealogy link (Roommate, Spouse, ...)."""
 
     link: str
@@ -242,7 +279,7 @@ class RelationshipDefault:
 
 
 @dataclass
-class PremadeRelationship:
+class PremadeRelationship(Serializable):
     """An initial relationship between two pre-made Sims in different households."""
 
     sim_a: int
@@ -319,7 +356,7 @@ _GENDER_BOOLS = {
 
 
 @dataclass
-class GenderOptions:
+class GenderOptions(Serializable):
     """Structured view of the ``trait_GenderOptions_*`` trait family."""
 
     gender: Optional[str] = None
@@ -364,7 +401,7 @@ class GenderOptions:
 
 
 @dataclass
-class SkillLevel:
+class SkillLevel(Serializable):
     """A skill value assigned to a pre-made Sim.
 
     ``level``/``min_value``/``max_value``/``ideal_value`` come from tuning
@@ -383,7 +420,7 @@ class SkillLevel:
 
 
 @dataclass
-class Catalog:
+class Catalog(Serializable):
     """All static definitions extracted from the installed game and mods."""
 
     traits: dict[int, Trait] = field(default_factory=dict)
@@ -417,20 +454,44 @@ class Catalog:
     traits_by_name: dict[str, Trait] = field(default_factory=dict, repr=False)
     preferences_by_name: dict[str, Preference] = field(default_factory=dict, repr=False)
     aspirations_by_name: dict[str, Aspiration] = field(default_factory=dict, repr=False)
+    aspiration_tracks_by_name: dict[str, AspirationTrack] = field(
+        default_factory=dict, repr=False
+    )
+    aspiration_categories_by_name: dict[str, AspirationCategory] = field(
+        default_factory=dict, repr=False
+    )
     careers_by_name: dict[str, Career] = field(default_factory=dict, repr=False)
+    career_tracks_by_name: dict[str, CareerTrack] = field(
+        default_factory=dict, repr=False
+    )
     career_levels_by_name: dict[str, CareerLevel] = field(default_factory=dict, repr=False)
     milestones_by_name: dict[str, Milestone] = field(default_factory=dict, repr=False)
+    relationship_bits_by_name: dict[str, RelationshipBit] = field(
+        default_factory=dict, repr=False
+    )
 
     def finalize(self) -> "Catalog":
         """Rebuild name indexes and cross-links."""
         self.traits_by_name = {item.name: item for item in self.traits.values()}
         self.preferences_by_name = {item.name: item for item in self.preferences.values()}
         self.aspirations_by_name = {item.name: item for item in self.aspirations.values()}
+        self.aspiration_tracks_by_name = {
+            item.name: item for item in self.aspiration_tracks.values()
+        }
+        self.aspiration_categories_by_name = {
+            item.name: item for item in self.aspiration_categories.values()
+        }
         self.careers_by_name = {item.name: item for item in self.careers.values()}
+        self.career_tracks_by_name = {
+            item.name: item for item in self.career_tracks.values()
+        }
         self.career_levels_by_name = {
             item.name: item for item in self.career_levels.values()
         }
         self.milestones_by_name = {item.name: item for item in self.milestones.values()}
+        self.relationship_bits_by_name = {
+            item.name: item for item in self.relationship_bits.values()
+        }
 
         # Link aspirations to their tracks / categories.
         for track in self.aspiration_tracks.values():
@@ -470,32 +531,204 @@ class Catalog:
     def trait(self, key: int | str) -> Optional[Trait]:
         if isinstance(key, int):
             return self.traits.get(key)
-        return self.traits_by_name.get(key)
+        return _lookup(self.traits_by_name, key)
 
     def preference(self, key: int | str) -> Optional[Preference]:
         if isinstance(key, int):
             return self.preferences.get(key)
-        return self.preferences_by_name.get(key)
+        return _lookup(self.preferences_by_name, key)
 
     def aspiration(self, key: int | str) -> Optional[Aspiration]:
         if isinstance(key, int):
             return self.aspirations.get(key)
-        return self.aspirations_by_name.get(key)
+        return _lookup(self.aspirations_by_name, key)
+
+    def aspiration_track(self, key: int | str) -> Optional[AspirationTrack]:
+        if isinstance(key, int):
+            return self.aspiration_tracks.get(key)
+        return _lookup(self.aspiration_tracks_by_name, key)
+
+    def aspiration_category(self, key: int | str) -> Optional[AspirationCategory]:
+        if isinstance(key, int):
+            return self.aspiration_categories.get(key)
+        return _lookup(self.aspiration_categories_by_name, key)
 
     def career(self, key: int | str) -> Optional[Career]:
         if isinstance(key, int):
             return self.careers.get(key)
-        return self.careers_by_name.get(key)
+        return _lookup(self.careers_by_name, key)
+
+    def career_track(self, key: int | str) -> Optional[CareerTrack]:
+        if isinstance(key, int):
+            return self.career_tracks.get(key)
+        return _lookup(self.career_tracks_by_name, key)
 
     def career_level(self, key: int | str) -> Optional[CareerLevel]:
         if isinstance(key, int):
             return self.career_levels.get(key)
-        return self.career_levels_by_name.get(key)
+        return _lookup(self.career_levels_by_name, key)
 
     def milestone(self, key: int | str) -> Optional[Milestone]:
         if isinstance(key, int):
             return self.milestones.get(key)
-        return self.milestones_by_name.get(key)
+        return _lookup(self.milestones_by_name, key)
+
+    def relationship_bit(self, key: int | str) -> Optional[RelationshipBit]:
+        if isinstance(key, int):
+            return self.relationship_bits.get(key)
+        return _lookup(self.relationship_bits_by_name, key)
+
+    def tuning_name(self, tuning_id: int) -> Optional[str]:
+        """Return the tuning name for an arbitrary definition ID."""
+        return self.tuning_names.get(tuning_id)
+
+    def tuning_class(self, tuning_id: int) -> Optional[str]:
+        """Return the tuning class (``Skill``, ``Statistic``, ...) for an ID."""
+        return self.tuning_classes.get(tuning_id)
+
+    # ------------------------------------------------------------------
+    # search and filtering
+    # ------------------------------------------------------------------
+    def find_traits(
+        self,
+        query: str = "",
+        *,
+        trait_type: Optional[str] = None,
+        pack: Optional[str] = None,
+        visible_only: bool = False,
+    ) -> list[Trait]:
+        """Return traits whose name/display name contain ``query``."""
+        needle = query.casefold()
+        return [
+            item
+            for item in self.traits.values()
+            if _matches_text(item.name, item.display_name, needle)
+            and (
+                trait_type is None
+                or item.trait_type.casefold() == trait_type.casefold()
+            )
+            and _matches_source(item.source, pack)
+            and not (visible_only and item.is_hidden)
+        ]
+
+    def find_preferences(
+        self,
+        query: str = "",
+        *,
+        preference_type: Optional[str] = None,
+        pack: Optional[str] = None,
+    ) -> list[Preference]:
+        needle = query.casefold()
+        return [
+            item
+            for item in self.preferences.values()
+            if _matches_text(item.name, item.display_name, needle)
+            and (
+                preference_type is None
+                or item.preference_type.casefold() == preference_type.casefold()
+            )
+            and _matches_source(item.source, pack)
+        ]
+
+    def find_aspirations(
+        self,
+        query: str = "",
+        *,
+        pack: Optional[str] = None,
+    ) -> list[Aspiration]:
+        needle = query.casefold()
+        return [
+            item
+            for item in self.aspirations.values()
+            if _matches_text(item.name, item.display_name, needle)
+            and _matches_source(item.source, pack)
+        ]
+
+    def find_careers(
+        self,
+        query: str = "",
+        *,
+        pack: Optional[str] = None,
+    ) -> list[Career]:
+        needle = query.casefold()
+        return [
+            item
+            for item in self.careers.values()
+            if _matches_text(item.name, None, needle)
+            and _matches_source(item.source, pack)
+        ]
+
+    def find_milestones(
+        self,
+        query: str = "",
+        *,
+        category: Optional[str] = None,
+        pack: Optional[str] = None,
+    ) -> list[Milestone]:
+        needle = query.casefold()
+        return [
+            item
+            for item in self.milestones.values()
+            if _matches_text(item.name, item.display_name, needle)
+            and (
+                category is None
+                or (item.category or "").casefold() == category.casefold()
+            )
+            and _matches_source(item.source, pack)
+        ]
+
+    def packs(self) -> list[str]:
+        """Return the sorted labels of every pack/mod present in the catalog."""
+        labels: set[str] = set()
+        collections = (
+            self.traits,
+            self.preferences,
+            self.aspirations,
+            self.aspiration_tracks,
+            self.aspiration_categories,
+            self.careers,
+            self.career_tracks,
+            self.career_levels,
+            self.milestones,
+            self.relationship_bits,
+        )
+        for collection in collections:
+            for item in collection.values():
+                if item.source is not None:
+                    labels.add(item.source.label)
+        return sorted(labels)
+
+    # ------------------------------------------------------------------
+    # portable snapshots
+    # ------------------------------------------------------------------
+    def save(self, path: str | Path) -> Path:
+        """Write this catalog to a pickle snapshot and return its path."""
+        target = Path(path)
+        try:
+            if target.parent:
+                target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("wb") as handle:
+                pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        except OSError as exc:
+            raise CatalogError(f"cannot write catalog to {target}: {exc}") from exc
+        return target
+
+    @classmethod
+    def load(cls, path: str | Path) -> "Catalog":
+        """Load a catalog written by :meth:`save`."""
+        target = Path(path)
+        try:
+            with target.open("rb") as handle:
+                value = pickle.load(handle)
+        except OSError as exc:
+            raise CatalogError(f"cannot read catalog from {target}: {exc}") from exc
+        except Exception as exc:
+            raise CatalogError(
+                f"{target} is not a valid catalog snapshot: {exc}"
+            ) from exc
+        if not isinstance(value, cls):
+            raise CatalogError(f"{target} does not contain a Catalog")
+        return value
 
     def relationship_default(self, link: str) -> Optional[RelationshipDefault]:
         return self.relationship_defaults.get(link)

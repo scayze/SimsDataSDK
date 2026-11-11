@@ -11,13 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterator
 
+from ..exceptions import Sims4SDKError
 from .data_tables import DataTables
 from .resource_types import SIMDATA_TYPE_ID
 
 __all__ = ["SimData", "SimDataError"]
 
 
-class SimDataError(ValueError):
+class SimDataError(Sims4SDKError, ValueError):
     """Raised when a SimData resource cannot be decoded."""
 
 

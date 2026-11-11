@@ -16,6 +16,7 @@ from .models import (
     CareerLevel,
     CareerTrack,
     Catalog,
+    CatalogError,
     GenderOptions,
     Milestone,
     PremadeRelationship,
@@ -39,7 +40,7 @@ from .premades import (
     parse_resource_key,
 )
 from .relationships import RelationshipTuningData, extract_relationship_tuning
-from .static import StaticData, build_static, load_static
+from .static import StaticData, StaticDataError, build_static, load_static
 from .worlds import (
     LotRecord,
     StarterCareer,
@@ -65,8 +66,10 @@ __all__ = [
     "cache_key",
     # static container
     "StaticData",
+    "StaticDataError",
     # models
     "Catalog",
+    "CatalogError",
     "Trait",
     "Preference",
     "Aspiration",

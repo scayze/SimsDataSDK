@@ -20,6 +20,10 @@ size, row count, and where the rows begin.  A *schema* is a list of columns
 data (strings, objects, variants) store a relative offset to a null-terminated
 string or to another structure.
 
+Rows are decoded lazily: :class:`TableRows` indexes into the original buffer on
+demand instead of materialising every row up front.  A Combined Tuning blob can
+contain more than five million rows, most of which are never read.
+
 Reference: the format was documented by the S4TK project (MIT licensed) and is
 also used by EA's official binary templates.
 """
@@ -27,9 +31,12 @@ also used by EA's official binary templates.
 from __future__ import annotations
 
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
-from typing import Any, Optional
+from typing import Any, Iterator, Optional, Union
+
+from ..exceptions import Sims4SDKError
 
 __all__ = [
     "DataType",
@@ -38,12 +45,24 @@ __all__ = [
     "Schema",
     "SchemaColumn",
     "TableInfo",
+    "TableRows",
 ]
 
 RELOFFSET_NULL = -0x80000000
 
+# Pre-compiled primitive readers: ``unpack_from`` directly on the buffer.
+_U8 = struct.Struct("<B").unpack_from
+_I8 = struct.Struct("<b").unpack_from
+_U16 = struct.Struct("<H").unpack_from
+_I16 = struct.Struct("<h").unpack_from
+_U32 = struct.Struct("<I").unpack_from
+_I32 = struct.Struct("<i").unpack_from
+_U64 = struct.Struct("<Q").unpack_from
+_I64 = struct.Struct("<q").unpack_from
+_F32 = struct.Struct("<f").unpack_from
 
-class DataTableError(ValueError):
+
+class DataTableError(Sims4SDKError, ValueError):
     """Raised when a DATA resource is malformed."""
 
 
@@ -87,6 +106,35 @@ class DataType(IntEnum):
         return 1
 
 
+#: Serialised width of one value, used to compute row strides without walking
+#: every row.  Matches the bytes :func:`_read_value` consumes.
+_VALUE_SIZES = {
+    0: 1,   # Boolean
+    1: 1,   # Character
+    2: 1,   # Int8
+    3: 1,   # UInt8
+    4: 2,   # Int16
+    5: 2,   # UInt16
+    6: 4,   # Int32
+    7: 4,   # UInt32
+    8: 8,   # Int64
+    9: 8,   # UInt64
+    10: 4,  # Float
+    11: 4,  # String
+    12: 8,  # HashedString
+    13: 4,  # Object
+    14: 8,  # Vector
+    15: 8,  # Float2
+    16: 12,  # Float3
+    17: 16,  # Float4
+    18: 8,  # TableSetReference
+    19: 16,  # ResourceKey
+    20: 4,  # LocalizationKey
+    21: 8,  # Variant
+    22: 0,  # Undefined
+}
+
+
 @dataclass
 class TableInfo:
     name: Optional[str] = None
@@ -98,6 +146,12 @@ class TableInfo:
     row_offset_pos: int = 0
     row_offset: int = 0
     row_count: int = 0
+    #: Index into :attr:`DataTables.schemas`, or ``-1`` for schemaless tables.
+    schema_index: int = -1
+    #: Absolute offset of the first row inside the DATA buffer.
+    row_start: int = 0
+    #: Distance between consecutive row starts.
+    row_stride: int = 0
 
     @property
     def has_schema(self) -> bool:
@@ -128,7 +182,9 @@ class Schema:
 
 
 class _Reader:
-    """Small bounds-checked little-endian buffer reader."""
+    """Small bounds-checked little-endian buffer reader for header parsing."""
+
+    __slots__ = ("data", "pos")
 
     def __init__(self, data: bytes):
         self.data = data
@@ -142,50 +198,120 @@ class _Reader:
             raise DataTableError(f"negative seek position {pos}")
         self.pos = pos
 
-    def _take(self, count: int) -> bytes:
-        end = self.pos + count
-        if end > len(self.data):
+    def _need(self, count: int) -> None:
+        if self.pos + count > len(self.data):
             raise DataTableError(
                 f"unexpected end of DATA (wanted {count} bytes at {self.pos})"
             )
-        chunk = self.data[self.pos:end]
-        self.pos = end
-        return chunk
 
     def uint8(self) -> int:
-        return self._take(1)[0]
-
-    def int16(self) -> int:
-        return struct.unpack("<h", self._take(2))[0]
+        self._need(1)
+        value = self.data[self.pos]
+        self.pos += 1
+        return value
 
     def uint16(self) -> int:
-        return struct.unpack("<H", self._take(2))[0]
+        self._need(2)
+        value = _U16(self.data, self.pos)[0]
+        self.pos += 2
+        return value
 
     def int32(self) -> int:
-        return struct.unpack("<i", self._take(4))[0]
+        self._need(4)
+        value = _I32(self.data, self.pos)[0]
+        self.pos += 4
+        return value
 
     def uint32(self) -> int:
-        return struct.unpack("<I", self._take(4))[0]
-
-    def uint64(self) -> int:
-        return struct.unpack("<Q", self._take(8))[0]
-
-    def float32(self) -> float:
-        return struct.unpack("<f", self._take(4))[0]
-
-    def chars(self, count: int) -> str:
-        return self._take(count).decode("utf-8", errors="replace")
+        self._need(4)
+        value = _U32(self.data, self.pos)[0]
+        self.pos += 4
+        return value
 
     def cstring(self) -> str:
         end = self.data.find(b"\x00", self.pos)
         if end < 0:
             raise DataTableError(f"unterminated string at {self.pos}")
-        value = self.data[self.pos:end].decode("utf-8", errors="replace")
+        value = self.data[self.pos : end].decode("utf-8", errors="replace")
         self.pos = end + 1
         return value
 
     def align(self, mask: int) -> None:
         self.pos += -self.pos & mask
+
+
+class TableRows(Sequence):
+    """Lazily decoded rows of one DATA table.
+
+    Supports ``len()``, integer indexing and slicing.  Each access decodes just
+    that row out of the backing buffer, so huge tables stay cheap.
+    """
+
+    __slots__ = ("_data", "_table", "_columns", "_start", "_stride", "_count")
+
+    def __init__(self, data: bytes, table: TableInfo, columns: Sequence[SchemaColumn]):
+        self._data = data
+        self._table = table
+        self._columns = tuple(
+            (column.name, column.data_type, column.offset) for column in columns
+        )
+        self._start = table.row_start
+        self._stride = table.row_stride
+        self._count = table.row_count
+
+    # ------------------------------------------------------------------
+    # Sequence protocol
+    # ------------------------------------------------------------------
+    def __len__(self) -> int:
+        return self._count
+
+    def __getitem__(self, index: Union[int, slice]) -> Any:
+        if isinstance(index, slice):
+            return [self[i] for i in range(*index.indices(self._count))]
+        count = self._count
+        if index < 0:
+            index += count
+        if index < 0 or index >= count:
+            raise IndexError("row index out of range")
+        return self._read(index)
+
+    def __iter__(self) -> Iterator[Any]:
+        data = self._data
+        read = self._read
+        for index in range(self._count):
+            yield read(index)
+
+    def __repr__(self) -> str:
+        return f"TableRows({self._table.name!r}, rows={self._count})"
+
+    @property
+    def start(self) -> int:
+        return self._start
+
+    @property
+    def stride(self) -> int:
+        return self._stride
+
+    def index_of(self, position: int) -> int:
+        """Return the row index that a buffer position belongs to."""
+        return (position - self._start) // self._stride
+
+    def position_of(self, index: int) -> int:
+        return self._start + index * self._stride
+
+    # ------------------------------------------------------------------
+    # decoding
+    # ------------------------------------------------------------------
+    def _read(self, index: int) -> Any:
+        data = self._data
+        base = self._start + index * self._stride
+        columns = self._columns
+        if not columns:
+            return _read_value(data, base, self._table.data_type)
+        row: dict[Optional[str], Any] = {}
+        for name, data_type, offset in columns:
+            row[name] = _read_value(data, base + offset, data_type)
+        return row
 
 
 @dataclass
@@ -195,7 +321,7 @@ class DataTables:
     version: int
     tables: list[TableInfo]
     schemas: list[Schema]
-    rows: list[list[Any]]
+    rows: list[TableRows]
     data: bytes
 
     # ------------------------------------------------------------------
@@ -208,93 +334,91 @@ class DataTables:
                 f"not a DATA resource (magic {data[:4]!r})"
             )
 
-        reader = _Reader(data)
-        reader.seek(4)
-        version = reader.uint32()
-        if version not in (0x100, 0x101):
-            raise DataTableError(f"unknown DATA version 0x{version:X}")
+        try:
+            reader = _Reader(data)
+            reader.seek(4)
+            version = reader.uint32()
+            if version not in (0x100, 0x101):
+                raise DataTableError(f"unknown DATA version 0x{version:X}")
 
-        table_header_pos = reader.tell()
-        table_header_offset = reader.int32()
-        table_count = reader.int32()
+            table_header_pos = reader.tell()
+            table_header_offset = reader.int32()
+            table_count = reader.int32()
 
-        schema_pos = reader.tell()
-        schema_offset = reader.int32()
-        schema_count = reader.int32()
+            schema_pos = reader.tell()
+            schema_offset = reader.int32()
+            schema_count = reader.int32()
 
-        if version >= 0x101:
-            reader.uint32()  # unused
+            if version >= 0x101:
+                reader.uint32()  # unused
+
+            # ----------------------------------------------------------
+            # table headers
+            # ----------------------------------------------------------
+            reader.seek(table_header_pos + table_header_offset)
+            tables: list[TableInfo] = []
+            for _ in range(table_count):
+                table = TableInfo()
+                table.name_offset_pos = reader.tell()
+                name_offset = reader.int32()
+                table.name_hash = reader.uint32()
+                if name_offset != RELOFFSET_NULL:
+                    table.name = _string_at(reader, table.name_offset_pos + name_offset)
+                table.schema_offset_pos = reader.tell()
+                table.schema_offset = reader.int32()
+                table.data_type = reader.uint32()
+                table.row_size = reader.uint32()
+                table.row_offset_pos = reader.tell()
+                table.row_offset = reader.int32()
+                table.row_count = reader.uint32()
+                tables.append(table)
+
+            row_data_start = reader.tell()
+
+            # ----------------------------------------------------------
+            # schemas
+            # ----------------------------------------------------------
+            reader.seek(schema_pos + schema_offset)
+            schemas: list[Schema] = []
+            for _ in range(schema_count):
+                schema = Schema()
+                schema.name_offset_pos = reader.tell()
+                name_offset = reader.int32()
+                schema.name_hash = reader.uint32()
+                if name_offset != RELOFFSET_NULL:
+                    schema.name = _string_at(reader, schema.name_offset_pos + name_offset)
+                schema.schema_hash = reader.uint32()
+                schema.schema_size = reader.uint32()
+                schema.column_offset_pos = reader.tell()
+                schema.column_offset = reader.int32()
+                schema.num_columns = reader.uint32()
+                schema_end = reader.tell()
+
+                reader.seek(schema.column_offset_pos + schema.column_offset)
+                for _column in range(schema.num_columns):
+                    column = SchemaColumn()
+                    column_name_pos = reader.tell()
+                    column_name_offset = reader.int32()
+                    column.name_hash = reader.uint32()
+                    if column_name_offset != RELOFFSET_NULL:
+                        column.name = _string_at(
+                            reader, column_name_pos + column_name_offset
+                        )
+                    column.data_type = reader.uint16()
+                    column.flags = reader.uint16()
+                    column.offset = reader.uint32()
+                    column.schema_offset = reader.int32()
+                    schema.columns.append(column)
+
+                schema.columns.sort(key=lambda column: column.offset)
+                reader.seek(schema_end)
+                schemas.append(schema)
+        except struct.error as exc:  # truncated header
+            raise DataTableError(f"truncated DATA resource: {exc}") from exc
 
         # --------------------------------------------------------------
-        # table headers
+        # row layout
         # --------------------------------------------------------------
-        reader.seek(table_header_pos + table_header_offset)
-        tables: list[TableInfo] = []
-        for _ in range(table_count):
-            table = TableInfo()
-            table.name_offset_pos = reader.tell()
-            name_offset = reader.int32()
-            table.name_hash = reader.uint32()
-            if name_offset != RELOFFSET_NULL:
-                table.name = _string_at(
-                    reader, table.name_offset_pos + name_offset
-                )
-            table.schema_offset_pos = reader.tell()
-            table.schema_offset = reader.int32()
-            table.data_type = reader.uint32()
-            table.row_size = reader.uint32()
-            table.row_offset_pos = reader.tell()
-            table.row_offset = reader.int32()
-            table.row_count = reader.uint32()
-            tables.append(table)
-
-        row_data_start = reader.tell()
-
-        # --------------------------------------------------------------
-        # schemas
-        # --------------------------------------------------------------
-        reader.seek(schema_pos + schema_offset)
-        schemas: list[Schema] = []
-        for _ in range(schema_count):
-            schema = Schema()
-            schema.name_offset_pos = reader.tell()
-            name_offset = reader.int32()
-            schema.name_hash = reader.uint32()
-            if name_offset != RELOFFSET_NULL:
-                schema.name = _string_at(
-                    reader, schema.name_offset_pos + name_offset
-                )
-            schema.schema_hash = reader.uint32()
-            schema.schema_size = reader.uint32()
-            schema.column_offset_pos = reader.tell()
-            schema.column_offset = reader.int32()
-            schema.num_columns = reader.uint32()
-            schema_end = reader.tell()
-
-            reader.seek(schema.column_offset_pos + schema.column_offset)
-            for _column in range(schema.num_columns):
-                column = SchemaColumn()
-                column_name_pos = reader.tell()
-                column_name_offset = reader.int32()
-                column.name_hash = reader.uint32()
-                if column_name_offset != RELOFFSET_NULL:
-                    column.name = _string_at(
-                        reader, column_name_pos + column_name_offset
-                    )
-                column.data_type = reader.uint16()
-                column.flags = reader.uint16()
-                column.offset = reader.uint32()
-                column.schema_offset = reader.int32()
-                schema.columns.append(column)
-
-            schema.columns.sort(key=lambda column: column.offset)
-            reader.seek(schema_end)
-            schemas.append(schema)
-
-        # --------------------------------------------------------------
-        # rows
-        # --------------------------------------------------------------
-        reader.seek(row_data_start)
         schema_offsets = {
             schema.name_offset_pos: index for index, schema in enumerate(schemas)
         }
@@ -302,37 +426,30 @@ class DataTables:
         for index, schema in enumerate(schemas):
             schema_by_size.setdefault(schema.schema_size, index)
 
-        rows: list[list[Any]] = []
+        rows: list[TableRows] = []
+        position = row_data_start
         for table in tables:
-            reader.align(15)
-            table_rows: list[Any] = []
-
-            for _ in range(table.row_count):
-                if not table.has_schema:
-                    table_rows.append(_read_value(reader, table.data_type))
-                    reader.align(DataType.alignment(table.data_type) - 1)
-                    continue
-
+            position = (position + 15) & ~15
+            table.row_start = position
+            if table.has_schema:
                 absolute_schema = table.schema_offset_pos + table.schema_offset
                 schema_index = schema_offsets.get(absolute_schema)
                 if schema_index is None:
                     schema_index = schema_by_size.get(table.row_size)
                 if schema_index is None:
                     raise DataTableError(
-                        f"table {table.name!r}: no schema at "
-                        f"offset {absolute_schema}"
+                        f"table {table.name!r}: no schema at offset {absolute_schema}"
                     )
                 schema = schemas[schema_index]
-
-                row_start = reader.tell()
-                row: dict[Optional[str], Any] = {}
-                for column in schema.columns:
-                    reader.seek(row_start + column.offset)
-                    row[column.name] = _read_value(reader, column.data_type)
-                reader.seek(row_start + schema.schema_size)
-                table_rows.append(row)
-
-            rows.append(table_rows)
+                table.schema_index = schema_index
+                stride = schema.schema_size
+                table.row_stride = stride
+                rows.append(TableRows(data, table, schema.columns))
+            else:
+                stride = _VALUE_SIZES.get(table.data_type, 0)
+                table.row_stride = stride
+                rows.append(TableRows(data, table, ()))
+            position += stride * table.row_count
 
         return cls(version=version, tables=tables, schemas=schemas, rows=rows, data=data)
 
@@ -348,7 +465,7 @@ class DataTables:
                 return index
         raise KeyError(f"no DATA table named {name!r}")
 
-    def table(self, name: str) -> tuple[TableInfo, list[Any]]:
+    def table(self, name: str) -> tuple[TableInfo, TableRows]:
         index = self.table_index(name)
         return self.tables[index], self.rows[index]
 
@@ -386,75 +503,69 @@ def _string_at(reader: _Reader, offset: int) -> Optional[str]:
         reader.seek(saved)
 
 
-def _read_value(reader: _Reader, data_type: int) -> Any:
-    if data_type == DataType.Boolean:
-        return bool(reader.uint8())
-    if data_type == DataType.UInt8:
-        return reader.uint8()
-    if data_type == DataType.Character:
-        return reader.chars(1)
-    if data_type == DataType.Int8:
-        return reader.uint8()
-    if data_type == DataType.Int16:
-        return reader.int16()
-    if data_type == DataType.UInt16:
-        return reader.uint16()
-    if data_type == DataType.Int32:
-        return reader.int32()
-    if data_type == DataType.UInt32:
-        return reader.uint32()
-    if data_type == DataType.Int64:
-        return reader.uint64()
-    if data_type == DataType.UInt64:
-        return reader.uint64()
-    if data_type == DataType.Float:
-        return reader.float32()
-    if data_type == DataType.String:
-        return {"startof_mDataOffset": reader.tell(), "mDataOffset": reader.int32()}
-    if data_type == DataType.HashedString:
-        start = reader.tell()
+def _read_value(data: bytes, pos: int, data_type: int) -> Any:
+    """Decode one value at ``pos`` (the caller knows the type and bounds)."""
+    if data_type == 6:  # Int32
+        return _I32(data, pos)[0]
+    if data_type == 7:  # UInt32
+        return _U32(data, pos)[0]
+
+    if data_type == 11 or data_type == 13:  # String / Object
+        return {"startof_mDataOffset": pos, "mDataOffset": _I32(data, pos)[0]}
+    if data_type == 12:  # HashedString
         return {
-            "startof_mDataOffset": start,
-            "mDataOffset": reader.int32(),
-            "mHash": reader.uint32(),
+            "startof_mDataOffset": pos,
+            "mDataOffset": _I32(data, pos)[0],
+            "mHash": _U32(data, pos + 4)[0],
         }
-    if data_type == DataType.Object:
-        return {"startof_mDataOffset": reader.tell(), "mDataOffset": reader.int32()}
-    if data_type == DataType.Vector:
-        start = reader.tell()
+    if data_type == 21:  # Variant
         return {
-            "startof_mDataOffset": start,
-            "mDataOffset": reader.int32(),
-            "mCount": reader.uint32(),
+            "startof_mDataOffset": pos,
+            "mDataOffset": _I32(data, pos)[0],
+            "mTypeHash": _U32(data, pos + 4)[0],
         }
-    if data_type == DataType.Float2:
-        return (reader.float32(), reader.float32())
-    if data_type == DataType.Float3:
-        return (reader.float32(), reader.float32(), reader.float32())
-    if data_type == DataType.Float4:
+    if data_type == 14:  # Vector
+        return {
+            "startof_mDataOffset": pos,
+            "mDataOffset": _I32(data, pos)[0],
+            "mCount": _U32(data, pos + 4)[0],
+        }
+
+    if data_type == 0:  # Boolean
+        return bool(data[pos])
+    if data_type == 3 or data_type == 2:  # UInt8 / Int8
+        return data[pos]
+    if data_type == 1:  # Character
+        return data[pos : pos + 1].decode("utf-8", errors="replace")
+    if data_type == 4:  # Int16
+        return _I16(data, pos)[0]
+    if data_type == 5:  # UInt16
+        return _U16(data, pos)[0]
+    if data_type == 8 or data_type == 9:  # Int64 / UInt64
+        return _U64(data, pos)[0]
+    if data_type == 10:  # Float
+        return _F32(data, pos)[0]
+    if data_type == 15:  # Float2
+        return (_F32(data, pos)[0], _F32(data, pos + 4)[0])
+    if data_type == 16:  # Float3
+        return (_F32(data, pos)[0], _F32(data, pos + 4)[0], _F32(data, pos + 8)[0])
+    if data_type == 17:  # Float4
         return (
-            reader.float32(),
-            reader.float32(),
-            reader.float32(),
-            reader.float32(),
+            _F32(data, pos)[0],
+            _F32(data, pos + 4)[0],
+            _F32(data, pos + 8)[0],
+            _F32(data, pos + 12)[0],
         )
-    if data_type == DataType.TableSetReference:
-        return reader.uint64()
-    if data_type == DataType.ResourceKey:
+    if data_type == 18:  # TableSetReference
+        return _U64(data, pos)[0]
+    if data_type == 19:  # ResourceKey
         return {
-            "instance": reader.uint64(),
-            "type": reader.uint32(),
-            "group": reader.uint32(),
+            "instance": _U64(data, pos)[0],
+            "type": _U32(data, pos + 8)[0],
+            "group": _U32(data, pos + 12)[0],
         }
-    if data_type == DataType.LocalizationKey:
-        return reader.uint32()
-    if data_type == DataType.Variant:
-        start = reader.tell()
-        return {
-            "startof_mDataOffset": start,
-            "mDataOffset": reader.int32(),
-            "mTypeHash": reader.uint32(),
-        }
-    if data_type == DataType.Undefined:
+    if data_type == 20:  # LocalizationKey
+        return _U32(data, pos)[0]
+    if data_type == 22:  # Undefined
         return None
     raise DataTableError(f"unknown column data type {data_type}")

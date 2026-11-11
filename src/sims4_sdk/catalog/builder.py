@@ -14,11 +14,14 @@ from typing import Callable, Iterable, Optional
 from ..core import (
     COMBINED_TUNING_TYPE_ID,
     DBPF,
+    LOT_MANIFEST_TYPE_ID,
+    PREMADE_HOUSEHOLD_TYPE_ID,
     TUNING_TYPE_ID,
     CombinedTuning,
+    ResourceEntry,
     TuningElement,
 )
-from ..installation import Installation, PackageInfo
+from ..installation import Installation, PackageInfo, SIMINFO_TYPE_ID
 from .models import (
     Aspiration,
     AspirationCategory,
@@ -43,7 +46,7 @@ from .relationships import (
     extract_relationship_tuning,
     has_interval_data,
 )
-from .worlds import WorldData, add_package_world_resources
+from .worlds import WorldData
 
 __all__ = [
     "build_catalog",
@@ -56,7 +59,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-9"
+CACHE_VERSION = "step2-10"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
@@ -73,6 +76,18 @@ _MODEL_CLASSES = frozenset(
         "RelationshipBit",
     }
 )
+#: Resource types the catalog build reads; everything else is skipped without
+#: being materialised.
+_SCANNED_TYPES = frozenset(
+    {
+        COMBINED_TUNING_TYPE_ID,
+        TUNING_TYPE_ID,
+        PREMADE_HOUSEHOLD_TYPE_ID,
+        LOT_MANIFEST_TYPE_ID,
+        SIMINFO_TYPE_ID,
+    }
+)
+
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
 
 
@@ -190,6 +205,11 @@ class CollectedPackageData:
     relationship_tuning: RelationshipTuningData = field(
         default_factory=RelationshipTuningData
     )
+    #: SimInfo instance -> (package, index entry), collected in the same pass so
+    #: pre-made Sim extraction does not have to re-open every package.
+    siminfo_index: dict[int, tuple[PackageInfo, ResourceEntry]] = field(
+        default_factory=dict, repr=False
+    )
 
 
 def collect_package_data(
@@ -198,6 +218,7 @@ def collect_package_data(
     progress: ProgressCallback = None,
     include_world: bool = True,
     include_relationships: bool = True,
+    include_siminfo: bool = True,
 ) -> CollectedPackageData:
     """Open every package once and collect tuning and world resources."""
     data = CollectedPackageData()
@@ -221,28 +242,52 @@ def collect_package_data(
             is_mod=info.is_mod,
         )
 
-        # Individual tuning XML resources (common in mods).
-        for entry in package.iter_entries(type_id=TUNING_TYPE_ID):
-            try:
-                raw = package.read_resource(entry)
-                text = raw.decode("utf-8-sig", errors="replace")
+        combined_blobs: list[bytes] = []
+        # One pass over the index: the entry lists are millions of rows long, so
+        # filtering them once saves a full scan per resource type.
+        for entry in package.iter_entries_for_types(_SCANNED_TYPES):
+            type_id = entry.key.type_id
+            if type_id == COMBINED_TUNING_TYPE_ID:
                 try:
-                    combined = CombinedTuning.from_xml(text)
+                    combined_blobs.append(DBPF.read_entry(package.path, entry))
                 except Exception:
-                    # Some mods ship several top-level <I> elements.
-                    combined = CombinedTuning.from_xml(f"<root>{text}</root>")
-            except Exception:
-                continue
-            for tuning in combined:
-                data.entries[tuning.instance_id] = tuning
-                data.sources[tuning.instance_id] = source
+                    continue
+            elif type_id == TUNING_TYPE_ID:
+                # Individual tuning XML resources (common in mods).
+                try:
+                    raw = DBPF.read_entry(package.path, entry)
+                    text = raw.decode("utf-8-sig", errors="replace")
+                    try:
+                        combined = CombinedTuning.from_xml(text)
+                    except Exception:
+                        # Some mods ship several top-level <I> elements.
+                        combined = CombinedTuning.from_xml(f"<root>{text}</root>")
+                except Exception:
+                    continue
+                for tuning in combined:
+                    data.entries[tuning.instance_id] = tuning
+                    data.sources[tuning.instance_id] = source
+            elif type_id == PREMADE_HOUSEHOLD_TYPE_ID:
+                if include_world:
+                    data.world.add_household(
+                        entry.key.instance,
+                        DBPF.read_entry(package.path, entry),
+                        source,
+                    )
+            elif type_id == LOT_MANIFEST_TYPE_ID:
+                if include_world:
+                    data.world.add_lot(
+                        entry.key.instance,
+                        DBPF.read_entry(package.path, entry),
+                        source,
+                    )
+            elif type_id == SIMINFO_TYPE_ID:
+                if include_siminfo:
+                    data.siminfo_index[entry.key.instance] = (info, entry)
 
-        # Combined tuning (the main source for retail packages).
-        for entry in package.iter_entries(type_id=COMBINED_TUNING_TYPE_ID):
-            try:
-                raw = package.read_resource(entry)
-            except Exception:
-                continue
+        # Combined tuning (the main source for retail packages) is applied after
+        # the per-entry XML so that it wins within a package.
+        for raw in combined_blobs:
             content_key = hashlib.blake2b(raw, digest_size=16).digest()
             combined = combined_cache.get(content_key)
             if combined is None:
@@ -262,9 +307,6 @@ def collect_package_data(
                     element = combined.find_by_instance_id(track_id)
                     if element is not None and has_interval_data(element):
                         data.relationship_track_sources[track_id] = element
-
-        if include_world:
-            add_package_world_resources(data.world, package, source)
 
     if include_world:
         data.world.finalize()

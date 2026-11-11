@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ..catalog.models import Catalog
+from ..exceptions import Sims4SDKError
 from .models import SavedSim, TrayHousehold, TrayItem, TrayLibrary
 from .protobuf import ProtobufError, decode
 from .reader import sim_from_dict, _as_list
@@ -21,7 +22,7 @@ __all__ = [
 ]
 
 
-class TrayError(ValueError):
+class TrayError(Sims4SDKError, ValueError):
     """Raised when a Tray file cannot be parsed."""
 
 

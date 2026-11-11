@@ -23,10 +23,12 @@ import struct
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
+from .exceptions import Sims4SDKError
+
 __all__ = ["SimInfo", "SimInfoError"]
 
 
-class SimInfoError(ValueError):
+class SimInfoError(Sims4SDKError, ValueError):
     """Raised when a SimInfo resource cannot be read."""
 
 

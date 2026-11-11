@@ -14,6 +14,8 @@ import struct
 from dataclasses import dataclass
 from typing import Any, Iterator, Mapping, Optional
 
+from ..exceptions import Sims4SDKError
+
 __all__ = [
     "FieldSpec",
     "ProtobufError",
@@ -23,7 +25,7 @@ __all__ = [
 ]
 
 
-class ProtobufError(ValueError):
+class ProtobufError(Sims4SDKError, ValueError):
     """Raised when a protobuf stream is malformed or a schema is missing."""
 
 

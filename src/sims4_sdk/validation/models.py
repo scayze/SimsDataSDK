@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 __all__ = [
@@ -171,6 +173,24 @@ class ValidationReport:
                 for sim in self.sims
             ],
         }
+
+    def to_json(
+        self,
+        path: Optional[str | Path] = None,
+        *,
+        indent: int | None = 2,
+        ensure_ascii: bool = False,
+    ) -> str:
+        """Serialize the report to JSON, optionally writing it to ``path``."""
+        text = json.dumps(
+            self.to_dict(), indent=indent, ensure_ascii=ensure_ascii
+        )
+        if path is not None:
+            target = Path(path)
+            if target.parent:
+                target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+        return text
 
     def to_markdown(self) -> str:
         lines = ["# Sims Wiki validation report", ""]

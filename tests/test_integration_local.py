@@ -94,6 +94,15 @@ def test_combined_tuning_from_binary_delta(install_dir: Path) -> None:
     assert all(entry.name for entry in tuning.entries[:50])
     assert tuning.index_by_instance_id()
 
+    # Binary blobs are decoded lazily: reading the full tree must materialise
+    # the deferred entry subtrees, and shared <g> values must stay resolvable.
+    assert len(tuning.references) > 100
+    trait = tuning.by_class("Trait")[0]
+    assert trait.element.get("c") == "Trait"
+    assert len(trait.element) > 0
+    assert trait.element in list(tuning.root.iter("I"))
+    assert tuning.xml == ""
+
 
 def test_simdata_resource(install_dir: Path) -> None:
     path = _require(install_dir / "Data" / "Simulation" / "SimulationDeltaBuild0.package")

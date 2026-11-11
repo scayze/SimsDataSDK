@@ -31,13 +31,15 @@ from __future__ import annotations
 
 import struct
 
+from ..exceptions import Sims4SDKError
+
 __all__ = ["RefPackError", "is_refpack", "decompress"]
 
 # First magic byte values observed in EA games.
 _MAGIC_FIRST_BYTES = (0x10, 0x50, 0x90, 0xD0)
 
 
-class RefPackError(ValueError):
+class RefPackError(Sims4SDKError, ValueError):
     """Raised when a RefPack stream is malformed or truncated."""
 
 
@@ -170,6 +172,11 @@ def _copy(out: bytearray, offset: int, length: int) -> None:
             f"invalid back-reference offset {offset} (output has {len(out)} bytes)"
         )
     source = len(out) - offset
-    # Byte-by-byte on purpose: overlapping copies are legal (LZ77 run-length).
-    for index in range(length):
-        out.append(out[source + index])
+    if offset >= length:
+        out.extend(out[source : source + length])
+        return
+    # Overlapping copies are legal (LZ77 run-length): the copied window repeats
+    # with a period of ``offset``, so build it once instead of byte by byte.
+    pattern = out[source:]
+    repeats = -(-length // offset)
+    out.extend((pattern * repeats)[:length])

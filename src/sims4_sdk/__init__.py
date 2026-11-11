@@ -19,27 +19,44 @@ The SDK exposes:
 * :class:`sims4_sdk.core.CombinedTuning` — XML or binary tuning blobs
 * :class:`sims4_sdk.core.SimData` — binary DATA resources
 * :mod:`sims4_sdk.paths` — installation and user-directory discovery
+* :func:`sims4_sdk.to_dict` / :func:`sims4_sdk.to_json` — JSON-safe export of
+  any model; every model also has ``.to_dict()`` and ``.to_json()``
+* :class:`sims4_sdk.Sims4SDKError` — base class for every SDK exception
+
+A static snapshot can be saved once and loaded on a machine without the game::
+
+    from sims4_sdk import Sims4Workspace
+
+    Sims4Workspace().save_static("sims4-static.pkl")
+
+    offline = Sims4Workspace.from_static("sims4-static.pkl", user_dir="...")
+    save = offline.read_save(offline.latest_save_path())
 """
 
 from __future__ import annotations
 
-from . import catalog, core, paths
+from . import catalog, core, export, paths, save
 from .catalog import (
     Aspiration,
+    AspirationCategory,
     AspirationTrack,
     Career,
     CareerLevel,
     CareerTrack,
     Catalog,
+    CatalogError,
+    GenderOptions,
+    HouseholdMember,
+    HouseholdRelationship,
     LotRecord,
     Milestone,
-    PremadeRelationship,
-    Preference,
     PremadeAncestor,
     PremadeBundle,
     PremadeHousehold,
     PremadeLot,
+    PremadeRelationship,
     PremadeSim,
+    Preference,
     RelationshipBit,
     RelationshipDefault,
     RelationshipTrackValue,
@@ -49,11 +66,14 @@ from .catalog import (
     StarterMember,
     StarterRelation,
     StaticData,
+    StaticDataError,
     Trait,
+    TuningSource,
     WorldData,
     WorldDataError,
     build_catalog,
     build_static,
+    load_static,
 )
 from .core import (
     COMBINED_TUNING_TYPE_ID,
@@ -81,6 +101,7 @@ from .core import (
     STBLError,
     TuningElement,
     decode_binary_tuning,
+    decode_binary_tuning_tree,
     decompress_refpack,
     fnv1_32,
     fnv1_64,
@@ -89,6 +110,8 @@ from .core import (
     is_binary_tuning,
     is_refpack,
 )
+from .exceptions import Sims4SDKError
+from .export import Serializable, Sims4JSONEncoder, to_dict, to_json
 from .installation import Installation, PackageInfo
 from .paths import (
     find_install_dir,
@@ -101,10 +124,29 @@ from .paths import (
     tray_dir,
 )
 from .save import (
+    AGE_NAMES,
+    FAMILY_RELATION_NAMES,
+    GENDER_NAMES,
+    OCCULT_FLAGS,
+    SPECIES_NAMES,
+    SaveAccount,
     SaveError,
     SaveFile,
+    SaveNeighborhood,
+    SaveSlot,
+    SaveZone,
+    SavedCareer,
+    SavedCareerHistory,
+    SavedFamilyRelation,
     SavedHousehold,
+    SavedMilestone,
+    SavedRelationship,
+    SavedRelationshipTrack,
+    SavedRelationshipTrope,
     SavedSim,
+    SavedSkill,
+    SavedStatistic,
+    SavedTimedAspiration,
     TrayError,
     TrayHousehold,
     TrayItem,
@@ -115,21 +157,32 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 
 __all__ = [
     "__version__",
+    # modules
     "core",
     "paths",
     "catalog",
+    "save",
+    "export",
+    # facade
     "Sims4Workspace",
     "Installation",
     "PackageInfo",
+    # errors
+    "Sims4SDKError",
+    # static data
     "StaticData",
+    "StaticDataError",
     "Catalog",
+    "CatalogError",
+    "TuningSource",
     "Trait",
     "Preference",
     "Aspiration",
+    "AspirationCategory",
     "AspirationTrack",
     "Career",
     "CareerTrack",
@@ -139,12 +192,15 @@ __all__ = [
     "RelationshipTrackValue",
     "RelationshipDefault",
     "PremadeRelationship",
+    "GenderOptions",
     "SkillLevel",
     "PremadeSim",
     "PremadeHousehold",
     "PremadeAncestor",
     "PremadeLot",
     "PremadeBundle",
+    "HouseholdMember",
+    "HouseholdRelationship",
     "WorldData",
     "WorldDataError",
     "LotRecord",
@@ -154,18 +210,45 @@ __all__ = [
     "StarterRelation",
     "build_catalog",
     "build_static",
+    "load_static",
     "SimInfo",
     "SimInfoError",
+    # save data
     "SaveFile",
+    "SaveSlot",
+    "SaveAccount",
+    "SaveZone",
+    "SaveNeighborhood",
     "SavedSim",
     "SavedHousehold",
+    "SavedSkill",
+    "SavedCareer",
+    "SavedCareerHistory",
+    "SavedRelationship",
+    "SavedRelationshipTrack",
+    "SavedRelationshipTrope",
+    "SavedFamilyRelation",
+    "SavedMilestone",
+    "SavedTimedAspiration",
+    "SavedStatistic",
+    "read_save",
+    "SaveError",
+    "AGE_NAMES",
+    "GENDER_NAMES",
+    "SPECIES_NAMES",
+    "OCCULT_FLAGS",
+    "FAMILY_RELATION_NAMES",
+    # Tray
     "TrayLibrary",
     "TrayHousehold",
     "TrayItem",
-    "read_save",
     "read_tray_library",
-    "SaveError",
     "TrayError",
+    # serialization
+    "Serializable",
+    "Sims4JSONEncoder",
+    "to_dict",
+    "to_json",
     # containers
     "DBPF",
     "DBPFError",
@@ -191,6 +274,7 @@ __all__ = [
     "LOT_MANIFEST_TYPE_ID",
     "PREMADE_HOUSEHOLD_TYPE_ID",
     "decode_binary_tuning",
+    "decode_binary_tuning_tree",
     "is_binary_tuning",
     # data tables / simdata
     "DataTables",

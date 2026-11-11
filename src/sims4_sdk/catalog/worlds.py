@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Mapping, Optional
 
 from ..core import DBPF, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID
+from ..exceptions import Sims4SDKError
 from ..installation import PackageInfo
 from ..save.enums import FAMILY_RELATION_NAMES
 from ..save.protobuf import ProtobufError, iter_fields
@@ -64,7 +65,7 @@ _AGE_FLAGS = {
 _HOUSEHOLD_HEADER_SIZE = 8
 
 
-class WorldDataError(ValueError):
+class WorldDataError(Sims4SDKError, ValueError):
     """Raised when a lot manifest or household resource cannot be read."""
 
 

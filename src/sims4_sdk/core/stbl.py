@@ -27,6 +27,8 @@ import struct
 from dataclasses import dataclass, field
 from typing import Iterator, Mapping, Optional
 
+from ..exceptions import Sims4SDKError
+
 __all__ = [
     "StringTable",
     "STBLError",
@@ -66,7 +68,7 @@ LOCALE_CODES: dict[int, str] = {
 }
 
 
-class STBLError(ValueError):
+class STBLError(Sims4SDKError, ValueError):
     """Raised when an STBL resource is malformed."""
 
 
