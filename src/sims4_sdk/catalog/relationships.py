@@ -27,9 +27,11 @@ from typing import Mapping, Optional
 from ..core import TuningElement
 from ..core.combined_tuning import CombinedTuning
 from .models import (
+    ConditionalRelationshipSetup,
     PremadeRelationship,
     RelationshipDefault,
     RelationshipTrackValue,
+    TraitCondition,
 )
 from .values import TuningView
 
@@ -43,6 +45,7 @@ __all__ = [
     "RelationshipTuningData",
     "extract_relationship_tuning",
     "has_interval_data",
+    "parse_trait_test",
 ]
 
 DEFAULTS_MODULE = "relationships.relationship_tracker_tuning"
@@ -150,21 +153,152 @@ def _parse_defaults(ct: CombinedTuning) -> dict[str, RelationshipDefault]:
         setup = fields.get("Default Relationship Setup")
         if setup is None:
             continue
-        _merge_setup(ct, setup, default)
+        resolved_setup = _resolve(ct, setup) if setup.tag == "r" else setup
+        if resolved_setup is None:
+            continue
+        _merge_setup(ct, resolved_setup, default)
     return defaults
 
 
 def _merge_setup(ct: CombinedTuning, setup, default: RelationshipDefault) -> None:
-    for group in setup:
-        for item in group:
-            for field_element in item:
-                name = field_element.get("n")
-                if name == "relationship_tracks":
-                    _merge_tracks(ct, field_element, default)
-                elif name == "relationship_bits":
-                    _merge_ids(ct, field_element, default.bit_ids)
-                elif name == "_loots":
-                    _merge_ids(ct, field_element, default.loot_ids)
+    """Merge one ``Default Relationship Setup`` list into ``default``.
+
+    Each outer ``U`` pairs ``U n="item"`` with an optional sibling
+    ``L n="test"``.  Unconditional items update ``default`` directly;
+    tested items become :class:`ConditionalRelationshipSetup` entries so
+    callers can evaluate them per Sim pair instead of applying alien (or
+    other gated) bits blindly.
+    """
+    for outer in setup:
+        if outer.get("n") == "item":
+            item_nodes = [outer]
+            test_nodes: list = []
+        else:
+            item_nodes = [c for c in outer if c.get("n") == "item"]
+            test_nodes = [c for c in outer if c.get("n") == "test"]
+            if not item_nodes and not test_nodes:
+                # Unexpected shape: treat the outer node itself as one item.
+                item_nodes = [outer]
+        bits, tracks, loots = _parse_item(ct, item_nodes)
+        if not bits and not tracks and not loots:
+            continue
+        if not test_nodes:
+            for bit_id in bits:
+                if bit_id not in default.bit_ids:
+                    default.bit_ids.append(bit_id)
+            for track in tracks:
+                existing = default.track(track.track_id)
+                if existing is None:
+                    default.tracks.append(track)
+                elif track.value is not None:
+                    existing.value = track.value
+            for loot_id in loots:
+                if loot_id not in default.loot_ids:
+                    default.loot_ids.append(loot_id)
+        else:
+            tests: list[TraitCondition] = []
+            for test_element in test_nodes:
+                tests.extend(_parse_test(ct, test_element))
+            default.conditional.append(
+                ConditionalRelationshipSetup(
+                    bit_ids=bits,
+                    tracks=tracks,
+                    loot_ids=loots,
+                    tests=tests,
+                )
+            )
+
+
+def _parse_item(ct: CombinedTuning, item_nodes) -> tuple[list[int], list[RelationshipTrackValue], list[int]]:
+    """Collect bits/tracks/loots from ``U n="item"`` nodes without mutating."""
+    temp = RelationshipDefault(link="tmp")
+    for item in item_nodes:
+        for field_element in item:
+            name = field_element.get("n")
+            if name == "relationship_tracks":
+                _merge_tracks(ct, field_element, temp)
+            elif name == "relationship_bits":
+                _merge_ids(ct, field_element, temp.bit_ids)
+            elif name == "_loots":
+                _merge_ids(ct, field_element, temp.loot_ids)
+    return temp.bit_ids, temp.tracks, temp.loot_ids
+
+
+def _parse_test(ct: CombinedTuning, test_element) -> list[TraitCondition]:
+    """Parse an ``L n="test"`` block into AND-ed trait conditions.
+
+    Unknown test shapes yield a single ``UNKNOWN`` condition that never
+    passes, so gated bits stay off rather than being applied unconditionally.
+    """
+    clauses: list = []
+    for node in test_element.iter():
+        if node.tag == "V":
+            clauses.append(node)
+        elif node.tag == "r":
+            resolved = _resolve(ct, node)
+            if resolved is not None and resolved.tag == "V":
+                clauses.append(resolved)
+    # Deduplicate while keeping order (iter() visits nested copies too).
+    seen: set[int] = set()
+    unique_clauses: list = []
+    for clause in clauses:
+        if id(clause) not in seen:
+            seen.add(id(clause))
+            unique_clauses.append(clause)
+    if not unique_clauses:
+        return [TraitCondition(subject="UNKNOWN")]
+    conditions: list[TraitCondition] = []
+    for clause in unique_clauses:
+        if (clause.get("t") or "").casefold() == "trait":
+            conditions.append(parse_trait_test(ct, clause))
+        else:
+            conditions.append(TraitCondition(subject="UNKNOWN"))
+    return conditions
+
+
+def parse_trait_test(ct: CombinedTuning, trait_element) -> TraitCondition:
+    """Parse a ``V t="trait"`` test into a :class:`TraitCondition`."""
+    payload = None
+    for child in trait_element:
+        if child.tag == "U" and (child.get("n") or "").casefold() == "trait":
+            payload = child
+            break
+    if payload is None:
+        return TraitCondition(subject="UNKNOWN")
+    fields = {child.get("n"): child for child in payload}
+    raw_subject = _text(ct, fields.get("subject"))
+    whitelist = _collect_trait_ids(ct, fields.get("whitelist_traits"))
+    blacklist = _collect_trait_ids(ct, fields.get("blacklist_traits"))
+    if not whitelist and not blacklist:
+        return TraitCondition(subject="UNKNOWN")
+    # A trait gate without an explicit subject (e.g. FamilyMember 103299's
+    # blacklist clause) defaults to Actor: Target-alien AND Actor-not-alien.
+    # Defaulting to TargetSim would make the rule unsatisfiable.
+    subject = raw_subject or "Actor"
+    return TraitCondition(
+        subject=subject,
+        whitelist_trait_ids=whitelist,
+        blacklist_trait_ids=blacklist,
+    )
+
+
+def _collect_trait_ids(ct: CombinedTuning, element) -> list[int]:
+    if element is None:
+        return []
+    resolved = _resolve(ct, element)
+    if resolved is None:
+        return []
+    ids: list[int] = []
+    if resolved.tag in ("T", "E"):
+        number = _integer(ct, resolved)
+        if number is not None:
+            ids.append(number)
+        return ids
+    for item in resolved:
+        number = _integer(ct, item)
+        if number is not None and number not in ids:
+            ids.append(number)
+    return ids
 
 
 def _merge_tracks(ct: CombinedTuning, element, default: RelationshipDefault) -> None:
@@ -496,6 +630,11 @@ def extract_relationship_tuning(
             element = entries.get(item.track_id)
             if element is not None:
                 item.track_name = element.name
+        for rule in default.conditional:
+            for item in rule.tracks:
+                element = entries.get(item.track_id)
+                if element is not None:
+                    item.track_name = element.name
     for relationship in data.pairs:
         for item in relationship.tracks:
             element = entries.get(item.track_id)

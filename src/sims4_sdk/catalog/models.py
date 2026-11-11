@@ -32,6 +32,8 @@ __all__ = [
     "Milestone",
     "RelationshipBit",
     "RelationshipTrackValue",
+    "TraitCondition",
+    "ConditionalRelationshipSetup",
     "RelationshipDefault",
     "PremadeRelationship",
     "GenderOptions",
@@ -289,6 +291,60 @@ class RelationshipTrackValue(Serializable):
 
 
 @dataclass
+class TraitCondition(Serializable):
+    """A single ``V t="trait"`` test gating a default relationship entry.
+
+    ``subject`` is ``"Actor"`` or ``"TargetSim"`` (kept verbatim from tuning).
+    The test passes when the subject has every whitelisted trait and none of
+    the blacklisted traits.  Unknown test shapes are represented by
+    ``subject="UNKNOWN"`` and never pass, so conditional bits are not applied
+    blindly.
+    """
+
+    subject: str
+    whitelist_trait_ids: list[int] = field(default_factory=list)
+    blacklist_trait_ids: list[int] = field(default_factory=list)
+
+    def passes(
+        self, actor_trait_ids: set[int], target_trait_ids: set[int]
+    ) -> bool:
+        if self.subject == "UNKNOWN":
+            return False
+        subject_ids = (
+            actor_trait_ids if self.subject.casefold() == "actor" else target_trait_ids
+        )
+        # Any other subject label falls back to the target's traits.
+        if self.subject.casefold() not in ("actor", "targetsim"):
+            subject_ids = target_trait_ids
+        if any(trait_id not in subject_ids for trait_id in self.whitelist_trait_ids):
+            return False
+        if any(trait_id in subject_ids for trait_id in self.blacklist_trait_ids):
+            return False
+        return True
+
+
+@dataclass
+class ConditionalRelationshipSetup(Serializable):
+    """A default relationship entry that only applies when ``tests`` pass.
+
+    The game stores these as ``U`` blocks pairing ``U n="item"`` with a sibling
+    ``L n="test"``.  All tests must pass (AND semantics).
+    """
+
+    bit_ids: list[int] = field(default_factory=list)
+    tracks: list[RelationshipTrackValue] = field(default_factory=list)
+    loot_ids: list[int] = field(default_factory=list)
+    tests: list[TraitCondition] = field(default_factory=list)
+
+    def passes(
+        self, actor_trait_ids: set[int], target_trait_ids: set[int]
+    ) -> bool:
+        return all(
+            test.passes(actor_trait_ids, target_trait_ids) for test in self.tests
+        )
+
+
+@dataclass
 class RelationshipDefault(Serializable):
     """Default relationship values for a genealogy link (Roommate, Spouse, ...)."""
 
@@ -296,6 +352,12 @@ class RelationshipDefault(Serializable):
     tracks: list[RelationshipTrackValue] = field(default_factory=list)
     bit_ids: list[int] = field(default_factory=list)
     loot_ids: list[int] = field(default_factory=list)
+    conditional: list[ConditionalRelationshipSetup] = field(default_factory=list)
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "conditional" not in state:
+            self.conditional = []
 
     def track(self, track_id: int) -> Optional[RelationshipTrackValue]:
         return next((item for item in self.tracks if item.track_id == track_id), None)

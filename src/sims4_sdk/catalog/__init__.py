@@ -19,6 +19,7 @@ from .models import (
     CareerTrack,
     Catalog,
     CatalogError,
+    ConditionalRelationshipSetup,
     GenderOptions,
     Milestone,
     PremadeRelationship,
@@ -28,6 +29,7 @@ from .models import (
     RelationshipTrackValue,
     SkillLevel,
     Trait,
+    TraitCondition,
     TuningSource,
 )
 from .premades import (
@@ -85,6 +87,8 @@ __all__ = [
     "RelationshipBit",
     "RelationshipTrackValue",
     "RelationshipDefault",
+    "TraitCondition",
+    "ConditionalRelationshipSetup",
     "PremadeRelationship",
     "GenderOptions",
     "SkillLevel",

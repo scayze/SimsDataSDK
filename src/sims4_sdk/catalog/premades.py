@@ -517,7 +517,7 @@ def build_premades(
         aliases, household_id_aliases = {}, {}
 
     _link_household_relationships(households.values(), sims)
-    _apply_relationship_defaults(households.values(), catalog)
+    _apply_relationship_defaults(households.values(), catalog, sims)
 
     lots = _build_lots(catalog, world, household_id_aliases)
     _link_lots(households, lots)
@@ -982,6 +982,7 @@ def _household_display_name(name: str) -> Optional[str]:
 def _apply_relationship_defaults(
     households,
     catalog: Catalog,
+    sims: dict[int, PremadeSim] | None = None,
 ) -> None:
     """Fill initial friendship/romance values from household relationship defaults.
 
@@ -989,6 +990,12 @@ def _apply_relationship_defaults(
     the ``FamilyMember`` default (friendship 45), spouses additionally get the
     ``Spouse`` default (romance 75), and unrelated household members get the
     ``Roommate`` default (friendship 15).
+
+    Entries gated by ``L n="test"`` (e.g. the ``FamilyMember`` alien-awareness
+    bits) are only merged when the two Sims satisfy the trait test; without
+    this, every human family would incorrectly gain ``Known Alien`` bits.
+    Household links are undirected, so a directional rule passes when either
+    direction passes.
     """
     family = catalog.relationship_defaults.get("FamilyMember")
     spouse = catalog.relationship_defaults.get("Spouse")
@@ -998,20 +1005,29 @@ def _apply_relationship_defaults(
     spouse_romance = _default_track_value(spouse, ROMANCE_TRACK_ID)
     roommate_friendship = _default_track_value(roommate, FRIENDSHIP_TRACK_ID)
 
+    sims = sims or {}
     for household in households:
+        tag_to_sim: dict[str, PremadeSim] = {}
+        for member in household.members:
+            sim = sims.get(member.sim_template_id)
+            if sim is not None:
+                tag_to_sim[member.tag] = sim
+
         for relationship in household.relationships:
+            actor = tag_to_sim.get(relationship.a_tag)
+            target = tag_to_sim.get(relationship.b_tag)
             if relationship.kind == "spouse":
                 relationship.friendship = family_friendship
                 relationship.romance = spouse_romance
-                _merge_default_bits(relationship, family)
-                _merge_default_bits(relationship, spouse)
+                _merge_default_bits(relationship, family, actor, target)
+                _merge_default_bits(relationship, spouse, actor, target)
             elif relationship.kind == "family":
                 relationship.friendship = family_friendship
                 relationship.romance = 0.0
-                _merge_default_bits(relationship, family)
+                _merge_default_bits(relationship, family, actor, target)
             else:
                 relationship.friendship = roommate_friendship
-                _merge_default_bits(relationship, roommate)
+                _merge_default_bits(relationship, roommate, actor, target)
             _apply_bit_ranges(relationship, catalog)
 
 
@@ -1022,12 +1038,40 @@ def _default_track_value(default, track_id: int) -> Optional[float]:
     return item.value if item is not None else None
 
 
-def _merge_default_bits(relationship: HouseholdRelationship, default) -> None:
+def _merge_default_bits(
+    relationship: HouseholdRelationship,
+    default,
+    actor: PremadeSim | None = None,
+    target: PremadeSim | None = None,
+) -> None:
     if default is None:
         return
     for bit_id in default.bit_ids:
         if bit_id not in relationship.bit_ids:
             relationship.bit_ids.append(bit_id)
+    if not getattr(default, "conditional", None):
+        return
+    if actor is None or target is None:
+        return
+    actor_ids = _sim_trait_ids(actor)
+    target_ids = _sim_trait_ids(target)
+    for rule in default.conditional:
+        if _rule_passes(rule, actor_ids, target_ids):
+            for bit_id in rule.bit_ids:
+                if bit_id not in relationship.bit_ids:
+                    relationship.bit_ids.append(bit_id)
+
+
+def _sim_trait_ids(sim: PremadeSim) -> set[int]:
+    return {trait.id for trait in (sim.traits or []) if trait.id is not None}
+
+
+def _rule_passes(rule, actor_ids: set[int], target_ids: set[int]) -> bool:
+    # Household links are undirected; a directional rule (e.g. Actor knows
+    # Target is alien) counts when either direction holds.
+    return rule.passes(actor_ids, target_ids) or rule.passes(
+        target_ids, actor_ids
+    )
 
 
 def _apply_bit_ranges(

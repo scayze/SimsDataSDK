@@ -351,6 +351,27 @@ def _relationship_default_dict(value: Any, options: _Options) -> dict[str, Any]:
         "tracks": [_track_value_dict(item, options) for item in value.tracks],
         "bit_ids": list(value.bit_ids),
         "loot_ids": list(value.loot_ids),
+        "conditional": [
+            _conditional_setup_dict(item, options)
+            for item in getattr(value, "conditional", [])
+        ],
+    }
+
+
+def _trait_condition_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "subject": value.subject,
+        "whitelist_trait_ids": list(value.whitelist_trait_ids),
+        "blacklist_trait_ids": list(value.blacklist_trait_ids),
+    }
+
+
+def _conditional_setup_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "bit_ids": list(value.bit_ids),
+        "tracks": [_track_value_dict(item, options) for item in value.tracks],
+        "loot_ids": list(value.loot_ids),
+        "tests": [_trait_condition_dict(item, options) for item in value.tests],
     }
 
 
@@ -904,6 +925,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         CareerLevel,
         CareerTrack,
         Catalog,
+        ConditionalRelationshipSetup,
         GenderOptions,
         Milestone,
         PremadeRelationship,
@@ -913,6 +935,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         RelationshipTrackValue,
         SkillLevel,
         Trait,
+        TraitCondition,
         TuningSource,
     )
     from .catalog.premades import (
@@ -990,6 +1013,10 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         return _track_value_dict(obj, opts)
     if isinstance(obj, RelationshipDefault):
         return _relationship_default_dict(obj, opts)
+    if isinstance(obj, ConditionalRelationshipSetup):
+        return _conditional_setup_dict(obj, opts)
+    if isinstance(obj, TraitCondition):
+        return _trait_condition_dict(obj, opts)
     if isinstance(obj, PremadeRelationship):
         return _premade_relationship_dict(obj, opts)
     if isinstance(obj, GenderOptions):
