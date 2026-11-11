@@ -1,10 +1,17 @@
 from sims4_sdk.catalog import (
+    Catalog,
+    LotRecord,
     Preference,
+    StarterHouseholdRecord,
+    StarterMember,
     PremadeSim,
     SkillLevel,
     Trait,
+    WorldData,
+    build_premades,
     parse_resource_key,
 )
+from sims4_sdk.core import CombinedTuning
 
 
 def test_parse_resource_key() -> None:
@@ -126,3 +133,43 @@ def test_premade_sim_gender_options() -> None:
     assert options.sexuality == "EXPLORING"
     assert options.can_impregnate is False
     assert options.can_be_impregnated is True
+
+
+def test_localized_household_and_lot_links_follow_template_aliases() -> None:
+    xml = """<root>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_Test" s="1" />
+    <I c="PremadeHouseholdTemplate" n="premadeHouseholdTemplate_Test" s="2">
+      <L n="_household_members"><U><T n="household_member_tag">a</T>
+        <T n="sim_template">1</T></U></L>
+    </I></root>"""
+    entries = {item.instance_id: item for item in CombinedTuning.from_xml(xml)}
+    world = WorldData(
+        households={10: StarterHouseholdRecord(instance=10, name="premadeHouseholdTemplate_Test", members=[StarterMember(sim_id=20)])},
+        lots={30: LotRecord(instance=30, household_id=10, household_name_key=100, household_description_key=101)},
+    )
+    catalog = Catalog(strings={100: "Localized Family", 101: "A household description."})
+    bundle = build_premades(None, catalog, entries, {}, world=world, siminfo_index={})
+    household = bundle.household(2)
+    assert household is not None
+    assert household.display_name == household.localized_name == "Localized Family"
+    assert household.description == "A household description."
+    assert household.lot_ids == [30] and household.lot_id == 30
+    assert bundle.lot(30).household_id == 2
+    assert bundle.household("Localized Family") is household
+    assert bundle.household("Test") is household
+    assert bundle.find_households("localized") == [household]
+    assert household.to_dict()["lot_id"] == 30
+
+
+def test_multiple_lots_do_not_choose_conflicting_localized_values() -> None:
+    world = WorldData(
+        households={10: StarterHouseholdRecord(instance=10, name="Family", members=[StarterMember(sim_id=20)])},
+        lots={30: LotRecord(instance=30, household_id=10, household_name_key=100, household_description_key=101),
+              31: LotRecord(instance=31, household_id=10, household_name_key=102, household_description_key=101)},
+    )
+    catalog = Catalog(strings={100: "First", 101: "Shared", 102: "Second"})
+    bundle = build_premades(None, catalog, {}, {}, world=world, siminfo_index={})
+    household = bundle.household(10)
+    assert household.lot_ids == [30, 31] and household.lot_id is None
+    assert household.localized_name is None and household.display_name == "Family"
+    assert household.description == "Shared"

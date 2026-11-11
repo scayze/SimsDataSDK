@@ -14,7 +14,7 @@ from typing import Iterable, Iterator, Optional
 
 from .core import DBPF, ResourceEntry, ResourceKey
 from .core.resource_types import SIMOUTFIT_TYPE_ID
-from .paths import find_install_dir, find_user_dir, iter_pack_folders
+from .paths import find_install_dir, find_user_dir, iter_pack_folders, iter_pack_root_folders
 
 __all__ = ["PackageInfo", "Installation", "PACK_PATTERN"]
 
@@ -87,6 +87,8 @@ class Installation:
             return PackageInfo(path, pack=parts[1])
         if parts and parts[0] == "Data":
             return PackageInfo(path, pack="BASE")
+        if parts and PACK_PATTERN.fullmatch(parts[0]):
+            return PackageInfo(path, pack=parts[0])
         return PackageInfo(path, pack="MOD", is_mod=True)
 
     @property
@@ -99,33 +101,15 @@ class Installation:
         older-pack pre-mades such as the BFF household are visible.
         """
         result: list[PackageInfo] = []
-        for folder, names in (
-            (
-                self.install_dir / "Data" / "Simulation",
-                (
-                    "SimulationFullBuild0.package",
-                    "SimulationPreload.package",
-                    "SimulationDeltaBuild0.package",
-                ),
-            ),
-            (
-                self.install_dir / "Data" / "Client",
-                (
-                    "ClientFullBuild0.package",
-                    "ClientDeltaBuild0.package",
-                ),
-            ),
-        ):
-            for name in names:
-                candidate = folder / name
-                if candidate.exists():
-                    result.append(PackageInfo(candidate, pack="BASE"))
+        for folder in (self.install_dir / "Data" / "Simulation", self.install_dir / "Data" / "Client"):
+            paths = sorted(folder.glob("*.package"), key=lambda p: (_package_priority(p), p.name))
+            result.extend(PackageInfo(path, pack="BASE") for path in paths)
         return result
 
     @property
     def pack_packages(self) -> list[PackageInfo]:
         result: list[PackageInfo] = []
-        for pack_dir in iter_pack_folders(self.install_dir):
+        for pack_dir in (*iter_pack_root_folders(self.install_dir), *iter_pack_folders(self.install_dir)):
             paths = sorted(pack_dir.glob("*.package"), key=lambda p: (_package_priority(p), p.name))
             for path in paths:
                 result.append(PackageInfo(path, pack=pack_dir.name))
@@ -158,7 +142,7 @@ class Installation:
         if base.exists():
             result.append(PackageInfo(base, pack="BASE"))
 
-        for pack_dir in iter_pack_folders(self.install_dir):
+        for pack_dir in (*iter_pack_root_folders(self.install_dir), *iter_pack_folders(self.install_dir)):
             candidate = pack_dir / f"Strings_{self.locale}.package"
             if candidate.exists():
                 result.append(PackageInfo(candidate, pack=pack_dir.name))

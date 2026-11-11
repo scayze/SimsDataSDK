@@ -1,5 +1,7 @@
 """Save-file and Tray readers."""
 
+from .artwork import Artwork, ArtworkError, decode_artwork, read_tray_image
+
 from .enums import (
     AGE_NAMES,
     FAMILY_RELATION_NAMES,
@@ -34,6 +36,7 @@ from .reader import SaveError, read_save, read_save_resource, sim_from_dict
 from .tray import TrayError, read_household_binary, read_tray_item, read_tray_library
 
 __all__ = [
+    "Artwork", "ArtworkError", "decode_artwork", "read_tray_image",
     # enums
     "AGE_NAMES",
     "GENDER_NAMES",

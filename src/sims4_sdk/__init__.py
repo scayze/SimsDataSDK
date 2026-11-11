@@ -45,6 +45,7 @@ from .catalog import (
     CareerTrack,
     Catalog,
     CatalogError,
+    ExtractionIssue,
     GenderOptions,
     HouseholdMember,
     HouseholdRelationship,
@@ -124,6 +125,10 @@ from .paths import (
     tray_dir,
 )
 from .save import (
+    Artwork,
+    ArtworkError,
+    decode_artwork,
+    read_tray_image,
     AGE_NAMES,
     FAMILY_RELATION_NAMES,
     GENDER_NAMES,
@@ -178,6 +183,7 @@ __all__ = [
     "StaticDataError",
     "Catalog",
     "CatalogError",
+    "ExtractionIssue",
     "TuningSource",
     "Trait",
     "Preference",
@@ -215,6 +221,10 @@ __all__ = [
     "SimInfoError",
     # save data
     "SaveFile",
+    "Artwork",
+    "ArtworkError",
+    "decode_artwork",
+    "read_tray_image",
     "SaveSlot",
     "SaveAccount",
     "SaveZone",

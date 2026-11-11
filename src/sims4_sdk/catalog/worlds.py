@@ -25,14 +25,17 @@ to) silently hides every household defined this way.
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable, Mapping, Optional
 
-from ..core import DBPF, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID
+from ..core import DBPF, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID, ResourceKey
 from ..exceptions import Sims4SDKError
 from ..installation import PackageInfo
-from ..save.enums import FAMILY_RELATION_NAMES
-from ..save.protobuf import ProtobufError, iter_fields
+from ..save.enums import FAMILY_RELATION_NAMES, OCCULT_FLAGS, names_for_flags
+from ..save.models import SavedMilestone, SavedRelationship
+from ..save.protobuf import ProtobufError, decode, iter_fields
+from ..save.schema import SCHEMAS
+from .diagnostics import ExtractionIssue
 from .models import TuningSource
 
 __all__ = [
@@ -81,6 +84,7 @@ class LotRecord:
     household_id: Optional[int] = None
     record_size: int = 0
     source: Optional[TuningSource] = None
+    raw: bytes = field(default=b"", repr=False)
 
     @property
     def has_household(self) -> bool:
@@ -134,6 +138,12 @@ class StarterMember:
     age: Optional[str] = None
     body_blend: Optional[str] = None
     spouse_id: Optional[int] = None
+    fiance_id: Optional[int] = None
+    steady_ids: list[int] = field(default_factory=list)
+    relationships: list[SavedRelationship] = field(default_factory=list)
+    milestones: list[SavedMilestone] = field(default_factory=list)
+    occult: list[str] = field(default_factory=list)
+    degree: dict = field(default_factory=dict)
     trait_ids: list[int] = field(default_factory=list)
     aspiration_track_id: Optional[int] = None
     career_id: Optional[int] = None
@@ -161,6 +171,11 @@ class StarterHouseholdRecord:
     funds: Optional[int] = None
     members: list[StarterMember] = field(default_factory=list)
     source: Optional[TuningSource] = None
+    raw: bytes = field(default=b"", repr=False)
+
+    def member(self, sim_id: int) -> Optional[StarterMember]:
+        """Look up a member by the Sim ID stored in this resource."""
+        return next((member for member in self.members if member.sim_id == sim_id), None)
 
     def __repr__(self) -> str:
         return f"StarterHouseholdRecord({self.name!r}, members={len(self.members)})"
@@ -173,10 +188,23 @@ class WorldData:
     lots: dict[int, LotRecord] = field(default_factory=dict)
     households: dict[int, StarterHouseholdRecord] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list, repr=False)
-    _pending_lots: dict[int, tuple[bytes, Optional[TuningSource]]] = field(
+    _pending_lots: dict[tuple[int, Optional[ResourceKey]], tuple[bytes, Optional[TuningSource]]] = field(
         default_factory=dict, repr=False
     )
-    _household_errors: dict[int, str] = field(default_factory=dict, repr=False)
+    _household_errors: dict[tuple[int, Optional[ResourceKey]], str] = field(default_factory=dict, repr=False)
+    diagnostics: list[ExtractionIssue] = field(default_factory=list)
+    _household_issues: dict[tuple[int, Optional[ResourceKey]], ExtractionIssue] = field(default_factory=dict, repr=False)
+    #: Winners by full resource key, preserving resources in different groups.
+    household_resources: dict[ResourceKey, StarterHouseholdRecord] = field(default_factory=dict)
+    lot_resources: dict[ResourceKey, LotRecord] = field(default_factory=dict)
+
+    def find_members(self, sim_id: int) -> list[tuple[StarterHouseholdRecord, StarterMember]]:
+        """Return all matching source records; the same ID can occur more than once."""
+        records = list(self.household_resources.values())
+        known_records = {id(record) for record in records}
+        records.extend(record for record in self.households.values() if id(record) not in known_records)
+        return [(record, member) for record in records
+                for member in record.members if member.sim_id == sim_id]
 
     def add_household(
         self,
@@ -184,15 +212,24 @@ class WorldData:
         data: bytes,
         source: Optional[TuningSource] = None,
     ) -> None:
+        resource_key = source.resource_key if source else None
+        identity = (instance, resource_key)
         try:
             record = parse_premade_household(data, instance=instance, source=source)
         except WorldDataError as exc:
-            self._household_errors[instance] = (
+            self._household_errors[identity] = (
                 f"pre-made household 0x{instance:016X}: {exc}"
+            )
+            self._household_issues[identity] = ExtractionIssue.from_exception(
+                "household", exc, package_path=source.path if source else None,
+                resource_key=source.resource_key if source else None,
             )
             return
         # A newer build of the same resource may have succeeded already.
-        self._household_errors.pop(instance, None)
+        self._household_errors.pop(identity, None)
+        self._household_issues.pop(identity, None)
+        if resource_key is not None:
+            self.household_resources[resource_key] = record
         self.households[instance] = record
 
     def add_lot(
@@ -205,29 +242,44 @@ class WorldData:
         # record is kept until :meth:`finalize`.
         if not data:
             return
-        self._pending_lots[instance] = (data, source)
+        key = (instance, source.resource_key if source else None)
+        # Reinsert an overridden key so the instance view follows load order.
+        self._pending_lots.pop(key, None)
+        self._pending_lots[key] = (data, source)
 
     def finalize(self) -> "WorldData":
         self.errors.extend(self._household_errors.values())
         self._household_errors.clear()
+        self.diagnostics.extend(self._household_issues.values())
+        self._household_issues.clear()
         household_ids = set(self.households)
-        for instance, (data, source) in self._pending_lots.items():
+        for (instance, resource_key), (data, source) in self._pending_lots.items():
             try:
-                self.lots[instance] = parse_lot_manifest(
+                record = parse_lot_manifest(
                     data,
                     instance=instance,
                     household_ids=household_ids,
                     source=source,
                 )
+                self.lots[instance] = record
+                if resource_key is not None:
+                    self.lot_resources[resource_key] = record
             except WorldDataError as exc:
                 self.errors.append(f"lot manifest 0x{instance:04X}: {exc}")
+                self.diagnostics.append(ExtractionIssue.from_exception(
+                    "lot_manifest", exc, package_path=source.path if source else None,
+                    resource_key=source.resource_key if source else None,
+                ))
         self._pending_lots.clear()
         return self
 
     def merge(self, other: "WorldData") -> "WorldData":
         self.lots.update(other.lots)
         self.households.update(other.households)
+        self.lot_resources.update(other.lot_resources)
+        self.household_resources.update(other.household_resources)
         self.errors.extend(other.errors)
+        self.diagnostics.extend(other.diagnostics)
         return self
 
     def __repr__(self) -> str:
@@ -267,6 +319,7 @@ def parse_lot_manifest(
         lot_description_key=lot_description_key or None,
         record_size=len(data),
         source=source,
+        raw=data,
     )
 
     block = _find_household_block(data, household_ids, strings)
@@ -331,6 +384,7 @@ def parse_premade_household(
     for payload in _candidate_payloads(data):
         record = _parse_household_payload(payload, instance, source)
         if record is not None:
+            record.raw = data
             return record
     raise WorldDataError("household resource has no household message")
 
@@ -403,23 +457,50 @@ def _parse_member(data: bytes, index: int) -> StarterMember:
         age=_AGE_FLAGS.get(_varint(fields, 8) or 0),
         body_blend=_text(fields, 12),
         spouse_id=_integer(fields, 15) or None,
+        fiance_id=_integer(fields, 68) or None,
         aspiration_track_id=_varint(fields, 34),
     )
 
     for number, wire, value in fields:
         if number == 30 and wire == 2:
             _parse_gameplay(value, member)
+        elif number == 47 and wire == 2:
+            from ..save.reader import _milestones
+
+            gameplay = _decode_tracker(value, "GameplaySimData")
+            member.milestones = _milestones(
+                gameplay.get("developmental_milestone_tracker", {}), None
+            )
+        elif number == 72:
+            if wire == 2:
+                member.steady_ids.extend(_read_packed_varints(value))
+            elif wire in (0, 1, 5):
+                target = _integer([(number, wire, value)], number)
+                if target is not None:
+                    member.steady_ids.append(target)
+    member.steady_ids = _dedupe(member.steady_ids)
     return member
 
 
 def _parse_gameplay(data: bytes, member: StarterMember) -> None:
     try:
         fields = list(iter_fields(data))
-    except ProtobufError:
-        return
+    except ProtobufError as exc:
+        raise WorldDataError(f"gameplay tracker: {exc}") from exc
 
     for number, wire, value in fields:
-        if number == 10 and wire == 2:
+        if number == 1 and wire == 2:
+            from ..save.reader import _relationships
+
+            member.relationships.extend(
+                _relationships(_decode_tracker(value, "PersistableRelationshipTracker"), None, {})
+            )
+        elif number == 17 and wire == 2:
+            tracker = _decode_tracker(value, "PersistableOccultTracker")
+            member.occult = names_for_flags(tracker.get("occult_types", 0), OCCULT_FLAGS)
+        elif number == 30 and wire == 2:
+            member.degree = _decode_tracker(value, "PersistableDegreeTracker")
+        elif number == 10 and wire == 2:
             member.trait_ids.extend(_packed_traits(value))
         elif number == 12 and wire == 2:
             for entry in _submessages(value):
@@ -444,6 +525,13 @@ def _parse_gameplay(data: bytes, member: StarterMember) -> None:
         member.career_track_id = first.track_id
         member.career_track_level = first.track_level
         member.career_display_level = first.display_level
+
+
+def _decode_tracker(data: bytes, schema: str) -> dict:
+    try:
+        return decode(data, schema, SCHEMAS)
+    except ProtobufError as exc:
+        raise WorldDataError(f"{schema}: {exc}") from exc
 
 
 def _packed_traits(data: bytes) -> list[int]:
@@ -505,6 +593,8 @@ def _parse_skill(data: bytes) -> Optional[tuple[int, float]]:
             value = struct.unpack("<f", raw)[0]
         elif wire == 1 and len(raw) == 8:
             value = struct.unpack("<d", raw)[0]
+        elif wire == 0:
+            value = float(raw)
     if skill_id is None or value is None:
         return None
     return skill_id, value
@@ -529,17 +619,18 @@ def collect_world_data(
             progress(f"  world: {info.label}: {info.path.name}")
         try:
             package = DBPF(info.path)
-        except Exception:
+        except Exception as exc:
+            world.diagnostics.append(ExtractionIssue.from_exception(
+                "package_open", exc, package_path=str(info.path)
+            ))
             continue
         source = TuningSource(
             package=str(info.path.name),
             pack=info.pack,
             is_mod=info.is_mod,
+            path=str(info.path),
         )
-        for entry in package.iter_entries(type_id=PREMADE_HOUSEHOLD_TYPE_ID):
-            world.add_household(entry.key.instance, package.read_resource(entry), source)
-        for entry in package.iter_entries(type_id=LOT_MANIFEST_TYPE_ID):
-            world.add_lot(entry.key.instance, package.read_resource(entry), source)
+        add_package_world_resources(world, package, source)
     return world.finalize()
 
 
@@ -553,10 +644,19 @@ def add_package_world_resources(
     Used by :func:`sims4_sdk.catalog.builder.collect_package_data` so the DBPF
     index is parsed once per package.
     """
-    for entry in package.iter_entries(type_id=PREMADE_HOUSEHOLD_TYPE_ID):
-        world.add_household(entry.key.instance, package.read_resource(entry), source)
-    for entry in package.iter_entries(type_id=LOT_MANIFEST_TYPE_ID):
-        world.add_lot(entry.key.instance, package.read_resource(entry), source)
+    for entry in package.iter_entries_for_types({PREMADE_HOUSEHOLD_TYPE_ID, LOT_MANIFEST_TYPE_ID}):
+        entry_source = replace(source, resource_key=entry.key)
+        try:
+            raw = package.read_resource(entry)
+        except Exception as exc:
+            world.diagnostics.append(ExtractionIssue.from_exception(
+                "resource_read", exc, package_path=source.path, resource_key=entry.key
+            ))
+            continue
+        if entry.key.type_id == PREMADE_HOUSEHOLD_TYPE_ID:
+            world.add_household(entry.key.instance, raw, entry_source)
+        else:
+            world.add_lot(entry.key.instance, raw, entry_source)
 
 
 # ----------------------------------------------------------------------

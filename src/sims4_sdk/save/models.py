@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from ..core.dbpf import ResourceKey
 from ..catalog.models import (
     AspirationTrack,
     Career,
@@ -17,6 +18,7 @@ from ..catalog.models import (
     Trait,
 )
 from ..export import Serializable
+from .artwork import Artwork
 
 __all__ = [
     "SaveSlot",
@@ -360,6 +362,31 @@ class SaveFile(Serializable):
     zones: dict[int, SaveZone] = field(default_factory=dict)
     neighborhoods: dict[int, SaveNeighborhood] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    artwork: dict[ResourceKey, Artwork] = field(default_factory=dict, repr=False)
+    artwork_errors: list[dict[str, str]] = field(default_factory=list)
+
+    @property
+    def thumbnail_image(self) -> Optional[Artwork]:
+        """The save's instance-zero household thumbnail, if present."""
+        return self.artwork.get(ResourceKey(0x14, 0, 0))
+
+    @property
+    def thumbnail(self) -> Optional[bytes]:
+        image = self.thumbnail_image
+        return image.jpeg if image is not None else None
+
+    @property
+    def household_artwork(self) -> dict[int, bytes]:
+        """Household thumbnails whose instance matches a known household ID.
+
+        Instance-zero thumbnails are available as :attr:`thumbnail_image`;
+        they are not assumed to identify a particular household.
+        """
+        return {
+            key.instance: image.jpeg for key, image in self.artwork.items()
+            if key.type_id == 0x14 and key.group == 0 and key.instance in self.households
+            and key.instance != 0
+        }
 
     @property
     def active_household(self) -> Optional[SavedHousehold]:
@@ -511,14 +538,44 @@ class TrayHousehold(Serializable):
     sims: list[SavedSim] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
 
+    def household_images(self) -> list[Artwork]:
+        """Read all matching household image variants on demand."""
+        from .tray import _image_paths
+        from .artwork import read_tray_image
+
+        try:
+            instance = int(self.path.stem.split("!")[-1], 0)
+        except ValueError:
+            return []
+        return [read_tray_image(path) for path in _image_paths(self.path.parent, "hhi", instance)]
+
+    def household_image(self) -> Optional[Artwork]:
+        """Return the highest-resolution household variant, if present."""
+        return max(self.household_images(), key=_image_area, default=None)
+
+    def portrait(self, sim_id: int) -> Optional[Artwork]:
+        """Read a household member's matching Sim portrait, if present."""
+        from .tray import _image_paths
+        from .artwork import read_tray_image
+
+        if not any(sim.sim_id == sim_id for sim in self.sims):
+            return None
+        images = (read_tray_image(path) for path in _image_paths(self.path.parent, "sgi", sim_id))
+        return max(images, key=_image_area, default=None)
+
     def __repr__(self) -> str:
         return f"TrayHousehold({self.family_name!r}, sims={len(self.sims)})"
+
+
+def _image_area(image: Artwork) -> int:
+    return (image.width or 0) * (image.height or 0)
 
 
 @dataclass
 class TrayLibrary(Serializable):
     items: list[TrayItem] = field(default_factory=list)
     households: list[TrayHousehold] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
 
     def household(self, key: str | int) -> Optional[TrayHousehold]:
         if isinstance(key, int):

@@ -133,6 +133,8 @@ def _source(value: Any) -> Optional[dict[str, Any]]:
         "pack": value.pack,
         "is_mod": value.is_mod,
         "label": value.label,
+        "path": value.path,
+        "resource_key": str(value.resource_key) if value.resource_key is not None else None,
     }
 
 
@@ -193,6 +195,7 @@ def _trait_dict(value: Any, options: _Options) -> dict[str, Any]:
         "occults": list(value.occults),
         "ui_category": value.ui_category,
         "is_hidden": value.is_hidden,
+        "is_internal": value.is_internal,
         "is_personality": value.is_personality,
         "icon": value.icon,
         "conflicting_trait_ids": list(value.conflicting_trait_ids),
@@ -293,6 +296,7 @@ def _career_dict(value: Any, options: _Options) -> dict[str, Any]:
     return {
         "id": value.id,
         "name": value.name,
+        "display_name": value.display_name,
         "start_track_id": value.start_track_id,
         "track_ids": list(value.track_ids),
         "category": value.category,
@@ -429,6 +433,7 @@ def _catalog_dict(catalog: Any, options: _Options) -> dict[str, Any]:
         "family_trope_ids": list(catalog.family_trope_ids),
         "romance_trope_ids": list(catalog.romance_trope_ids),
         "errors": list(catalog.errors),
+        "diagnostics": [_dataclass_dict(issue, options) for issue in catalog.diagnostics],
     }
     if options.include_strings:
         data["strings"] = {str(key): value for key, value in catalog.strings.items()}
@@ -530,6 +535,11 @@ def _premade_household_dict(value: Any, options: _Options) -> dict[str, Any]:
     return {
         "id": value.id,
         "name": value.name,
+        "display_name": value.display_name,
+        "localized_name": value.localized_name,
+        "description": value.description,
+        "lot_id": value.lot_id,
+        "lot_ids": list(value.lot_ids),
         "hidden": value.hidden,
         "townie_street": value.townie_street,
         "funds": value.funds,
@@ -793,9 +803,15 @@ def _save_file_dict(value: Any, options: _Options) -> dict[str, Any]:
         "households": _by_id(value.households, _saved_household_dict, options),
         "zones": _by_id(value.zones, _slot_dict, options),
         "neighborhoods": _by_id(value.neighborhoods, _slot_dict, options),
+        "artwork": {
+            str(key): {"width": image.width, "height": image.height, "alpha_format": image.alpha_format}
+            for key, image in value.artwork.items()
+        },
+        "artwork_errors": list(value.artwork_errors),
     }
     if options.include_raw:
         data["raw"] = _jsonable(value.raw, options)
+        data["artwork"] = {str(key): _dataclass_dict(image, options) for key, image in value.artwork.items()}
     return data
 
 
@@ -835,6 +851,7 @@ def _tray_household_dict(value: Any, options: _Options) -> dict[str, Any]:
 def _tray_library_dict(value: Any, options: _Options) -> dict[str, Any]:
     return {
         "items": [_tray_item_dict(item, options) for item in value.items],
+        "errors": list(value.errors),
         "households": [
             _tray_household_dict(item, options) for item in value.households
         ],
@@ -845,6 +862,18 @@ def _static_data_dict(value: Any, options: _Options) -> dict[str, Any]:
     return {
         "catalog": _catalog_dict(value.catalog, options),
         "premades": _premade_bundle_dict(value.premades, options),
+        "world": _world_data_dict(value.world, options) if value.world is not None else None,
+    }
+
+
+def _world_data_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "households": _by_id(value.households, _dataclass_dict, options),
+        "lots": _by_id(value.lots, _dataclass_dict, options),
+        "household_resources": _by_id(value.household_resources, _dataclass_dict, options),
+        "lot_resources": _by_id(value.lot_resources, _dataclass_dict, options),
+        "errors": list(value.errors),
+        "diagnostics": [_dataclass_dict(issue, options) for issue in value.diagnostics],
     }
 
 
@@ -884,6 +913,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         RelationshipTrackValue,
         SkillLevel,
         Trait,
+        TuningSource,
     )
     from .catalog.premades import (
         HouseholdMember,
@@ -992,7 +1022,11 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         return _saved_timed_aspiration_dict(obj, opts)
     if isinstance(obj, SavedStatistic):
         return _saved_statistic_dict(obj, opts)
-    if isinstance(obj, (SaveSlot, SaveAccount, SaveZone, SaveNeighborhood)):
+    if isinstance(obj, TuningSource):
+        return _source(obj)
+    from .save.artwork import Artwork
+    from .catalog.diagnostics import ExtractionIssue
+    if isinstance(obj, (SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue)):
         return _dataclass_dict(obj, opts)
     if isinstance(obj, TrayLibrary):
         return _tray_library_dict(obj, opts)

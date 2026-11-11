@@ -156,6 +156,7 @@ def test_parse_premade_household_v0() -> None:
     record = parse_premade_household(_v0resource(payload), instance=0x01D9A0186BAD30CD)
 
     assert record.name == "BFF"
+    assert record.raw == _v0resource(payload)
     assert record.funds == 9000
     assert [member.full_name for member in record.members] == [
         "Travis Scott",
@@ -212,6 +213,29 @@ def test_parse_premade_household_family() -> None:
         ("FATHER", 3),
         ("MOTHERS_FATHER", 5),
     ]
+
+
+def test_starter_tracker_fields() -> None:
+    track = _varint_field(1, 166) + _float_field(2, 42.5)
+    relationship = _varint_field(1, 456) + _varint_field(3, 789) + _bytes_field(5, track)
+    attributes = (
+        _bytes_field(1, _bytes_field(1, relationship))
+        + _bytes_field(17, _varint_field(1, 4))
+        + _bytes_field(30, _varint_field(1, 1234))
+    )
+    milestone = _varint_field(1, 321) + _varint_field(2, 2)
+    gameplay = _bytes_field(27, _bytes_field(1, milestone))
+    member = (_member("A", "B", sim_id=1) + _bytes_field(30, attributes)
+              + _bytes_field(47, gameplay) + _varint_field(68, 456)
+              + _bytes_field(72, _varint(456) + _varint(789)))
+    record = parse_premade_household(_v0resource(_bytes_field(1, _household([member]))))
+    sim = record.members[0]
+    assert sim.fiance_id == 456 and sim.steady_ids == [456, 789]
+    assert sim.relationships[0].target_id == 456
+    assert sim.relationships[0].bits == [789]
+    assert sim.relationships[0].track_values[0].value == 42.5
+    assert sim.milestones[0].milestone_id == 321 and sim.milestones[0].state == 2
+    assert sim.occult == ["VAMPIRE"] and sim.degree["current_major"] == 1234
 
 
 def test_parse_premade_household_rejects_garbage() -> None:
@@ -290,3 +314,13 @@ def test_world_data_ignores_empty_lot_records() -> None:
     world.finalize()
     assert world.lots == {}
     assert world.errors == []
+
+
+def test_world_lookup_preserves_multiple_records_with_same_sim_id() -> None:
+    from sims4_sdk.catalog import StarterHouseholdRecord, StarterMember
+
+    first = StarterHouseholdRecord(instance=1, members=[StarterMember(sim_id=10)])
+    second = StarterHouseholdRecord(instance=2, members=[StarterMember(sim_id=10)])
+    world = WorldData(households={1: first, 2: second})
+    assert world.find_members(10) == [(first, first.members[0]), (second, second.members[0])]
+    assert world.find_members(99) == []

@@ -37,6 +37,7 @@ from .models import (
     SavedTimedAspiration,
 )
 from .protobuf import ProtobufError, decode
+from .artwork import ArtworkError, decode_artwork
 from .schema import SCHEMAS
 
 __all__ = [
@@ -48,6 +49,7 @@ __all__ = [
 ]
 
 SAVE_RESOURCE_TYPE = 0x0000000D
+SAVE_ARTWORK_TYPES = frozenset({0x0F, 0x10, 0x12, 0x13, 0x14})
 
 
 class SaveError(Sims4SDKError, ValueError):
@@ -69,7 +71,15 @@ def read_save(path: str | Path, catalog: Optional[Catalog] = None) -> SaveFile:
         root = decode(data, "SaveGameData", SCHEMAS)
     except ProtobufError as exc:
         raise SaveError(f"{path.name}: {exc}") from exc
-    return _build_save(path, root, catalog)
+    save = _build_save(path, root, catalog)
+    for image_entry in package.iter_entries_for_types(SAVE_ARTWORK_TYPES):
+        if image_entry.is_null:
+            continue
+        try:
+            save.artwork[image_entry.key] = decode_artwork(package.read_resource(image_entry))
+        except (ArtworkError, OSError, Sims4SDKError) as exc:
+            save.artwork_errors.append({"key": str(image_entry.key), "error": f"{type(exc).__name__}: {exc}"})
+    return save
 
 
 def read_save_resource(data: bytes, catalog: Optional[Catalog] = None, name: str = "<memory>") -> SaveFile:
@@ -268,6 +278,7 @@ def sim_from_dict(
         relationships=relationships,
         spouse_id=data.get("significant_other") or None,
         fiance_id=data.get("fiance") or None,
+        steady_ids=_as_list(data.get("steady_ids")),
         tropes=tropes,
         parents=parents,
         siblings=siblings,
@@ -604,9 +615,9 @@ def _link_special_relationships(
                 fiance.fiance_id = sim.sim_id
                 fiance.fiance_name = sim.full_name
 
-        # Steady partners are not stored in their own field; they are the Sims
-        # whose relationship entry carries the steady relationship bit.
-        steady_ids: list[int] = []
+        # Preserve explicit IDs, including partners absent from this save, and
+        # supplement them with relationships carrying the steady bit.
+        steady_ids = list(dict.fromkeys(sim.steady_ids))
         for relationship in sim.relationships:
             target_id = relationship.target_id
             if target_id == sim.sim_id or target_id not in sims:
@@ -615,7 +626,7 @@ def _link_special_relationships(
                 if target_id not in steady_ids:
                     steady_ids.append(target_id)
         sim.steady_ids = steady_ids
-        sim.steady_names = [sims[target_id].full_name for target_id in steady_ids]
+        sim.steady_names = [sims[target_id].full_name for target_id in steady_ids if target_id in sims]
 
         if marriage_bit is not None:
             if sim.spouse_id is None:

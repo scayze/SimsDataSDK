@@ -108,11 +108,53 @@ values have changed through play. See
 | --- | --- |
 | `.trayitem` | 8-byte header (`uint32 version`, `uint32 length`) + `TrayItem` protobuf: item ID, title, description, creator, timestamp, tags |
 | `.householdbinary` | 16-byte header + `FamilyData` protobuf: `AccountFamilyData` with family name, money, description, and a list of `SimData` |
-| `.sgi` / `.hhi` | appearance/thumbnail data (not parsed yet) |
+| `.sgi` / `.hhi` | Sim portraits and household image variants |
 
 `.trayitem` and `.householdbinary` files are paired by the shared ID after `!` in
 their filenames. A Tray household reuses the same `SavedSim` model as saves, so
 traits, likes/dislikes, careers, skills, genealogy, and pregnancy work identically.
+`read_tray_library()` continues after a per-file error. Inspect `library.errors`
+for dictionaries with `path` and `error` strings; the same diagnostics are
+included in `library.to_dict()`. Direct single-file readers still raise errors.
+
+## Artwork
+
+Save thumbnails and lot artwork are read from the save package's image
+resources and exposed as `save.artwork`, keyed by their complete `ResourceKey`.
+`save.thumbnail_image` returns the instance-zero household thumbnail, and
+`save.thumbnail` returns its JPEG bytes. `save.household_artwork` includes only
+household-thumbnail instances that match an actual household ID; the
+instance-zero thumbnail is not assumed to belong to a particular household.
+Individual image errors appear in `save.artwork_errors` and do not prevent the
+save from loading. A `read_save_resource()` payload has no package artwork.
+
+Tray images are read lazily, so opening a large library does not load every
+image into memory:
+
+```python
+household = library.households[0]
+cover = household.household_image()        # largest matching .hhi variant, or None
+portrait = household.portrait(household.sims[0].sim_id)  # .sgi, or None
+if cover:
+    jpeg_bytes = cover.jpeg
+    mask_bytes = cover.alpha_mask         # PNG/JPEG bytes, or None
+```
+
+`household.household_images()` returns all matching variants, and
+`read_tray_image(path)` reads a standalone `.hhi` or `.sgi`. Each `Artwork`
+contains the JPEG, optional alpha image and format, and image dimensions. The
+SDK recognizes unwrapped JPEGs and the version-2 obfuscated Tray wrapper;
+unsupported or malformed image files raise `ArtworkError`. Alpha data can span
+multiple `ALFX` continuation segments. The SDK returns separate image bytes;
+use an image library if you need to composite them into a transparent PNG.
+The image data is omitted from a save's normal JSON export; call
+`Artwork.to_dict()` or pass `include_raw=True` to include it as hex strings.
+
+Starter household resources also expose relationships, developmental milestones,
+fiancé and steady partner IDs, occult flags and the decoded degree tracker on
+`StarterMember`. These use the same relationship and milestone models as saves.
+Skill values remain raw XP: the SDK does not currently infer skill levels or
+distinguish an unassigned skill's floor from a deliberately assigned skill.
 
 ## Validation
 

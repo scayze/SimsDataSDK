@@ -7,7 +7,7 @@ import os
 import pickle
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
@@ -37,6 +37,7 @@ from .models import (
     TuningSource,
 )
 from .strings import load_strings
+from .diagnostics import ExtractionIssue
 from .values import TuningView
 from .relationships import (
     FRIENDSHIP_TRACK_ID,
@@ -59,7 +60,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-10"
+CACHE_VERSION = "step2-13"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
@@ -101,19 +102,23 @@ def cache_key(
     installation: Installation,
     packages: Iterable[PackageInfo],
     locale: str,
+    *,
+    strings_packages: Optional[Iterable[PackageInfo]] = None,
 ) -> str:
     digest = hashlib.sha256()
     digest.update(CACHE_VERSION.encode("utf-8"))
     digest.update(str(installation.install_dir).encode("utf-8"))
     digest.update(locale.encode("utf-8"))
     digest.update(str(installation.include_mods).encode("utf-8"))
-    for info in packages:
-        try:
-            stat = info.path.stat()
-            stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
-        except OSError:
-            stamp = "missing"
-        digest.update(f"{info.path}|{info.pack}|{info.is_mod}|{stamp}".encode("utf-8"))
+    for label, sources in (("packages", packages), ("strings", strings_packages or ())):
+        digest.update(label.encode("utf-8"))
+        for info in sources:
+            try:
+                stat = info.path.stat()
+                stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
+            except OSError:
+                stamp = "missing"
+            digest.update(f"{info.path}|{info.pack}|{info.is_mod}|{stamp}".encode("utf-8"))
     return digest.hexdigest()[:32]
 
 
@@ -136,7 +141,8 @@ def build_catalog(
         Load/save a pickled catalog keyed by package mtimes and sizes.
     """
     selected = packages if packages is not None else installation.packages
-    key = cache_key(installation, selected, installation.locale)
+    strings_packages = installation.string_packages
+    key = cache_key(installation, selected, installation.locale, strings_packages=strings_packages)
     directory = Path(cache_dir) if cache_dir is not None else default_cache_dir()
     cache_file = directory / f"catalog-{key}.pkl"
 
@@ -154,7 +160,8 @@ def build_catalog(
 
     if progress:
         progress(f"loading strings for {installation.locale}")
-    strings = load_strings(installation)
+    diagnostics: list[ExtractionIssue] = []
+    strings = load_strings(installation, packages=strings_packages, diagnostics=diagnostics)
     if progress:
         progress(f"loaded {len(strings):,} strings")
 
@@ -168,6 +175,8 @@ def build_catalog(
     catalog = extract_catalog(
         entries, sources, strings, relationship_tuning=collected.relationship_tuning
     )
+    catalog.diagnostics.extend(diagnostics)
+    catalog.diagnostics.extend(collected.diagnostics)
 
     if progress:
         progress("linking catalog entries")
@@ -210,6 +219,7 @@ class CollectedPackageData:
     siminfo_index: dict[int, tuple[PackageInfo, ResourceEntry]] = field(
         default_factory=dict, repr=False
     )
+    diagnostics: list[ExtractionIssue] = field(default_factory=list)
 
 
 def collect_package_data(
@@ -233,24 +243,32 @@ def collect_package_data(
             progress(f"  {info.label}: {info.path.name}")
         try:
             package = DBPF(info.path)
-        except Exception:
+        except Exception as exc:
+            data.diagnostics.append(ExtractionIssue.from_exception(
+                "package_open", exc, package_path=str(info.path)
+            ))
             continue
 
         source = TuningSource(
             package=str(info.path.name),
             pack=info.pack,
             is_mod=info.is_mod,
+            path=str(info.path),
         )
 
-        combined_blobs: list[bytes] = []
+        combined_blobs: list[tuple[bytes, TuningSource]] = []
         # One pass over the index: the entry lists are millions of rows long, so
         # filtering them once saves a full scan per resource type.
         for entry in package.iter_entries_for_types(_SCANNED_TYPES):
             type_id = entry.key.type_id
+            entry_source = replace(source, resource_key=entry.key)
             if type_id == COMBINED_TUNING_TYPE_ID:
                 try:
-                    combined_blobs.append(DBPF.read_entry(package.path, entry))
-                except Exception:
+                    combined_blobs.append((DBPF.read_entry(package.path, entry), entry_source))
+                except Exception as exc:
+                    data.diagnostics.append(ExtractionIssue.from_exception(
+                        "resource_read", exc, package_path=str(info.path), resource_key=entry.key
+                    ))
                     continue
             elif type_id == TUNING_TYPE_ID:
                 # Individual tuning XML resources (common in mods).
@@ -262,43 +280,56 @@ def collect_package_data(
                     except Exception:
                         # Some mods ship several top-level <I> elements.
                         combined = CombinedTuning.from_xml(f"<root>{text}</root>")
-                except Exception:
+                except Exception as exc:
+                    data.diagnostics.append(ExtractionIssue.from_exception(
+                        "tuning_read", exc, package_path=str(info.path), resource_key=entry.key
+                    ))
                     continue
                 for tuning in combined:
                     data.entries[tuning.instance_id] = tuning
-                    data.sources[tuning.instance_id] = source
+                    data.sources[tuning.instance_id] = entry_source
             elif type_id == PREMADE_HOUSEHOLD_TYPE_ID:
                 if include_world:
-                    data.world.add_household(
-                        entry.key.instance,
-                        DBPF.read_entry(package.path, entry),
-                        source,
-                    )
+                    try:
+                        raw = DBPF.read_entry(package.path, entry)
+                    except Exception as exc:
+                        data.diagnostics.append(ExtractionIssue.from_exception(
+                            "resource_read", exc, package_path=str(info.path), resource_key=entry.key
+                        ))
+                    else:
+                        data.world.add_household(entry.key.instance, raw, entry_source)
             elif type_id == LOT_MANIFEST_TYPE_ID:
                 if include_world:
-                    data.world.add_lot(
-                        entry.key.instance,
-                        DBPF.read_entry(package.path, entry),
-                        source,
-                    )
+                    try:
+                        raw = DBPF.read_entry(package.path, entry)
+                    except Exception as exc:
+                        data.diagnostics.append(ExtractionIssue.from_exception(
+                            "resource_read", exc, package_path=str(info.path), resource_key=entry.key
+                        ))
+                    else:
+                        data.world.add_lot(entry.key.instance, raw, entry_source)
             elif type_id == SIMINFO_TYPE_ID:
                 if include_siminfo:
                     data.siminfo_index[entry.key.instance] = (info, entry)
 
         # Combined tuning (the main source for retail packages) is applied after
         # the per-entry XML so that it wins within a package.
-        for raw in combined_blobs:
+        for raw, entry_source in combined_blobs:
             content_key = hashlib.blake2b(raw, digest_size=16).digest()
             combined = combined_cache.get(content_key)
             if combined is None:
                 try:
                     combined = CombinedTuning.parse(raw)
-                except Exception:
+                except Exception as exc:
+                    data.diagnostics.append(ExtractionIssue.from_exception(
+                        "combined_tuning", exc, package_path=str(info.path),
+                        resource_key=entry_source.resource_key,
+                    ))
                     continue
                 combined_cache[content_key] = combined
             for tuning in combined:
                 data.entries[tuning.instance_id] = tuning
-                data.sources[tuning.instance_id] = source
+                data.sources[tuning.instance_id] = entry_source
             if include_relationships:
                 for module_name in RELATIONSHIP_MODULES:
                     if module_name in combined.modules:
@@ -406,6 +437,10 @@ def _build_models(
                 )
         except Exception as exc:  # keep one bad definition from aborting the scan
             catalog.errors.append(f"{entry.name} ({entry.cls}): {exc}")
+            catalog.diagnostics.append(ExtractionIssue.from_exception(
+                "catalog_model", exc, package_path=source.path if source else None,
+                resource_key=source.resource_key if source else None, tuning_id=instance_id,
+            ))
 
 
 def _build_trait(entry: TuningElement, view: TuningView, source) -> Trait:

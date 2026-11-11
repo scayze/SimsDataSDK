@@ -235,6 +235,7 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         68: f("fiance"),
         70: f("fix_traits_knowledge", "bool"),
         71: f("needs_age_progress_randomized", "bool"),
+        72: f("steady_ids", repeated=True),
     },
     "PersistableSimInfoAttributes": {
         1: f("relationship_tracker", "message", message="PersistableRelationshipTracker"),

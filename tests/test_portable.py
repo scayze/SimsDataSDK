@@ -116,6 +116,25 @@ def test_static_data_save_load_round_trip(tmp_path: Path) -> None:
     assert loaded.find_sims("goth")[0].full_name == "Bella Goth"
 
 
+def test_older_household_snapshot_without_lot_ids_remains_readable(tmp_path: Path) -> None:
+    static = build_static()
+    del static.households[0].lot_ids
+    loaded = StaticData.load(static.save(tmp_path / "old.pkl"))
+    household = loaded.households[0]
+    assert household.lot_ids == [] and household.lot_id is None
+    assert household.to_dict()["lot_ids"] == []
+
+
+def test_older_snapshots_without_world_and_diagnostics_remain_readable(tmp_path: Path) -> None:
+    static = build_static()
+    del static.world
+    del static.catalog.diagnostics
+    loaded = StaticData.load(static.save(tmp_path / "old-static.pkl"))
+    assert loaded.world is None
+    assert loaded.catalog.diagnostics == []
+    assert loaded.to_dict()["world"] is None
+
+
 def test_static_data_load_rejects_foreign_files(tmp_path: Path) -> None:
     garbage = tmp_path / "garbage.pkl"
     garbage.write_bytes(b"not a pickle")

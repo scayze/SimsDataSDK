@@ -20,6 +20,7 @@ from sims4_sdk.core import (
     SimData,
     StringTable,
 )
+from sims4_sdk.save import read_save, read_tray_library
 
 pytestmark = pytest.mark.integration
 
@@ -137,3 +138,42 @@ def test_save_file_uses_constant_group_index(user_dir: Path) -> None:
         package.read_resource(entry)
         readable += 1
     assert readable > 0
+
+
+def test_save_artwork(user_dir: Path) -> None:
+    saves = sorted((user_dir / "saves").glob("*.save"))
+    if not saves:
+        pytest.skip("no save files in the user directory")
+    save = read_save(saves[0])
+    if not save.artwork:
+        pytest.skip("this save has no supported artwork")
+    assert not save.artwork_errors
+    for image in save.artwork.values():
+        assert image.jpeg.startswith(b"\xff\xd8") and image.jpeg.endswith(b"\xff\xd9")
+        assert image.width and image.height
+        if image.alpha_format == "png":
+            assert image.alpha_mask.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+def test_tray_household_and_sim_artwork(user_dir: Path) -> None:
+    folder = user_dir / "Tray"
+    if not folder.is_dir():
+        pytest.skip("no Tray folder in the user directory")
+    library = read_tray_library(folder)
+    for household in library.households:
+        images = household.household_images()
+        if not images or not household.sims:
+            continue
+        portrait = None
+        for sim in household.sims:
+            portrait = household.portrait(sim.sim_id)
+            if portrait is not None:
+                break
+        if portrait is None:
+            continue
+        best = household.household_image()
+        assert best.width * best.height == max(image.width * image.height for image in images)
+        assert portrait.jpeg.startswith(b"\xff\xd8") and portrait.jpeg.endswith(b"\xff\xd9")
+        assert portrait.width and portrait.height
+        return
+    pytest.skip("no household with readable artwork and a matching Sim portrait")

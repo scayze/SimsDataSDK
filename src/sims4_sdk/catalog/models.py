@@ -12,8 +12,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ..core.dbpf import ResourceKey
 from ..exceptions import Sims4SDKError
 from ..export import Serializable
+from .diagnostics import ExtractionIssue
 
 __all__ = [
     "CatalogError",
@@ -75,6 +77,9 @@ class TuningSource(Serializable):
     package: str
     pack: str
     is_mod: bool = False
+    #: Path of the source package; the key identifies the containing resource.
+    path: Optional[str] = None
+    resource_key: Optional[ResourceKey] = None
 
     @property
     def label(self) -> str:
@@ -104,6 +109,25 @@ class Trait(Serializable):
     @property
     def is_personality(self) -> bool:
         return self.trait_type == "PERSONALITY"
+
+    @property
+    def is_internal(self) -> bool:
+        """Whether known metadata identifies this as an internal trait.
+
+        This is a conservative classification, not a guarantee that every
+        remaining trait is visible or assignable in Create-a-Sim.
+        """
+        internal_types = {
+            "HIDDEN", "GENDER_OPTIONS", "WALKSTYLE", "TAILSTYLE", "SIM_PHONE",
+            "AGENT", "SPECIES", "AGE", "PREFERENCE",
+        }
+        name = self.name.casefold()
+        return (
+            self.is_hidden
+            or self.trait_type.upper() in internal_types
+            or name.startswith(("trait_genderoptions_", "trait_sexualorientation_", "trait_species_", "trait_simpreference_"))
+            or name in {"trait_genderfemale", "trait_gendermale"}
+        )
 
     def __repr__(self) -> str:
         return f"Trait({self.name!r}, type={self.trait_type!r})"
@@ -217,6 +241,8 @@ class Career(Serializable):
     track_ids: list[int] = field(default_factory=list)
     category: Optional[str] = None
     source: Optional[TuningSource] = None
+    #: Localized name of the starting track, when that track is available.
+    display_name: Optional[str] = None
 
 
 @dataclass
@@ -469,6 +495,20 @@ class Catalog(Serializable):
     relationship_bits_by_name: dict[str, RelationshipBit] = field(
         default_factory=dict, repr=False
     )
+    diagnostics: list[ExtractionIssue] = field(default_factory=list)
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "diagnostics" not in state:
+            self.diagnostics = []
+
+    @property
+    def visible_traits(self) -> list[Trait]:
+        """Traits excluding known internal definitions; not an assignability guarantee."""
+        return [
+            trait for trait in self.traits.values()
+            if not trait.is_internal and trait.id not in self.preferences
+        ]
 
     def finalize(self) -> "Catalog":
         """Rebuild name indexes and cross-links."""
@@ -511,6 +551,10 @@ class Catalog(Serializable):
                     level.track_id = track.id
                     if level.level is None:
                         level.level = index
+
+        for career in self.careers.values():
+            track = self.career_tracks.get(career.start_track_id)
+            career.display_name = track.display_name if track is not None else None
 
         for default in self.relationship_defaults.values():
             for item in default.tracks:

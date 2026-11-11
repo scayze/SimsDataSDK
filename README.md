@@ -3,11 +3,24 @@
 A Python SDK for reading **The Sims 4** data so it can be used by other tools:
 game packages, DLC packages, mods, save files, and Tray files.
 
+The SDK reads game data and can serialize its models to JSON. It does not write
+game packages, saves, Tray files, or script mods; an exporter can consume the
+SDK's models without changing the original game files.
+
 > Status: **Step 5 — public library API.** The SDK is now designed to be
 > embedded in other Python projects: every model serializes to JSON-safe
 > dictionaries, catalog and save lookups accept IDs *or* names, static data can
 > be saved as a portable snapshot and reopened on a machine without the game,
 > and all SDK errors share one base class.
+
+Package discovery includes the base Simulation and Client folders, pack-root
+packages and `Delta/<PACK>` packages, followed by optional mods. Scanning all
+client packages can take longer and use more memory than older SDK releases.
+Tray library scans collect per-file failures in `library.errors`.
+
+Static builds retain starter household and lot records in `static.world` and
+report recoverable extraction failures in `static.catalog.diagnostics`. See
+[static catalog sources and diagnostics](docs/static-catalog.md#tuning-sources).
 
 ## Quick start (no save file required)
 
@@ -97,8 +110,11 @@ forces a rebuild. Pass `cache_dir=...` to `Sims4Workspace` to use another folder
 - **Gender options / preferences** - same `GenderOptions` view as static Sims.
 - **Milestones** - developmental milestones and completed aspiration objectives.
 - **Relationships** - per-Sim relationship tracker entries when present (bits,
-  friendship/romance tracks, target names). Steady partners are derived from the
-  steady relationship bit because the save has no dedicated field.
+  friendship/romance tracks, target names). Steady partner IDs are supplemented
+  with the steady relationship bit when available.
+- **Artwork** — save thumbnails, Tray household images and Sim portraits,
+  including separately accessible embedded alpha masks. See
+  [Saves and Tray artwork](docs/save-and-tray.md#artwork).
 - **Households and zones** — members, funds, home zone, premade template IDs.
 - **Tray/Gallery** — `.trayitem` metadata plus full Sims from `.householdbinary`,
   using the same `SavedSim` model.

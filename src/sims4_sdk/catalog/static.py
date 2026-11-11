@@ -17,8 +17,10 @@ from .builder import (
     extract_catalog,
 )
 from .models import Catalog
+from .diagnostics import ExtractionIssue
 from .premades import PremadeBundle, build_premades
 from .strings import load_strings
+from .worlds import WorldData
 
 __all__ = [
     "StaticDataError",
@@ -31,6 +33,16 @@ __all__ = [
 ProgressCallback = Optional[Callable[[str], None]]
 
 
+def _string_packages(installation, packages, strings_packages):
+    if strings_packages is not None:
+        return strings_packages
+    if packages is None:
+        return installation.string_packages
+    selected_packs = {info.pack for info in packages}
+    return [info for info in installation.string_packages
+            if info.pack in selected_packs or info.pack == "BASE"]
+
+
 class StaticDataError(Sims4SDKError, ValueError):
     """Raised when a static-data snapshot cannot be saved or loaded."""
 
@@ -41,6 +53,8 @@ class StaticData(Serializable):
 
     catalog: Catalog = field(default_factory=Catalog)
     premades: PremadeBundle = field(default_factory=PremadeBundle)
+    #: Original starter-household/lot records; None for older snapshots.
+    world: Optional[WorldData] = None
 
     @property
     def sims(self):
@@ -139,17 +153,8 @@ def build_static(
 ) -> StaticData:
     """Build (or load) the static catalog and pre-made Sim bundle."""
     selected = packages if packages is not None else installation.packages
-    if strings_packages is None:
-        if packages is None:
-            strings_packages = installation.string_packages
-        else:
-            selected_packs = {info.pack for info in selected}
-            strings_packages = [
-                info
-                for info in installation.string_packages
-                if info.pack in selected_packs or info.pack == "BASE"
-            ]
-    key = cache_key(installation, selected, installation.locale)
+    strings_packages = _string_packages(installation, packages, strings_packages)
+    key = cache_key(installation, selected, installation.locale, strings_packages=strings_packages)
     directory = Path(cache_dir) if cache_dir is not None else default_cache_dir()
     cache_file = directory / f"static-{key}.pkl"
 
@@ -166,7 +171,8 @@ def build_static(
 
     if progress:
         progress(f"loading strings for {installation.locale}")
-    strings = load_strings(installation, packages=strings_packages)
+    diagnostics: list[ExtractionIssue] = []
+    strings = load_strings(installation, packages=strings_packages, diagnostics=diagnostics)
     if progress:
         progress(f"loaded {len(strings):,} strings")
 
@@ -192,6 +198,9 @@ def build_static(
         relationship_tuning=collected.relationship_tuning,
     )
     catalog.errors.extend(world.errors)
+    catalog.diagnostics.extend(diagnostics)
+    catalog.diagnostics.extend(collected.diagnostics)
+    catalog.diagnostics.extend(world.diagnostics)
 
     if progress:
         progress("extracting pre-made Sims")
@@ -204,7 +213,7 @@ def build_static(
         siminfo_index=collected.siminfo_index,
     )
 
-    data = StaticData(catalog=catalog, premades=premades)
+    data = StaticData(catalog=catalog, premades=premades, world=world)
 
     if use_cache:
         try:
@@ -243,11 +252,13 @@ def load_static(
     installation: Installation,
     *,
     packages: Optional[list[PackageInfo]] = None,
+    strings_packages: Optional[list[PackageInfo]] = None,
     cache_dir: str | Path | None = None,
 ) -> Optional[StaticData]:
     """Load cached static data without rebuilding, or return ``None``."""
     selected = packages if packages is not None else installation.packages
-    key = cache_key(installation, selected, installation.locale)
+    strings_packages = _string_packages(installation, packages, strings_packages)
+    key = cache_key(installation, selected, installation.locale, strings_packages=strings_packages)
     directory = Path(cache_dir) if cache_dir is not None else default_cache_dir()
     cache_file = directory / f"static-{key}.pkl"
     if not cache_file.exists():

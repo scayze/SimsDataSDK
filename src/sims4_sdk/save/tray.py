@@ -104,6 +104,17 @@ def pair_key(path: Path) -> str:
     return path.stem.split("!")[-1]
 
 
+def _image_paths(folder: Path, extension: str, instance: int) -> list[Path]:
+    matches = []
+    for path in folder.glob(f"*.{extension}"):
+        try:
+            if int(pair_key(path), 0) == instance:
+                matches.append(path)
+        except ValueError:
+            continue
+    return sorted(matches)
+
+
 def read_tray_library(
     folder: str | Path,
     catalog: Optional[Catalog] = None,
@@ -112,20 +123,23 @@ def read_tray_library(
     folder = Path(folder)
     items: dict[str, TrayItem] = {}
     households: list[TrayHousehold] = []
+    errors: list[dict[str, str]] = []
 
     for path in sorted(folder.glob("*.trayitem")):
         try:
             item = read_tray_item(path)
-        except TrayError:
+        except Exception as exc:
+            errors.append({"path": str(path), "error": f"{type(exc).__name__}: {exc}"})
             continue
         items[pair_key(path)] = item
 
     for path in sorted(folder.glob("*.householdbinary")):
         try:
             household = read_household_binary(path, catalog)
-        except TrayError:
+        except Exception as exc:
+            errors.append({"path": str(path), "error": f"{type(exc).__name__}: {exc}"})
             continue
         household.item = items.get(pair_key(path))
         households.append(household)
 
-    return TrayLibrary(items=list(items.values()), households=households)
+    return TrayLibrary(items=list(items.values()), households=households, errors=errors)

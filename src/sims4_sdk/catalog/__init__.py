@@ -1,5 +1,7 @@
 """Save-independent static catalog and pre-made Sim extraction."""
 
+from .diagnostics import ExtractionIssue
+
 from .builder import (
     CollectedPackageData,
     build_catalog,
@@ -55,6 +57,7 @@ from .worlds import (
 )
 
 __all__ = [
+    "ExtractionIssue",
     # build
     "build_catalog",
     "build_static",

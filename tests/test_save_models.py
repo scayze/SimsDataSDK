@@ -87,6 +87,20 @@ def build_catalog() -> Catalog:
     return catalog.finalize()
 
 
+def test_explicit_steady_ids_survive_relationship_linking() -> None:
+    sim = sim_from_dict({"sim_id": 1, "steady_ids": [2, 3, 2]})
+    partner = sim_from_dict({"sim_id": 2, "first_name": "Sam"})
+    _link_special_relationships({1: sim, 2: partner}, None)
+    assert sim.steady_ids == [2, 3]
+    assert sim.steady_names == ["Sam"]
+
+
+def test_career_display_name_comes_from_start_track() -> None:
+    career = build_catalog().careers[20]
+    assert career.display_name == "Test Career"
+    assert career.to_dict()["display_name"] == "Test Career"
+
+
 def test_sim_from_dict() -> None:
     data = {
         "sim_id": 100,

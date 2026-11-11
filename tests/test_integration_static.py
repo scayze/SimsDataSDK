@@ -8,6 +8,7 @@ pack; that build can take several minutes and is cached by the SDK.
 from __future__ import annotations
 
 import os
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -91,6 +92,8 @@ def test_known_trait(static_data) -> None:
     assert trait.trait_type == "PERSONALITY"
     assert "ADULT" in trait.ages
     assert trait.source is not None and trait.source.pack == "BASE"
+    assert not trait.is_internal
+    assert trait in catalog.visible_traits
 
 
 def test_known_preference(static_data) -> None:
@@ -377,6 +380,23 @@ def test_lot_manifest(static_data) -> None:
     assert garden.household_name == "BFF"
     assert garden.household_id == static_data.household("BFF").id
     assert garden.lot_description
+    source_lot = static_data.world.lots[garden.id]
+    source_household = static_data.world.households[source_lot.household_id]
+    assert source_lot.raw and source_household.raw
+    assert source_household.source.path and source_household.source.resource_key
+    assert source_household.source.resource_key.instance == source_household.instance
+    assert static_data.world.household_resources[source_household.source.resource_key] is source_household
+    assert static_data.world.lot_resources[source_lot.source.resource_key] is source_lot
+    assert source_household.members
+    member = source_household.members[0]
+    if member.sim_id is not None:
+        assert (source_household, member) in static_data.world.find_members(member.sim_id)
+    bff = static_data.household("BFF")
+    assert bff.localized_name == garden.household_name
+    assert bff.display_name == garden.household_name
+    assert bff.description == garden.household_description
+    assert garden.id in bff.lot_ids
+    assert static_data.find_households("BFF")
 
     ophelia = static_data.lot("Ophelia Villa")
     assert ophelia is not None
@@ -429,6 +449,12 @@ def test_tray_library(static_data, user_dir: Path) -> None:
     assert household is not None
     assert household.family_name
     assert household.sims[0].full_name
+    files = {str(path) for path in tray_dir.glob("*.householdbinary")}
+    decoded = {str(hh.path) for hh in library.households}
+    failed = {error["path"] for error in library.errors} & files
+    assert decoded.isdisjoint(failed)
+    assert decoded | failed == files
+    print(f"Tray household files: {len(files)}, decoded: {len(decoded)}, reported errors: {len(failed)}")
 
 
 @pytest.mark.skipif(
@@ -439,6 +465,15 @@ def test_full_installation(install_dir: Path, tmp_path_factory: pytest.TempPathF
     installation = Installation(install_dir)
     cache_dir = tmp_path_factory.mktemp("full-static-cache")
     data = build_static(installation, use_cache=True, cache_dir=cache_dir)
+
+    print(
+        f"Full install: {len(installation.packages)} packages, "
+        f"{len(data.catalog.traits)} traits, {len(data.catalog.visible_traits)} in visible view, "
+        f"{len(data.premades.households)} households, "
+        f"{sum(bool(hh.lot_ids) for hh in data.premades.households)} with lot links, "
+        f"{len(data.catalog.errors)} catalog errors, "
+        f"diagnostics: {dict(Counter(issue.stage for issue in data.catalog.diagnostics))}"
+    )
 
     assert len(data.catalog.traits) > 900
     assert len(data.catalog.preferences) > 150

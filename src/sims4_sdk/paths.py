@@ -20,6 +20,7 @@ __all__ = [
     "iter_packages",
     "iter_string_packages",
     "iter_pack_folders",
+    "iter_pack_root_folders",
     "saves_dir",
     "tray_dir",
     "mods_dir",
@@ -132,6 +133,16 @@ def iter_pack_folders(install_dir: str | Path) -> Iterable[Path]:
             yield folder
 
 
+def iter_pack_root_folders(install_dir: str | Path) -> Iterable[Path]:
+    """Yield installed pack folders at the game root, including root-only packs."""
+    install = Path(install_dir)
+    if not install.is_dir():
+        return
+    for folder in sorted(install.iterdir()):
+        if folder.is_dir() and re.fullmatch(r"(EP|GP|SP|FP)\d+", folder.name):
+            yield folder
+
+
 def iter_packages(install_dir: str | Path, *, include_base: bool = True) -> Iterable[Path]:
     """Yield every ``.package`` file belonging to the game and its packs.
 
@@ -145,7 +156,7 @@ def iter_packages(install_dir: str | Path, *, include_base: bool = True) -> Iter
         ):
             if folder.is_dir():
                 yield from sorted(folder.glob("*.package"))
-    for pack in iter_pack_folders(install):
+    for pack in (*iter_pack_root_folders(install), *iter_pack_folders(install)):
         yield from sorted(pack.glob("*.package"))
 
 
@@ -159,7 +170,7 @@ def iter_string_packages(
     base = install / "Data" / "Client" / filename
     if base.exists():
         yield base
-    for pack in iter_pack_folders(install):
+    for pack in (*iter_pack_root_folders(install), *iter_pack_folders(install)):
         candidate = pack / filename
         if candidate.exists():
             yield candidate

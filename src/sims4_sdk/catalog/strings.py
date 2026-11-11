@@ -7,6 +7,7 @@ from typing import Optional
 from ..core import DBPF, STRING_TABLE_TYPE_ID, StringTable, locale_from_instance
 from ..core.stbl import LOCALE_CODES
 from ..installation import Installation, PackageInfo
+from .diagnostics import ExtractionIssue
 
 __all__ = ["locale_code", "load_strings"]
 
@@ -28,6 +29,7 @@ def load_strings(
     installation: Installation,
     *,
     packages: Optional[list[PackageInfo]] = None,
+    diagnostics: Optional[list[ExtractionIssue]] = None,
 ) -> dict[int, str]:
     """Merge STBL strings from the base game, packs, and mods.
 
@@ -38,7 +40,14 @@ def load_strings(
     sources = packages if packages is not None else installation.string_packages
 
     for info in sources:
-        package = DBPF(info.path)
+        try:
+            package = DBPF(info.path)
+        except Exception as exc:
+            if diagnostics is not None:
+                diagnostics.append(ExtractionIssue.from_exception(
+                    "string_package_open", exc, package_path=str(info.path)
+                ))
+            continue
         for entry in package.iter_entries(type_id=STRING_TABLE_TYPE_ID):
             if info.is_mod:
                 code = locale_from_instance(entry.key.instance)
@@ -48,8 +57,12 @@ def load_strings(
                     continue
             try:
                 table = StringTable.parse(package.read_resource(entry))
-            except Exception:
+            except Exception as exc:
                 # A broken user mod should not prevent catalog extraction.
+                if diagnostics is not None:
+                    diagnostics.append(ExtractionIssue.from_exception(
+                        "string_table", exc, package_path=str(info.path), resource_key=entry.key
+                    ))
                 continue
             merged.update(table.entries)
     return merged

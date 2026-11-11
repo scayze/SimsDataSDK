@@ -42,6 +42,7 @@ from .models import (
     TuningSource,
 )
 from .relationships import FRIENDSHIP_TRACK_ID, ROMANCE_TRACK_ID
+from .diagnostics import ExtractionIssue
 from .values import TuningView
 from .worlds import StarterMember, WorldData
 
@@ -137,6 +138,27 @@ class PremadeHousehold(Serializable):
     townie_street: Optional[str] = None
     funds: Optional[int] = None
     source: Optional[TuningSource] = None
+    localized_name: Optional[str] = None
+    description: Optional[str] = None
+    lot_ids: list[int] = field(default_factory=list)
+
+    def __setstate__(self, state: dict) -> None:
+        # Portable snapshots created before lot links existed have no list field.
+        self.__dict__.update(state)
+        if "lot_ids" not in state:
+            self.lot_ids = []
+
+    @property
+    def display_name(self) -> Optional[str]:
+        """Localized manifest name, or a fallback inferred from the tuning name."""
+        return self.localized_name or _household_display_name(self.name) or (
+            self.name if not self.name.startswith(("premade", "HH_Template_", "hH_Template_")) else None
+        )
+
+    @property
+    def lot_id(self) -> Optional[int]:
+        """The lot manifest ID if exactly one lot references this household."""
+        return self.lot_ids[0] if len(self.lot_ids) == 1 else None
 
     @property
     def member_ids(self) -> list[int]:
@@ -334,7 +356,8 @@ class PremadeBundle(Serializable):
             return exact
         needle = key.casefold()
         return next(
-            (hh for hh in self.households if needle in hh.name.casefold()), None
+            (hh for hh in self.households if needle in hh.name.casefold()
+             or needle in (hh.display_name or "").casefold()), None
         )
 
     def lot(self, key: str | int) -> Optional[PremadeLot]:
@@ -390,7 +413,8 @@ class PremadeBundle(Serializable):
         return [
             household
             for household in self.households
-            if (not needle or needle in household.name.casefold())
+            if (not needle or needle in household.name.casefold()
+                or needle in (household.display_name or "").casefold())
             and _source_matches(household.source, pack)
         ]
 
@@ -472,6 +496,11 @@ def build_premades(
                 )
         except Exception as exc:
             catalog.errors.append(f"{entry.name} ({cls}): {exc}")
+            source = sources.get(instance_id)
+            catalog.diagnostics.append(ExtractionIssue.from_exception(
+                "premade_model", exc, package_path=source.path if source else None,
+                resource_key=source.resource_key if source else None, tuning_id=instance_id,
+            ))
 
     for household in households.values():
         for member in household.members:
@@ -490,11 +519,13 @@ def build_premades(
     _link_household_relationships(households.values(), sims)
     _apply_relationship_defaults(households.values(), catalog)
 
+    lots = _build_lots(catalog, world, household_id_aliases)
+    _link_lots(households, lots)
     bundle = PremadeBundle(
         sims=sorted(sims.values(), key=lambda sim: sim.full_name.casefold()),
         households=sorted(households.values(), key=lambda hh: hh.name.casefold()),
         ancestors=sorted(ancestors.values(), key=lambda anc: anc.full_name.casefold()),
-        lots=_build_lots(catalog, world, household_id_aliases),
+        lots=lots,
         premade_relationships=list(catalog.premade_relationships),
     )
     for relationship in bundle.premade_relationships:
@@ -509,7 +540,10 @@ def build_premades(
         bundle.sims_by_name.setdefault(sim.full_name, sim)
     for household in bundle.households:
         bundle.households_by_name.setdefault(household.name, household)
-        display_name = _household_display_name(household.name)
+        inferred_name = _household_display_name(household.name)
+        if inferred_name:
+            bundle.households_by_name.setdefault(inferred_name, household)
+        display_name = household.display_name
         if display_name:
             bundle.households_by_name.setdefault(display_name, household)
     for alias, household in aliases.items():
@@ -518,6 +552,21 @@ def build_premades(
         if lot.lot_name:
             bundle.lots_by_name.setdefault(lot.lot_name, lot)
     return bundle
+
+
+def _link_lots(households: dict[int, PremadeHousehold], lots: list[PremadeLot]) -> None:
+    """Attach manifest links without choosing between conflicting localized values."""
+    grouped: dict[int, list[PremadeLot]] = {}
+    for lot in lots:
+        if lot.household_id in households:
+            grouped.setdefault(lot.household_id, []).append(lot)
+    for household_id, household_lots in grouped.items():
+        household = households[household_id]
+        household.lot_ids = sorted({lot.id for lot in household_lots})
+        names = {lot.household_name for lot in household_lots if lot.household_name}
+        descriptions = {lot.household_description for lot in household_lots if lot.household_description}
+        household.localized_name = next(iter(names)) if len(names) == 1 else None
+        household.description = next(iter(descriptions)) if len(descriptions) == 1 else None
 
 
 def _merge_world(
@@ -1097,7 +1146,11 @@ def _build_sim(
                 siminfo_trait_ids = SimInfo.parse(
                     raw, known_trait_ids=known
                 ).traits
-            except SimInfoError:
+            except SimInfoError as exc:
+                catalog.diagnostics.append(ExtractionIssue.from_exception(
+                    "siminfo", exc, package_path=str(found[0].path),
+                    resource_key=found[1].key, tuning_id=entry.instance_id,
+                ))
                 siminfo_trait_ids = []
 
     merged_ids: list[int] = []

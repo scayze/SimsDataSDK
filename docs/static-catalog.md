@@ -34,11 +34,22 @@ order:
 3. base game delta,
 4. base game client full/delta builds (no tuning, but the pre-made household
    and lot-manifest resources live here),
-5. each DLC pack (`Delta/EP*`, `GP*`, `SP*`, `FP*`), with delta last,
+5. DLC pack-root packages (`EP*`, `GP*`, `SP*`, `FP*`), then their `Delta/` packages,
 6. mods (`Mods/**/*.package`).
 
 Later definitions override earlier ones. Individual tuning XML resources
 (`0x03B33DDF`) are also read, which covers most mods.
+
+Each extracted model's `source` identifies the package path and the full key
+of the containing resource. For an entry inside Combined Tuning, the key is
+the Combined Tuning resource's key; the entry's tuning ID is on the model.
+This records the selected source, not a complete history of overridden entries.
+
+Package scans are best effort. Inspect `static.catalog.diagnostics` for
+structured `ExtractionIssue` records describing skipped packages, failed
+resource reads, string tables, and model parsing. The stage, exception type,
+message, package path, resource key and tuning ID are included when known.
+An empty diagnostics list does not establish that all game data is understood.
 
 ### Classes extracted
 
@@ -57,6 +68,13 @@ Later definitions override earlier ones. Individual tuning XML resources
 
 All localized strings are resolved through the merged STBL tables for the chosen
 locale. The default is `ENG_US`; pass another locale to `Sims4Workspace`.
+
+`Catalog.visible_traits` excludes known internal trait types and naming patterns,
+hidden traits, and IDs also catalogued as preferences. `Trait.is_internal` exposes
+the trait-level part of that classification. This is conservative: unknown
+internal traits may remain, and inclusion does not imply a trait is assignable.
+For compatibility, `find_traits(visible_only=True)` still filters only the
+`is_hidden` flag.
 
 ## Pre-made Sims
 
@@ -90,6 +108,19 @@ Likes/dislikes are stored in the same trait list and are separated using the
 
 ## Starter-save households and lots
 
+`StaticData.world` preserves the selected starter household and lot records
+alongside the merged premade view. Use `world.households[resource_instance]`
+and `record.member(sim_id)` to inspect their parsed values, or
+`world.find_members(sim_id)` to find all records containing that ID. These
+records retain their original bytes as `.raw`; normal JSON export omits those
+bytes, and `include_raw=True` includes them as hex. Records reflect the SDK's
+selected load order. `world.household_resources` and `world.lot_resources` use
+full resource keys, preserving records with different groups; the convenient
+`households` and `lots` views use instance IDs and therefore select one record
+when instances collide. These are winning records, not an archive of overrides
+or an identity match to a tuning template. Older portable snapshots have
+`world=None` and must be rebuilt to obtain this data.
+
 Older packs (base game through EP18, plus GP04/07/08/09/11/12) do **not** use
 `PremadeSimTemplate` for their pre-made population.  The BFF household, the
 Pancakes, the Calientes, the Roomies and the Spencer-Kim-Lewis family have no
@@ -104,6 +135,14 @@ These live in `Data/Client/ClientFullBuild0.package` and
 `Data/Client/ClientDeltaBuild0.package` (and `Delta/<PACK>/ClientDeltaBuild0.package`).
 Scanning only `Data/Simulation` silently hides them, which is why earlier builds
 were missing most base-game households.
+
+`PremadeHousehold.localized_name` and `.description` resolve the associated
+manifest's household strings. `.display_name` uses the localized name when
+available and otherwise falls back to an inferred name. `.lot_ids` contains all
+linked lot manifest IDs, while `.lot_id` is set only for a single link. If linked
+manifests disagree on a localized name or description, that value is left unset
+instead of choosing one arbitrarily. Older portable snapshots remain readable,
+but need to be rebuilt to populate the new household links.
 
 Each household member message carries:
 

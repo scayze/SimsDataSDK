@@ -120,6 +120,11 @@ def decode_message(
         if spec is None:
             continue
 
+        if spec.kind in ("message", "string", "bytes") and wire_type != 2:
+            raise ProtobufError(
+                f"field {spec.name!r} ({spec.kind}) has wire type {wire_type}, expected 2"
+            )
+
         if spec.kind == "message":
             if spec.message is None:
                 raise ProtobufError(f"field {spec.name!r} has no message schema")
@@ -166,6 +171,8 @@ def decode_message(
 def _scalar_or_packed(value: Any, wire_type: int, kind: str) -> Any:
     if wire_type == 2:
         return _unpack(value, kind)
+    if wire_type == 0 and kind in ("float", "double"):
+        return float(value)
     if kind == "float":
         if wire_type == 1 and len(value) == 8:
             return struct.unpack("<d", value)[0]

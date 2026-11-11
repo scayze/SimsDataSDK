@@ -9,6 +9,7 @@ from sims4_sdk.paths import (
     iter_packages,
     iter_string_packages,
 )
+from sims4_sdk.installation import Installation
 
 
 def _fake_install(root: Path) -> Path:
@@ -59,3 +60,31 @@ def test_iter_string_packages(tmp_path: Path) -> None:
     strings = list(iter_string_packages(install, "ENG_US"))
     assert len(strings) == 2
     assert all(p.name == "Strings_ENG_US.package" for p in strings)
+
+
+def test_installation_discovers_all_builds_and_pack_roots_before_deltas(tmp_path: Path) -> None:
+    install = _fake_install(tmp_path / "The Sims 4")
+    client = install / "Data" / "Client"
+    for name in ("ClientFullBuild8.package", "ClientDeltaBuild8.package"):
+        (client / name).write_bytes(b"")
+    root_pack = install / "EP01"
+    root_pack.mkdir()
+    (root_pack / "ClientFullBuild0.package").write_bytes(b"")
+    (root_pack / "Strings_ENG_US.package").write_bytes(b"")
+    root_only = install / "SP99"
+    root_only.mkdir()
+    (root_only / "ClientFullBuild0.package").write_bytes(b"")
+    user = tmp_path / "user"
+    (user / "Mods").mkdir(parents=True)
+    (user / "Mods" / "custom.package").write_bytes(b"")
+
+    installation = Installation(install, user)
+    packages = installation.packages
+    paths = [info.path for info in packages]
+    assert set(iter_packages(install)) == set(paths[:-1])
+    assert client / "ClientFullBuild8.package" in paths
+    assert client / "ClientDeltaBuild8.package" in paths
+    assert paths.index(root_pack / "ClientFullBuild0.package") < paths.index(install / "Delta" / "EP01" / "SimulationDeltaBuild0.package")
+    assert next(info for info in packages if info.path.parent == root_only).pack == "SP99"
+    assert packages[-1].is_mod
+    assert [info.path for info in installation.string_packages] == list(iter_string_packages(install)) + [packages[-1].path]

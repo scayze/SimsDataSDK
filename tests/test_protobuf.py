@@ -98,6 +98,18 @@ def test_fixed64_unpacked_tolerated() -> None:
     assert decoded["fixed"] == [99]
 
 
+def test_varint_float_and_double_are_numeric() -> None:
+    schema = {"Numbers": {1: FieldSpec("float", "float"), 2: FieldSpec("double", "double")}}
+    assert decode(enc_uint(1, 7) + enc_uint(2, 3), "Numbers", schema) == {
+        "float": 7.0, "double": 3.0
+    }
+
+
+def test_incompatible_message_wire_type_is_protobuf_error() -> None:
+    with pytest.raises(ProtobufError, match="child.*wire type"):
+        decode(enc_uint(6, 1), "Test", SCHEMAS)
+
+
 def test_trailing_zero_stops_parsing() -> None:
     decoded = decode(enc_uint(1, 7) + b"\x00\x00\x00", "Test", SCHEMAS)
     assert decoded["number"] == 7
