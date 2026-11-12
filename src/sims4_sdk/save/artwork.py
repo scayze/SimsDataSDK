@@ -1,14 +1,14 @@
-"""Read save and Tray JPEG artwork without an image-processing dependency.
+"""Read save and Tray JPEG artwork and its embedded alpha mask.
 
 Tray images use a 24-byte wrapper and an XOR-obfuscated payload. Maxis JPEGs
 may contain an ALFA PNG (or ALFJ JPEG) alpha image in an APP segment. The
-color JPEG and the embedded mask are returned separately; compositing them
-into an RGBA image is left to an image library chosen by the caller.
+color JPEG and the embedded mask are returned separately, or combined as PNG.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Optional
 
@@ -36,6 +36,29 @@ class Artwork(Serializable):
     alpha_format: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
+
+    def to_png(self) -> bytes:
+        """Return PNG bytes with the embedded alpha mask applied, if present."""
+        from PIL import Image
+
+        try:
+            with Image.open(BytesIO(self.jpeg)) as source:
+                image = source.convert("RGBA")
+            if self.alpha_mask is not None:
+                with Image.open(BytesIO(self.alpha_mask)) as source_mask:
+                    mask = source_mask.convert("L")
+                if mask.size != image.size:
+                    raise ArtworkError(
+                        f"alpha mask dimensions {mask.size} do not match image dimensions {image.size}"
+                    )
+                image.putalpha(mask)
+            result = BytesIO()
+            image.save(result, format="PNG")
+            return result.getvalue()
+        except ArtworkError:
+            raise
+        except (OSError, ValueError, SyntaxError) as exc:
+            raise ArtworkError(f"could not convert artwork to PNG: {exc}") from exc
 
 
 def decode_artwork(data: bytes) -> Artwork:

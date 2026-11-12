@@ -138,6 +138,7 @@ portrait = household.portrait(household.sims[0].sim_id)  # .sgi, or None
 if cover:
     jpeg_bytes = cover.jpeg
     mask_bytes = cover.alpha_mask         # PNG/JPEG bytes, or None
+  png_bytes = cover.to_png()            # PNG with the alpha mask applied
 ```
 
 `household.household_images()` returns all matching variants, and
@@ -145,8 +146,9 @@ if cover:
 contains the JPEG, optional alpha image and format, and image dimensions. The
 SDK recognizes unwrapped JPEGs and the version-2 obfuscated Tray wrapper;
 unsupported or malformed image files raise `ArtworkError`. Alpha data can span
-multiple `ALFX` continuation segments. The SDK returns separate image bytes;
-use an image library if you need to composite them into a transparent PNG.
+multiple `ALFX` continuation segments. The SDK also exposes the original image
+and mask bytes separately. `to_png()` raises `ArtworkError` if their dimensions
+do not match or their pixel data cannot be decoded.
 The image data is omitted from a save's normal JSON export; call
 `Artwork.to_dict()` or pass `include_raw=True` to include it as hex strings.
 

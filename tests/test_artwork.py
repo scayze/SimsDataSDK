@@ -1,9 +1,11 @@
 """Save and Tray artwork parsing without external image dependencies."""
 
 import pytest
+from io import BytesIO
+from PIL import Image
 
 from conftest import build_package
-from sims4_sdk import ArtworkError, ResourceKey, decode_artwork, read_tray_image
+from sims4_sdk import Artwork, ArtworkError, ResourceKey, decode_artwork, read_tray_image
 from sims4_sdk.save import read_save
 from sims4_sdk.save.models import SavedSim, TrayHousehold
 
@@ -11,6 +13,34 @@ from sims4_sdk.save.models import SavedSim, TrayHousehold
 PNG = b"\x89PNG\r\n\x1a\n" + b"mask-data"
 KEY = bytes.fromhex("4125e6cd47bab21a")
 HEADER = bytes.fromhex("8efc24489b780e3c0200000000000000")
+
+
+def image_bytes(image, format):
+    output = BytesIO()
+    image.save(output, format=format)
+    return output.getvalue()
+
+
+def test_artwork_png_applies_mask_and_handles_missing_mask():
+    jpeg_data = image_bytes(Image.new("RGB", (2, 1), "red"), "JPEG")
+    mask = Image.new("L", (2, 1))
+    mask.putdata([0, 255])
+    artwork = Artwork(jpeg_data, image_bytes(mask, "PNG"))
+    with Image.open(BytesIO(artwork.to_png())) as result:
+        assert result.format == "PNG"
+        assert result.mode == "RGBA"
+        assert [result.getpixel((x, 0))[3] for x in range(2)] == [0, 255]
+    with Image.open(BytesIO(Artwork(jpeg_data).to_png())) as result:
+        assert result.getpixel((0, 0))[3] == 255
+
+
+def test_artwork_png_rejects_mismatched_or_invalid_data():
+    jpeg_data = image_bytes(Image.new("RGB", (2, 1)), "JPEG")
+    mask = image_bytes(Image.new("L", (1, 1)), "PNG")
+    with pytest.raises(ArtworkError, match="dimensions"):
+        Artwork(jpeg_data, mask).to_png()
+    with pytest.raises(ArtworkError, match="convert"):
+        Artwork(b"bad").to_png()
 
 
 def segment(marker, payload):

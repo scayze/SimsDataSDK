@@ -333,7 +333,8 @@ examples/
 pip install -e ".[dev]"
 ```
 
-Python 3.10+ is required. The core readers use only the standard library.
+Python 3.10+ and Pillow are required. Binary readers use the standard library;
+Pillow handles PNG conversion of icons and artwork.
 
 ## Testing
 

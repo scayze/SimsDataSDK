@@ -344,8 +344,7 @@ catalog.packs()
 `RelationshipBit` carry the raw tuning `icon` string plus a parsed
 `icon_key` (`ResourceKey`, `None` when absent). `PremadeAncestor.thumbnail`
 has the same treatment via `thumbnail_key`. Use the workspace to resolve the
-pixels (DST is unshuffled to standard DDS in stdlib-only code; bring your own
-image library to convert DDS to PNG):
+pixels (DST is unshuffled to standard DDS, and Pillow can convert it to PNG):
 
 ```python
 trait = catalog.trait("trait_Mean")
@@ -353,6 +352,8 @@ trait.icon_key          # ResourceKey(0x2F7D0004, 0, ...) or None
 image = ws.icon_for(trait)   # GameImage(data=DDS bytes, format, width, height) or None
 raw = ws.icon_bytes("2f7d0004:00000000:24132068c93561df")
 image.save("mean_icon.dds")  # .dds/.png inferred when no suffix
+png = ws.icon_png(trait)     # PNG bytes, or None if the icon is unavailable
+# Alternatively: png = image.to_png()
 ```
 
 ### Portable snapshots

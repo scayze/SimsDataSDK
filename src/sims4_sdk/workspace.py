@@ -265,6 +265,11 @@ class Sims4Workspace:
         image = self.icon_for(key)
         return image.data if image is not None else None
 
+    def icon_png(self, key: object) -> Optional[bytes]:
+        """Return a tuning icon as PNG bytes, or ``None`` if unavailable."""
+        image = self.icon_for(key)
+        return image.to_png() if image is not None else None
+
     # ------------------------------------------------------------------
     # wiki validation
     # ------------------------------------------------------------------

@@ -9,14 +9,14 @@ therefore matches by ``(group, instance)`` across the known image types.
 DST is EA's obfuscated DDS: the 128-byte DDS header is intact (with a
 ``DST1``/``DST5`` FourCC) and the block data after it is shuffled.  This
 module unshuffles it back to standard ``DXT1``/``DXT5`` DDS using only the
-standard library.  Pixel decoding (DXT -> RGBA/PNG) is left to an image
-library chosen by the caller, mirroring :mod:`sims4_sdk.save.artwork`.
+standard library. Pillow converts the decoded image to PNG on request.
 """
 
 from __future__ import annotations
 
 import struct
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Optional, Union
 
@@ -48,8 +48,7 @@ class GameImage(Serializable):
     """Decoded image container (DDS bytes or PNG bytes).
 
     ``data`` is directly usable: standard DDS (``DXT1``/``DXT5``/...) or PNG.
-    Shuffled DST input is unshuffled on decode.  Use Pillow or another image
-    library to convert DDS to PNG/RGBA if needed.
+    Shuffled DST input is unshuffled on decode. Use :meth:`to_png` for PNG.
     """
 
     key: ResourceKey
@@ -65,6 +64,18 @@ class GameImage(Serializable):
     @property
     def is_dds(self) -> bool:
         return self.format.upper().startswith(("DXT", "DST", "DDS"))
+
+    def to_png(self) -> bytes:
+        """Decode the image and return PNG bytes, preserving transparency."""
+        from PIL import Image
+
+        try:
+            with Image.open(BytesIO(self.data)) as image:
+                result = BytesIO()
+                image.save(result, format="PNG")
+                return result.getvalue()
+        except (OSError, ValueError, SyntaxError) as exc:
+            raise ImageError(f"could not convert image {self.key} to PNG: {exc}") from exc
 
     def save(self, path: Union[str, Path]) -> Path:
         """Write ``data`` to ``path`` (adds ``.dds``/``.png`` when missing)."""
