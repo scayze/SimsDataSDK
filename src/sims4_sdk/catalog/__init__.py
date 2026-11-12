@@ -21,7 +21,9 @@ from .models import (
     CatalogError,
     ConditionalRelationshipSetup,
     GenderOptions,
+    LootBitOperation,
     Milestone,
+    PremadeFamilyFixup,
     PremadeRelationship,
     Preference,
     RelationshipBit,
@@ -33,6 +35,8 @@ from .models import (
     TuningSource,
 )
 from .premades import (
+    FamilyTree,
+    FamilyTreeNode,
     HouseholdMember,
     HouseholdRelationship,
     PremadeAncestor,
@@ -90,6 +94,8 @@ __all__ = [
     "RelationshipDefault",
     "TraitCondition",
     "ConditionalRelationshipSetup",
+    "LootBitOperation",
+    "PremadeFamilyFixup",
     "PremadeRelationship",
     "GenderOptions",
     "SkillLevel",
@@ -103,6 +109,8 @@ __all__ = [
     "HouseholdMember",
     "HouseholdRelationship",
     "PremadeFamilyLink",
+    "FamilyTreeNode",
+    "FamilyTree",
     "build_premades",
     "parse_resource_key",
     # world / starter-save resources

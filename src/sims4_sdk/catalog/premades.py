@@ -35,6 +35,7 @@ from .models import (
     CareerTrack,
     Catalog,
     GenderOptions,
+    PremadeFamilyFixup,
     PremadeRelationship,
     Preference,
     SkillLevel,
@@ -54,6 +55,8 @@ __all__ = [
     "HouseholdMember",
     "HouseholdRelationship",
     "PremadeFamilyLink",
+    "FamilyTreeNode",
+    "FamilyTree",
     "PremadeBundle",
     "build_premades",
     "parse_resource_key",
@@ -133,13 +136,15 @@ class HouseholdRelationship(Serializable):
 class PremadeFamilyLink(Serializable):
     """One typed kinship edge, preserving the tuning relation kind.
 
-    ``MOTHER``/``FATHER``/``PARENT`` are direct parents; other kinds
+    ``MOTHER``/``FATHER``/``PARENT``/``SECRET_PARENT`` are direct parents;
+    ``CHILD`` is a direct child; ``SIBLING`` is a sibling; other kinds
     (``MOTHERS_MOM``, ``FATHERS_FATHER``, ``GRANDPARENT``, ...) are
     extended family.  ``FIANCE``/``SPOUSE``/``STEADY`` are partners.
 
     ``name``/``sim_id`` are set when the relative resolves to a
-    :class:`PremadeSim`; ``target_id`` always holds the raw relation target
-    (starter ``sim_id`` or tuning ``sim_template`` id) so dangling
+    :class:`PremadeSim` or :class:`PremadeAncestor` (distinguished by
+    ``target_kind``: ``"sim"``, ``"ancestor"``, or ``"unlinked"``);
+    ``target_id`` always holds the raw relation target so dangling
     references outside the household are not silently dropped.
     """
 
@@ -147,6 +152,16 @@ class PremadeFamilyLink(Serializable):
     name: Optional[str] = None
     sim_id: Optional[int] = None
     target_id: Optional[int] = None
+    target_kind: str = "sim"
+
+    def __post_init__(self) -> None:
+        if self.sim_id is None and self.target_kind == "sim":
+            self.target_kind = "unlinked"
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "target_kind" not in state:
+            self.target_kind = "unlinked" if self.sim_id is None else "sim"
 
 
 @dataclass
@@ -197,7 +212,38 @@ class PremadeAncestor(Serializable):
     gender: Optional[str] = None
     death_trait_id: Optional[int] = None
     thumbnail: Optional[str] = None
+    spouse_id: Optional[int] = None
+    spouse_name: Optional[str] = None
+    parents: list[str] = field(default_factory=list)
+    children: list[str] = field(default_factory=list)
+    siblings: list[str] = field(default_factory=list)
+    extended_family: list[str] = field(default_factory=list)
+    parent_links: list[PremadeFamilyLink] = field(default_factory=list)
+    child_links: list[PremadeFamilyLink] = field(default_factory=list)
+    sibling_links: list[PremadeFamilyLink] = field(default_factory=list)
+    extended_family_links: list[PremadeFamilyLink] = field(default_factory=list)
     source: Optional[TuningSource] = None
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        for missing, default in (
+            ("spouse_id", None),
+            ("spouse_name", None),
+            ("parents", []),
+            ("children", []),
+            ("siblings", []),
+            ("extended_family", []),
+            ("parent_links", []),
+            ("child_links", []),
+            ("sibling_links", []),
+            ("extended_family_links", []),
+        ):
+            if missing not in state:
+                setattr(
+                    self,
+                    missing,
+                    list(default) if isinstance(default, list) else default,
+                )
 
     def __repr__(self) -> str:
         return f"PremadeAncestor({self.full_name!r})"
@@ -240,6 +286,8 @@ class PremadeSim(Serializable):
     #: Typed kinship preserving the tuning ``family_relationship`` kind.
     #: ``parents``/``extended_family`` stay as plain names for compatibility.
     parent_links: list[PremadeFamilyLink] = field(default_factory=list)
+    child_links: list[PremadeFamilyLink] = field(default_factory=list)
+    sibling_links: list[PremadeFamilyLink] = field(default_factory=list)
     extended_family_links: list[PremadeFamilyLink] = field(default_factory=list)
     #: Relation targets with no matching Sim in the static data
     #: (e.g. starter ``gameplay.14`` parents outside the household).
@@ -361,6 +409,8 @@ class PremadeSim(Serializable):
             ("steady_ids", []),
             ("steady_names", []),
             ("parent_links", []),
+            ("child_links", []),
+            ("sibling_links", []),
             ("extended_family_links", []),
             ("unlinked_relations", []),
         ):
@@ -376,17 +426,130 @@ class PremadeSim(Serializable):
 
 
 @dataclass
+class FamilyTreeNode(Serializable):
+    """One Sim or ancestor node inside a :class:`FamilyTree`."""
+
+    id: int
+    name: str
+    full_name: str
+    kind: str = "sim"
+    gender: Optional[str] = None
+    age: Optional[str] = None
+    is_ghost_or_ancestor: bool = False
+    household_id: Optional[int] = None
+    household_name: Optional[str] = None
+    thumbnail: Optional[str] = None
+    death_trait_id: Optional[int] = None
+    spouse_id: Optional[int] = None
+    spouse_name: Optional[str] = None
+    fiance_id: Optional[int] = None
+    fiance_name: Optional[str] = None
+    steady_ids: list[int] = field(default_factory=list)
+    parent_ids: list[int] = field(default_factory=list)
+    secret_parent_ids: list[int] = field(default_factory=list)
+    child_ids: list[int] = field(default_factory=list)
+    sibling_ids: list[int] = field(default_factory=list)
+    parent_links: list[PremadeFamilyLink] = field(default_factory=list)
+    child_links: list[PremadeFamilyLink] = field(default_factory=list)
+    sibling_links: list[PremadeFamilyLink] = field(default_factory=list)
+    extended_family_links: list[PremadeFamilyLink] = field(default_factory=list)
+    unlinked_relations: list[PremadeFamilyLink] = field(default_factory=list)
+
+    def __repr__(self) -> str:
+        return f"FamilyTreeNode({self.full_name!r}, kind={self.kind!r}, parents={len(self.parent_ids)}, children={len(self.child_ids)})"
+
+
+@dataclass
+class FamilyTree(Serializable):
+    """Multi-generational genealogy graph around a pre-made Sim or ancestor."""
+
+    root_id: int
+    nodes: dict[int, FamilyTreeNode] = field(default_factory=dict)
+    unlinked_relations: list[PremadeFamilyLink] = field(default_factory=list)
+
+    @property
+    def root(self) -> Optional[FamilyTreeNode]:
+        return self.nodes.get(self.root_id)
+
+    def node(self, sim_id: int) -> Optional[FamilyTreeNode]:
+        return self.nodes.get(sim_id)
+
+    def ancestors_of(self, sim_id: Optional[int] = None) -> list[FamilyTreeNode]:
+        """Return all transitive ancestors of ``sim_id`` (defaults to ``root_id``)."""
+        start = self.root_id if sim_id is None else sim_id
+        seen: set[int] = set()
+        result: list[FamilyTreeNode] = []
+        queue = list(
+            self.nodes[start].parent_ids + self.nodes[start].secret_parent_ids
+            if start in self.nodes
+            else []
+        )
+        while queue:
+            current_id = queue.pop(0)
+            if current_id in seen:
+                continue
+            seen.add(current_id)
+            node = self.nodes.get(current_id)
+            if node is not None:
+                result.append(node)
+                for parent_id in [*node.parent_ids, *node.secret_parent_ids]:
+                    if parent_id not in seen:
+                        queue.append(parent_id)
+        return result
+
+    def descendants_of(self, sim_id: Optional[int] = None) -> list[FamilyTreeNode]:
+        """Return all transitive descendants of ``sim_id`` (defaults to ``root_id``)."""
+        start = self.root_id if sim_id is None else sim_id
+        seen: set[int] = set()
+        result: list[FamilyTreeNode] = []
+        queue = list(self.nodes[start].child_ids if start in self.nodes else [])
+        while queue:
+            current_id = queue.pop(0)
+            if current_id in seen:
+                continue
+            seen.add(current_id)
+            node = self.nodes.get(current_id)
+            if node is not None:
+                result.append(node)
+                for child_id in node.child_ids:
+                    if child_id not in seen:
+                        queue.append(child_id)
+        return result
+
+    def __len__(self) -> int:
+        return len(self.nodes)
+
+    def __repr__(self) -> str:
+        root_name = self.root.full_name if self.root else hex(self.root_id)
+        return f"FamilyTree({root_name!r}, nodes={len(self.nodes)})"
+
+
+@dataclass
 class PremadeBundle(Serializable):
     sims: list[PremadeSim] = field(default_factory=list)
     households: list[PremadeHousehold] = field(default_factory=list)
     ancestors: list[PremadeAncestor] = field(default_factory=list)
     lots: list[PremadeLot] = field(default_factory=list)
     premade_relationships: list[PremadeRelationship] = field(default_factory=list)
+    family_fixups: list[PremadeFamilyFixup] = field(default_factory=list)
     sims_by_name: dict[str, PremadeSim] = field(default_factory=dict, repr=False)
+    ancestors_by_name: dict[str, PremadeAncestor] = field(
+        default_factory=dict, repr=False
+    )
     households_by_name: dict[str, PremadeHousehold] = field(
         default_factory=dict, repr=False
     )
     lots_by_name: dict[str, PremadeLot] = field(default_factory=dict, repr=False)
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "family_fixups" not in state:
+            self.family_fixups = []
+        if "ancestors_by_name" not in state:
+            self.ancestors_by_name = {}
+            for ancestor in self.ancestors:
+                self.ancestors_by_name.setdefault(ancestor.name, ancestor)
+                self.ancestors_by_name.setdefault(ancestor.full_name, ancestor)
 
     def sim(self, key: str | int) -> Optional[PremadeSim]:
         """Look up a Sim by ID, exact name, or unambiguous name fragment."""
@@ -396,6 +559,16 @@ class PremadeBundle(Serializable):
         if exact is not None:
             return exact
         found = self.find_sims(key)
+        return found[0] if found else None
+
+    def ancestor(self, key: str | int) -> Optional[PremadeAncestor]:
+        """Look up an ancestor by ID, exact name, or name fragment."""
+        if isinstance(key, int):
+            return next((anc for anc in self.ancestors if anc.id == key), None)
+        exact = _exact_name(self.ancestors_by_name, key)
+        if exact is not None:
+            return exact
+        found = self.find_ancestors(key)
         return found[0] if found else None
 
     def household(self, key: str | int) -> Optional[PremadeHousehold]:
@@ -505,6 +678,38 @@ class PremadeBundle(Serializable):
             if sim_id in (relationship.sim_a, relationship.sim_b)
         ]
 
+    def find_ancestors(
+        self,
+        query: str = "",
+        *,
+        pack: Optional[str] = None,
+    ) -> list[PremadeAncestor]:
+        """Filter pre-made ancestors by name or pack."""
+        needle = query.casefold()
+        return [
+            ancestor
+            for ancestor in self.ancestors
+            if (
+                not needle
+                or needle in ancestor.full_name.casefold()
+                or needle in ancestor.name.casefold()
+            )
+            and _source_matches(ancestor.source, pack)
+        ]
+
+    def family_tree(
+        self,
+        key: str | int | PremadeSim | PremadeAncestor,
+    ) -> Optional[FamilyTree]:
+        """Build the connected multi-generational family tree around ``key``."""
+        if isinstance(key, (PremadeSim, PremadeAncestor)):
+            target = key
+        else:
+            target = self.sim(key) or self.ancestor(key)
+        if target is None:
+            return None
+        return _build_family_tree(self, target.id)
+
     def __len__(self) -> int:
         return len(self.sims)
 
@@ -567,7 +772,8 @@ def build_premades(
     else:
         aliases, household_id_aliases = {}, {}
 
-    _link_household_relationships(households.values(), sims)
+    _link_household_relationships(households.values(), sims, catalog)
+    _link_cross_household_and_ancestors(sims, ancestors, catalog)
     _apply_relationship_defaults(households.values(), catalog, sims)
 
     lots = _build_lots(catalog, world, household_id_aliases)
@@ -578,17 +784,28 @@ def build_premades(
         ancestors=sorted(ancestors.values(), key=lambda anc: anc.full_name.casefold()),
         lots=lots,
         premade_relationships=list(catalog.premade_relationships),
+        family_fixups=list(catalog.family_fixups),
     )
     for relationship in bundle.premade_relationships:
-        a = sims.get(relationship.sim_a)
-        b = sims.get(relationship.sim_b)
+        a = sims.get(relationship.sim_a) or ancestors.get(relationship.sim_a)
+        b = sims.get(relationship.sim_b) or ancestors.get(relationship.sim_b)
         if a is not None:
             relationship.sim_a_name = a.full_name
         if b is not None:
             relationship.sim_b_name = b.full_name
+    for fixup in bundle.family_fixups:
+        a = sims.get(fixup.sim_a) or ancestors.get(fixup.sim_a)
+        b = sims.get(fixup.sim_b) or ancestors.get(fixup.sim_b)
+        if a is not None:
+            fixup.sim_a_name = a.full_name
+        if b is not None:
+            fixup.sim_b_name = b.full_name
     for sim in bundle.sims:
         bundle.sims_by_name.setdefault(sim.name, sim)
         bundle.sims_by_name.setdefault(sim.full_name, sim)
+    for ancestor in bundle.ancestors:
+        bundle.ancestors_by_name.setdefault(ancestor.name, ancestor)
+        bundle.ancestors_by_name.setdefault(ancestor.full_name, ancestor)
     for household in bundle.households:
         bundle.households_by_name.setdefault(household.name, household)
         inferred_name = _household_display_name(household.name)
@@ -818,9 +1035,14 @@ def _link_starter_family(
                 )
 
     parent_links: list[tuple[str, str, str, Optional[int]]] = []
+    children_by_parent_target: dict[int, list[str]] = {}
     for index, member in enumerate(members, start=1):
         child_tag = f"household_member_{index}"
         for relation in member.relations:
+            if relation.kind in ("MOTHER", "FATHER", "PARENT") and relation.target_id:
+                children_by_parent_target.setdefault(relation.target_id, []).append(
+                    child_tag
+                )
             parent_tag = tag_by_id.get(relation.target_id)
             if not parent_tag:
                 child = sim_by_tag.get(child_tag)
@@ -832,6 +1054,7 @@ def _link_starter_family(
                             name=None,
                             sim_id=None,
                             target_id=relation.target_id,
+                            target_kind="unlinked",
                         ),
                     )
                 continue
@@ -854,17 +1077,7 @@ def _link_starter_family(
         if parent is None or child is None:
             continue
         if kind in ("MOTHER", "FATHER", "PARENT"):
-            _append_unique(child.parents, parent.full_name)
-            _append_unique(parent.children, child.full_name)
-            _append_link_unique(
-                child.parent_links,
-                PremadeFamilyLink(
-                    kind=kind,
-                    name=parent.full_name,
-                    sim_id=parent.id,
-                    target_id=target_id,
-                ),
-            )
+            _link_parent_child(parent, child, kind=kind, target_id=target_id)
         else:
             _append_unique(child.extended_family, parent.full_name)
             _append_link_unique(
@@ -914,12 +1127,16 @@ def _link_starter_family(
             b.steady_ids.append(a.id)
             _append_unique(b.steady_names, a.full_name)
 
-    children_by_parent: dict[str, list[str]] = {}
+    children_by_parent: dict[str | int, list[str]] = {}
     for parent_tag, child_tag, kind, _target_id in parent_links:
         if kind in ("MOTHER", "FATHER", "PARENT"):
             children_by_parent.setdefault(parent_tag, []).append(child_tag)
+    for target_id, child_tags in children_by_parent_target.items():
+        if len(child_tags) > 1:
+            children_by_parent.setdefault(target_id, []).extend(child_tags)
 
-    for child_tags in children_by_parent.values():
+    sibling_pairs_added: set[frozenset[str]] = set()
+    for parent_key, child_tags in children_by_parent.items():
         for child_tag in child_tags:
             sim = sim_by_tag.get(child_tag)
             if sim is None:
@@ -929,7 +1146,23 @@ def _link_starter_family(
                     continue
                 sibling = sim_by_tag.get(sibling_tag)
                 if sibling is not None:
-                    _append_unique(sim.siblings, sibling.full_name)
+                    _link_siblings(sim, sibling)
+                    if (
+                        household is not None
+                        and isinstance(parent_key, int)
+                        and parent_key not in tag_by_id
+                    ):
+                        pair = frozenset((child_tag, sibling_tag))
+                        if pair not in sibling_pairs_added:
+                            sibling_pairs_added.add(pair)
+                            household.relationships.append(
+                                HouseholdRelationship(
+                                    kind="family",
+                                    a_tag=child_tag,
+                                    b_tag=sibling_tag,
+                                    family_relationship="SIBLING",
+                                )
+                            )
 
 
 def _append_unique(values: list[str], value: str) -> None:
@@ -937,16 +1170,27 @@ def _append_unique(values: list[str], value: str) -> None:
         values.append(value)
 
 
+_PARENT_KINDS = ("MOTHER", "FATHER", "PARENT", "SECRET_PARENT")
+
+
 def _append_link_unique(
     values: list[PremadeFamilyLink], link: PremadeFamilyLink
 ) -> None:
     # Resolved edges can arrive twice (starter ``0xB3C438F0`` + tuning
-    # template) with different raw ``target_id``s but the same Sim.
-    # Dedupe on the resolved Sim when present.
+    # template + fixups) with different raw ``target_id``s or generic ``PARENT``
+    # vs specific ``MOTHER``/``FATHER`` kinds for the same Sim.
     if link.sim_id is not None:
-        key = (link.kind, link.sim_id)
         for existing in values:
-            if (existing.kind, existing.sim_id) == key:
+            if existing.sim_id != link.sim_id:
+                continue
+            if existing.kind == link.kind:
+                return
+            if (
+                existing.kind in ("MOTHER", "FATHER", "PARENT")
+                and link.kind in ("MOTHER", "FATHER", "PARENT")
+            ):
+                if existing.kind == "PARENT" and link.kind in ("MOTHER", "FATHER"):
+                    existing.kind = link.kind
                 return
     else:
         key = (link.kind, link.target_id)
@@ -956,9 +1200,97 @@ def _append_link_unique(
     values.append(link)
 
 
+def _node_target_kind(node: PremadeSim | PremadeAncestor) -> str:
+    return "ancestor" if isinstance(node, PremadeAncestor) else "sim"
+
+
+def _link_parent_child(
+    parent: PremadeSim | PremadeAncestor,
+    child: PremadeSim | PremadeAncestor,
+    *,
+    kind: str = "PARENT",
+    target_id: Optional[int] = None,
+) -> None:
+    if parent.id == child.id:
+        return
+    _append_unique(child.parents, parent.full_name)
+    _append_unique(parent.children, child.full_name)
+    _append_link_unique(
+        child.parent_links,
+        PremadeFamilyLink(
+            kind=kind,
+            name=parent.full_name,
+            sim_id=parent.id,
+            target_id=target_id if target_id is not None else parent.id,
+            target_kind=_node_target_kind(parent),
+        ),
+    )
+    _append_link_unique(
+        parent.child_links,
+        PremadeFamilyLink(
+            kind="CHILD",
+            name=child.full_name,
+            sim_id=child.id,
+            target_id=child.id,
+            target_kind=_node_target_kind(child),
+        ),
+    )
+
+
+def _link_siblings(
+    a: PremadeSim | PremadeAncestor,
+    b: PremadeSim | PremadeAncestor,
+) -> None:
+    if a.id == b.id:
+        return
+    _append_unique(a.siblings, b.full_name)
+    _append_unique(b.siblings, a.full_name)
+    _append_link_unique(
+        a.sibling_links,
+        PremadeFamilyLink(
+            kind="SIBLING",
+            name=b.full_name,
+            sim_id=b.id,
+            target_id=b.id,
+            target_kind=_node_target_kind(b),
+        ),
+    )
+    _append_link_unique(
+        b.sibling_links,
+        PremadeFamilyLink(
+            kind="SIBLING",
+            name=a.full_name,
+            sim_id=a.id,
+            target_id=a.id,
+            target_kind=_node_target_kind(a),
+        ),
+    )
+
+
+def _link_extended(
+    actor: PremadeSim | PremadeAncestor,
+    relative: PremadeSim | PremadeAncestor,
+    kind: str,
+) -> None:
+    if actor.id == relative.id:
+        return
+    _append_unique(actor.extended_family, relative.full_name)
+    _append_link_unique(
+        actor.extended_family_links,
+        PremadeFamilyLink(
+            kind=kind,
+            name=relative.full_name,
+            sim_id=relative.id,
+            target_id=relative.id,
+            target_kind=_node_target_kind(relative),
+        ),
+    )
+
+
 def _link_household_relationships(
     households,
     sims: dict[int, PremadeSim],
+    catalog: Optional[Catalog] = None,
 ) -> None:
     """Fill Sim-level spouse/fiance/parent/child/sibling fields from links.
 
@@ -966,6 +1298,10 @@ def _link_household_relationships(
     households whose links were decoded from ``0xB3C438F0``.  In both formats
     ``a_tag`` is the parent/spouse and ``b_tag`` is the child/spouse.
     """
+    marriage_bit = catalog.marriage_bit_id if catalog is not None else 15822
+    engagement_bit = catalog.engagement_bit_id if catalog is not None else 15816
+    steady_bit = catalog.steady_bit_id if catalog is not None else 15825
+
     for household in households:
         tag_to_sim: dict[str, PremadeSim] = {}
         for member in household.members:
@@ -974,31 +1310,44 @@ def _link_household_relationships(
                 tag_to_sim[member.tag] = sim
 
         for relationship in household.relationships:
-            if relationship.kind not in ("spouse", "fiance", "steady"):
-                continue
             a = tag_to_sim.get(relationship.a_tag)
             b = tag_to_sim.get(relationship.b_tag)
             if a is None or b is None:
                 continue
-            if relationship.kind == "spouse":
+            if relationship.kind == "spouse" or (
+                marriage_bit and marriage_bit in relationship.bit_ids
+            ):
                 a.spouse_id = b.id
                 a.spouse_name = b.full_name
                 b.spouse_id = a.id
                 b.spouse_name = a.full_name
-            elif relationship.kind == "fiance":
+            elif relationship.kind == "fiance" or (
+                engagement_bit and engagement_bit in relationship.bit_ids
+            ):
                 if a.fiance_id is None:
                     a.fiance_id = b.id
                     a.fiance_name = b.full_name
                 if b.fiance_id is None:
                     b.fiance_id = a.id
                     b.fiance_name = a.full_name
-            elif relationship.kind == "steady":
+            elif relationship.kind == "steady" or (
+                steady_bit and steady_bit in relationship.bit_ids
+            ):
                 if b.id not in (a.steady_ids or []):
                     a.steady_ids.append(b.id)
                     _append_unique(a.steady_names, b.full_name)
                 if a.id not in (b.steady_ids or []):
                     b.steady_ids.append(a.id)
                     _append_unique(b.steady_names, a.full_name)
+
+            if 8802 in relationship.bit_ids:
+                _link_siblings(a, b)
+            if 8829 in relationship.bit_ids:
+                _link_extended(b, a, "PARENTS_SIBLING")
+                _link_extended(a, b, "SIBLINGS_CHILDREN")
+            if 8826 in relationship.bit_ids:
+                _link_extended(a, b, "COUSIN")
+                _link_extended(b, a, "COUSIN")
 
         children_by_parent: dict[str, list[str]] = {}
         for relationship in household.relationships:
@@ -1017,32 +1366,16 @@ def _link_household_relationships(
                     parent.fiance_id = child.id
                     parent.fiance_name = child.full_name
                 continue
+            if kind == "SIBLING":
+                _link_siblings(parent, child)
+                continue
             if kind in ("MOTHER", "FATHER", "PARENT"):
-                _append_unique(child.parents, parent.full_name)
-                _append_unique(parent.children, child.full_name)
-                _append_link_unique(
-                    child.parent_links,
-                    PremadeFamilyLink(
-                        kind=kind,
-                        name=parent.full_name,
-                        sim_id=parent.id,
-                        target_id=parent.id,
-                    ),
-                )
+                _link_parent_child(parent, child, kind=kind, target_id=parent.id)
                 children_by_parent.setdefault(relationship.a_tag, []).append(
                     relationship.b_tag
                 )
-            elif kind not in ("SPOUSE", "FIANCE", "SIBLING"):
-                _append_unique(child.extended_family, parent.full_name)
-                _append_link_unique(
-                    child.extended_family_links,
-                    PremadeFamilyLink(
-                        kind=kind,
-                        name=parent.full_name,
-                        sim_id=parent.id,
-                        target_id=parent.id,
-                    ),
-                )
+            elif kind not in ("SPOUSE", "FIANCE"):
+                _link_extended(child, parent, kind)
 
         for child_tags in children_by_parent.values():
             for child_tag in child_tags:
@@ -1054,7 +1387,242 @@ def _link_household_relationships(
                         continue
                     sibling = tag_to_sim.get(sibling_tag)
                     if sibling is not None:
-                        _append_unique(sim.siblings, sibling.full_name)
+                        _link_siblings(sim, sibling)
+
+
+def _link_cross_household_and_ancestors(
+    sims: dict[int, PremadeSim],
+    ancestors: dict[int, PremadeAncestor],
+    catalog: Catalog,
+) -> None:
+    """Apply ``FAMILY_RELATIONS_FIXUP`` and cross-household ``RELATIONSHIP_MAP`` bits."""
+    nodes: dict[int, PremadeSim | PremadeAncestor] = {**ancestors, **sims}
+
+    for fixup in getattr(catalog, "family_fixups", ()) or ():
+        a = nodes.get(fixup.sim_a)
+        b = nodes.get(fixup.sim_b)
+        if a is None or b is None:
+            continue
+        for flag in fixup.flags:
+            kind = flag.upper()
+            if kind in ("PARENT", "SECRET_PARENT"):
+                _link_parent_child(a, b, kind=kind, target_id=a.id)
+            elif kind == "CHILD":
+                _link_parent_child(b, a, kind="PARENT", target_id=b.id)
+            elif kind == "SPOUSE":
+                if a.spouse_id is None:
+                    a.spouse_id = b.id
+                    a.spouse_name = b.full_name
+                if b.spouse_id is None:
+                    b.spouse_id = a.id
+                    b.spouse_name = a.full_name
+
+    marriage_bit = catalog.marriage_bit_id or 15822
+    engagement_bit = catalog.engagement_bit_id or 15816
+    steady_bit = catalog.steady_bit_id or 15825
+
+    for relationship in catalog.premade_relationships:
+        sim_a = nodes.get(relationship.sim_a)
+        sim_b = nodes.get(relationship.sim_b)
+        if sim_a is None or sim_b is None:
+            continue
+        for op in getattr(relationship, "bit_operations", ()) or ():
+            recipient = (
+                sim_a if op.recipients.casefold() == "actor" else sim_b
+            )
+            target = sim_b if op.targets.casefold() == "targetsim" else sim_a
+            if recipient.id == target.id:
+                continue
+            bit_id = op.bit_id
+            if bit_id == 8809 or op.is_parent_relationship:
+                _link_parent_child(target, recipient, kind="PARENT", target_id=target.id)
+            elif bit_id == 8805:
+                _link_parent_child(recipient, target, kind="PARENT", target_id=recipient.id)
+            elif bit_id == 8802:
+                _link_siblings(recipient, target)
+            elif bit_id == 8824:
+                _link_extended(recipient, target, "STEP_SIBLING")
+                _link_extended(target, recipient, "STEP_SIBLING")
+            elif bit_id == 8808:
+                _link_extended(recipient, target, "GRANDPARENT")
+                _link_extended(target, recipient, "GRANDCHILD")
+            elif bit_id == 8807:
+                _link_extended(recipient, target, "GRANDCHILD")
+                _link_extended(target, recipient, "GRANDPARENT")
+            elif bit_id == 8829:
+                _link_extended(recipient, target, "PARENTS_SIBLING")
+                _link_extended(target, recipient, "SIBLINGS_CHILDREN")
+            elif bit_id == 9989:
+                _link_extended(recipient, target, "SIBLINGS_CHILDREN")
+                _link_extended(target, recipient, "PARENTS_SIBLING")
+            elif bit_id == 8826:
+                _link_extended(recipient, target, "COUSIN")
+                _link_extended(target, recipient, "COUSIN")
+            elif bit_id == 310896:
+                _link_extended(recipient, target, "ADOPTED_BY")
+            elif bit_id == 310897:
+                _link_extended(recipient, target, "ADOPTED")
+            elif bit_id == marriage_bit:
+                if recipient.spouse_id is None:
+                    recipient.spouse_id = target.id
+                    recipient.spouse_name = target.full_name
+                if target.spouse_id is None:
+                    target.spouse_id = recipient.id
+                    target.spouse_name = recipient.full_name
+            elif bit_id == engagement_bit and isinstance(recipient, PremadeSim) and isinstance(target, PremadeSim):
+                if recipient.fiance_id is None:
+                    recipient.fiance_id = target.id
+                    recipient.fiance_name = target.full_name
+                if target.fiance_id is None:
+                    target.fiance_id = recipient.id
+                    target.fiance_name = recipient.full_name
+            elif bit_id == steady_bit and isinstance(recipient, PremadeSim) and isinstance(target, PremadeSim):
+                if target.id not in recipient.steady_ids:
+                    recipient.steady_ids.append(target.id)
+                    _append_unique(recipient.steady_names, target.full_name)
+                if recipient.id not in target.steady_ids:
+                    target.steady_ids.append(recipient.id)
+                    _append_unique(target.steady_names, recipient.full_name)
+
+    # Derive siblings across households/generations whenever two Sims/ancestors
+    # share a parent in ``parent_links`` or an unlinked parent ``target_id``.
+    by_parent_id: dict[int, list[PremadeSim | PremadeAncestor]] = {}
+    for node in nodes.values():
+        for link in node.parent_links:
+            if link.kind in _PARENT_KINDS and link.sim_id is not None:
+                by_parent_id.setdefault(link.sim_id, []).append(node)
+        if isinstance(node, PremadeSim):
+            for link in node.unlinked_relations:
+                if link.kind in ("MOTHER", "FATHER", "PARENT") and link.target_id is not None:
+                    by_parent_id.setdefault(link.target_id, []).append(node)
+
+    for group in by_parent_id.values():
+        if len(group) < 2:
+            continue
+        for index, first in enumerate(group):
+            for second in group[index + 1 :]:
+                _link_siblings(first, second)
+
+
+def _build_family_tree(bundle: PremadeBundle, root_id: int) -> FamilyTree:
+    nodes_by_id: dict[int, PremadeSim | PremadeAncestor] = {}
+    for ancestor in bundle.ancestors:
+        nodes_by_id[ancestor.id] = ancestor
+    for sim in bundle.sims:
+        nodes_by_id[sim.id] = sim
+
+    visited: dict[int, FamilyTreeNode] = {}
+    unlinked: list[PremadeFamilyLink] = []
+    queue: list[int] = [root_id]
+
+    while queue:
+        current_id = queue.pop(0)
+        if current_id in visited:
+            continue
+        source = nodes_by_id.get(current_id)
+        if source is None:
+            continue
+
+        is_ancestor = isinstance(source, PremadeAncestor)
+        parent_ids = [
+            link.sim_id
+            for link in source.parent_links
+            if link.sim_id is not None and link.kind in ("MOTHER", "FATHER", "PARENT")
+        ]
+        secret_parent_ids = [
+            link.sim_id
+            for link in source.parent_links
+            if link.sim_id is not None and link.kind == "SECRET_PARENT"
+        ]
+        child_ids = [
+            link.sim_id
+            for link in source.child_links
+            if link.sim_id is not None
+        ]
+        sibling_ids = [
+            link.sim_id
+            for link in source.sibling_links
+            if link.sim_id is not None
+        ]
+
+        if isinstance(source, PremadeSim):
+            node = FamilyTreeNode(
+                id=source.id,
+                name=source.name,
+                full_name=source.full_name,
+                kind="sim",
+                gender=source.gender,
+                age=source.age,
+                is_ghost_or_ancestor=any(
+                    trait.name.lower().startswith("trait_ghost")
+                    for trait in source.traits
+                ),
+                household_id=source.household_id,
+                household_name=source.household_name,
+                spouse_id=source.spouse_id,
+                spouse_name=source.spouse_name,
+                fiance_id=source.fiance_id,
+                fiance_name=source.fiance_name,
+                steady_ids=list(source.steady_ids),
+                parent_ids=parent_ids,
+                secret_parent_ids=secret_parent_ids,
+                child_ids=child_ids,
+                sibling_ids=sibling_ids,
+                parent_links=list(source.parent_links),
+                child_links=list(source.child_links),
+                sibling_links=list(source.sibling_links),
+                extended_family_links=list(source.extended_family_links),
+                unlinked_relations=list(source.unlinked_relations),
+            )
+            for link in source.unlinked_relations:
+                _append_link_unique(unlinked, link)
+        else:
+            node = FamilyTreeNode(
+                id=source.id,
+                name=source.name,
+                full_name=source.full_name,
+                kind="ancestor",
+                gender=source.gender,
+                is_ghost_or_ancestor=True,
+                thumbnail=source.thumbnail,
+                death_trait_id=source.death_trait_id,
+                spouse_id=source.spouse_id,
+                spouse_name=source.spouse_name,
+                parent_ids=parent_ids,
+                secret_parent_ids=secret_parent_ids,
+                child_ids=child_ids,
+                sibling_ids=sibling_ids,
+                parent_links=list(source.parent_links),
+                child_links=list(source.child_links),
+                sibling_links=list(source.sibling_links),
+                extended_family_links=list(source.extended_family_links),
+            )
+
+        visited[current_id] = node
+
+        neighbors: list[int] = [
+            *parent_ids,
+            *secret_parent_ids,
+            *child_ids,
+            *sibling_ids,
+        ]
+        if node.spouse_id is not None:
+            neighbors.append(node.spouse_id)
+        if node.fiance_id is not None:
+            neighbors.append(node.fiance_id)
+        for ext in node.extended_family_links:
+            if ext.sim_id is not None:
+                neighbors.append(ext.sim_id)
+
+        for neighbor_id in neighbors:
+            if neighbor_id not in visited and neighbor_id in nodes_by_id:
+                queue.append(neighbor_id)
+
+    return FamilyTree(
+        root_id=root_id,
+        nodes=visited,
+        unlinked_relations=unlinked,
+    )
 
 
 def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> None:
@@ -1489,6 +2057,17 @@ def _build_household(
                     )
                 )
                 continue
+            if view.flag_of(_child(item, "is_parentless_sibling")):
+                relationships.append(
+                    HouseholdRelationship(
+                        kind="family",
+                        a_tag=x_tag,
+                        b_tag=y_tag,
+                        family_relationship="SIBLING",
+                        bit_ids=bit_ids,
+                    )
+                )
+                continue
             family_element = _child(item, "family_relationship")
             if family_element is not None:
                 family = view.text_of(family_element) or view.raw_text_of(family_element)
@@ -1541,13 +2120,19 @@ def _build_ancestor(
 ) -> PremadeAncestor:
     variant_type, payload = view.variant("full_name")
     full_name = view.text_of(payload) if variant_type == "enabled" else None
+    thumb_type, thumb_payload = view.variant("thumbnail")
+    thumbnail = (
+        (view.text_of(thumb_payload) or view.raw_text_of(thumb_payload))
+        if thumb_type in (None, "enabled")
+        else None
+    )
     return PremadeAncestor(
         id=entry.instance_id,
         name=entry.name,
         full_name=full_name or entry.name,
         gender=view.enum("gender"),
-        death_trait_id=view.number("death_trait"),
-        thumbnail=view.text("thumbnail"),
+        death_trait_id=view.enabled_value("death_trait"),
+        thumbnail=thumbnail,
         source=source,
     )
 

@@ -1,9 +1,13 @@
 from sims4_sdk.catalog import (
     Catalog,
+    LootBitOperation,
     LotRecord,
     Preference,
+    PremadeFamilyFixup,
+    PremadeRelationship,
     StarterHouseholdRecord,
     StarterMember,
+    StarterRelation,
     PremadeSim,
     SkillLevel,
     Trait,
@@ -173,3 +177,151 @@ def test_multiple_lots_do_not_choose_conflicting_localized_values() -> None:
     assert household.lot_ids == [30, 31] and household.lot_id is None
     assert household.localized_name is None and household.display_name == "Family"
     assert household.description == "Shared"
+
+
+def test_family_tree_links_ancestors_fixups_parentless_siblings_and_loot_parents() -> None:
+    xml = """<root>
+    <I c="TunablePremadeAncestor" n="PremadeAncestor_Grandma" s="10">
+      <V n="full_name" t="enabled"><T n="enabled">0x10</T></V>
+      <E n="gender">FEMALE</E>
+      <V n="death_trait" t="enabled"><T n="enabled">999</T></V>
+      <V n="thumbnail" t="enabled"><T n="enabled">2f7d0004:00000000:1111111111111111</T></V>
+    </I>
+    <I c="TunablePremadeAncestor" n="PremadeAncestor_Grandpa" s="11">
+      <V n="full_name" t="enabled"><T n="enabled">0x11</T></V>
+    </I>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_Parent" s="20">
+      <U n="_sim_creation_info">
+        <T n="first_name">0x20</T>
+        <V n="last_name" t="specify_last_name"><T n="specify_last_name">0x21</T></V>
+      </U>
+    </I>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_SecretParent" s="25">
+      <U n="_sim_creation_info">
+        <T n="first_name">0x25</T>
+        <V n="last_name" t="specify_last_name"><T n="specify_last_name">0x26</T></V>
+      </U>
+    </I>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_ChildA" s="30">
+      <U n="_sim_creation_info">
+        <T n="first_name">0x30</T>
+        <V n="last_name" t="specify_last_name"><T n="specify_last_name">0x21</T></V>
+      </U>
+    </I>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_ChildB" s="31">
+      <U n="_sim_creation_info">
+        <T n="first_name">0x31</T>
+        <V n="last_name" t="specify_last_name"><T n="specify_last_name">0x21</T></V>
+      </U>
+    </I>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_OutcastChild" s="32">
+      <U n="_sim_creation_info">
+        <T n="first_name">0x32</T>
+        <V n="last_name" t="specify_last_name"><T n="specify_last_name">0x33</T></V>
+      </U>
+    </I>
+    <I c="PremadeHouseholdTemplate" n="HH_Main" s="100">
+      <L n="_household_members">
+        <U><T n="household_member_tag">m1</T><T n="sim_template">30</T></U>
+        <U><T n="household_member_tag">m2</T><T n="sim_template">31</T></U>
+      </L>
+      <L n="_household_relationship">
+        <U><T n="is_parentless_sibling">True</T><T n="x">m1</T><T n="y">m2</T></U>
+      </L>
+    </I>
+    </root>"""
+    entries = {item.instance_id: item for item in CombinedTuning.from_xml(xml)}
+    world = WorldData(
+        households={
+            200: StarterHouseholdRecord(
+                instance=200,
+                name="Purdue",
+                members=[
+                    StarterMember(
+                        first_name="Cassidy",
+                        last_name="Purdue",
+                        sim_id=501,
+                        relations=[StarterRelation(relation_type=0, target_id=999999)],
+                    ),
+                    StarterMember(
+                        first_name="Ollie",
+                        last_name="Purdue",
+                        sim_id=502,
+                        relations=[StarterRelation(relation_type=0, target_id=999999)],
+                    ),
+                ],
+            )
+        }
+    )
+    catalog = Catalog(
+        strings={
+            0x10: "Cornelia Goth",
+            0x11: "Gunther Goth",
+            0x20: "Mortimer",
+            0x21: "Goth",
+            0x25: "Adekoya",
+            0x26: "Darong",
+            0x30: "Cassandra",
+            0x31: "Alexander",
+            0x32: "Johnny",
+            0x33: "Zest",
+        },
+        family_fixups=[
+            PremadeFamilyFixup(sim_a=10, sim_b=11, flags=["SPOUSE"]),
+            PremadeFamilyFixup(sim_a=10, sim_b=20, flags=["PARENT"]),
+            PremadeFamilyFixup(sim_a=11, sim_b=20, flags=["PARENT"]),
+            PremadeFamilyFixup(sim_a=20, sim_b=30, flags=["PARENT"]),
+            PremadeFamilyFixup(sim_a=25, sim_b=30, flags=["SECRET_PARENT"]),
+        ],
+        premade_relationships=[
+            PremadeRelationship(
+                sim_a=32,
+                sim_b=20,
+                bit_ids=[8809],
+                bit_operations=[
+                    LootBitOperation(
+                        bit_id=8809,
+                        recipients="Actor",
+                        targets="TargetSim",
+                        is_parent_relationship=True,
+                    )
+                ],
+            )
+        ],
+    )
+    bundle = build_premades(None, catalog, entries, {}, world=world, siminfo_index={})
+
+    grandma = bundle.ancestor("Cornelia Goth")
+    assert grandma is not None
+    assert grandma.death_trait_id == 999
+    assert grandma.thumbnail == "2f7d0004:00000000:1111111111111111"
+    assert grandma.spouse_name == "Gunther Goth"
+    assert grandma.children == ["Mortimer Goth"]
+
+    mortimer = bundle.sim("Mortimer Goth")
+    assert set(mortimer.parents) == {"Cornelia Goth", "Gunther Goth"}
+    assert set(mortimer.children) == {"Cassandra Goth", "Johnny Zest"}
+
+    cassandra = bundle.sim("Cassandra Goth")
+    alexander = bundle.sim("Alexander Goth")
+    johnny = bundle.sim("Johnny Zest")
+    assert "Alexander Goth" in cassandra.siblings
+    assert "Cassandra Goth" in alexander.siblings
+    assert "Johnny Zest" in cassandra.siblings
+    assert "Cassandra Goth" in johnny.siblings
+    assert johnny.parents == ["Mortimer Goth"]
+
+    cassidy = bundle.sim("Cassidy Purdue")
+    ollie = bundle.sim("Ollie Purdue")
+    assert cassidy.siblings == ["Ollie Purdue"]
+    assert ollie.siblings == ["Cassidy Purdue"]
+
+    tree = bundle.family_tree("Cassandra Goth")
+    assert tree is not None
+    assert tree.root.full_name == "Cassandra Goth"
+    assert tree.root.secret_parent_ids == [25]
+    ancestor_names = {node.full_name for node in tree.ancestors_of()}
+    assert ancestor_names == {"Mortimer Goth", "Adekoya Darong", "Cornelia Goth", "Gunther Goth"}
+    descendant_names = {node.full_name for node in tree.descendants_of(10)}
+    assert descendant_names == {"Mortimer Goth", "Cassandra Goth", "Johnny Zest"}
+    assert tree.to_dict()["nodes"][str(cassandra.id)]["full_name"] == "Cassandra Goth"

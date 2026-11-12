@@ -28,6 +28,8 @@ from ..core import TuningElement
 from ..core.combined_tuning import CombinedTuning
 from .models import (
     ConditionalRelationshipSetup,
+    LootBitOperation,
+    PremadeFamilyFixup,
     PremadeRelationship,
     RelationshipDefault,
     RelationshipTrackValue,
@@ -65,6 +67,7 @@ class RelationshipTuningData:
 
     defaults: dict[str, RelationshipDefault] = field(default_factory=dict)
     pairs: list[PremadeRelationship] = field(default_factory=list)
+    family_fixups: list[PremadeFamilyFixup] = field(default_factory=list)
     track_ranges: dict[int, RelationshipTrackValue] = field(
         default_factory=dict, repr=False
     )
@@ -77,7 +80,8 @@ class RelationshipTuningData:
     def __repr__(self) -> str:
         return (
             f"RelationshipTuningData(defaults={len(self.defaults)}, "
-            f"pairs={len(self.pairs)}, ranges={len(self.track_ranges)}, "
+            f"pairs={len(self.pairs)}, fixups={len(self.family_fixups)}, "
+            f"ranges={len(self.track_ranges)}, "
             f"tropes={len(self.family_trope_ids) + len(self.romance_trope_ids)})"
         )
 
@@ -350,19 +354,24 @@ def _parse_pairs(
     class_node = _class_node(module, "PremadeSimRelationships")
     if class_node is None:
         return []
-    relmap = _list_node(class_node, "RELATIONSHIP_MAP")
+    relmap = _resolve(ct, _list_node(class_node, "RELATIONSHIP_MAP"))
     if relmap is None:
         return []
 
     pairs: list[PremadeRelationship] = []
     for entry in relmap:
+        entry = _resolve(ct, entry)
+        if entry is None:
+            continue
         fields = {child.get("n"): child for child in entry}
         sim_a = _integer(ct, fields.get("sim_a"))
         sim_b = _integer(ct, fields.get("sim_b"))
         loot_id = _integer(ct, fields.get("relationship_loot"))
         if sim_a is None or sim_b is None:
             continue
-        tracks, bits, sentiments = _evaluate_loot(loot_id, entries, strings)
+        tracks, bits, sentiments, bit_ops = _evaluate_loot(
+            loot_id, entries, strings
+        )
         pairs.append(
             PremadeRelationship(
                 sim_a=sim_a,
@@ -371,9 +380,47 @@ def _parse_pairs(
                 bit_ids=bits,
                 sentiment_track_ids=sentiments,
                 loot_id=loot_id,
+                bit_operations=bit_ops,
             )
         )
     return pairs
+
+
+def _parse_family_fixups(ct: CombinedTuning) -> list[PremadeFamilyFixup]:
+    """Parse ``PremadeSimRelationships.FAMILY_RELATIONS_FIXUP``."""
+    module = ct.find_module(RELATIONSHIPS_MODULE)
+    if module is None:
+        return []
+    class_node = _class_node(module, "PremadeSimRelationships")
+    if class_node is None:
+        return []
+    fixup_node = _resolve(ct, _list_node(class_node, "FAMILY_RELATIONS_FIXUP"))
+    if fixup_node is None:
+        return []
+
+    fixups: list[PremadeFamilyFixup] = []
+    for entry in fixup_node:
+        entry = _resolve(ct, entry)
+        if entry is None:
+            continue
+        fields = {child.get("n"): child for child in entry}
+        sim_a = _integer(ct, fields.get("sim_a"))
+        sim_b = _integer(ct, fields.get("sim_b"))
+        if sim_a is None or sim_b is None:
+            continue
+        flags: list[str] = []
+        flag_node = _resolve(ct, fields.get("flag"))
+        if flag_node is not None:
+            items = list(flag_node) if flag_node.tag == "L" else [flag_node]
+            for item in items:
+                text = _text(ct, item)
+                if text and text not in flags:
+                    flags.append(text)
+        if flags:
+            fixups.append(
+                PremadeFamilyFixup(sim_a=sim_a, sim_b=sim_b, flags=flags)
+            )
+    return fixups
 
 
 def _evaluate_loot(
@@ -381,26 +428,29 @@ def _evaluate_loot(
     entries: Mapping[int, TuningElement],
     strings: Mapping[int, str],
     seen: Optional[set[int]] = None,
-) -> tuple[list[RelationshipTrackValue], list[int], list[int]]:
+) -> tuple[
+    list[RelationshipTrackValue], list[int], list[int], list[LootBitOperation]
+]:
     """Follow nested ``actions`` loots and collect relationship track changes."""
     if loot_id is None:
-        return [], [], []
+        return [], [], [], []
     seen = seen or set()
     if loot_id in seen:
-        return [], [], []
+        return [], [], [], []
     seen.add(loot_id)
 
     element = entries.get(loot_id)
     if element is None or element.cls != "LootActions":
-        return [], [], []
+        return [], [], [], []
 
     view = TuningView(element, strings)
     actions = view.resolved_child("loot_actions")
     tracks: dict[int, RelationshipTrackValue] = {}
     bits: list[int] = []
     sentiments: list[int] = []
+    bit_ops: list[LootBitOperation] = []
     if actions is None:
-        return [], [], []
+        return [], [], [], []
 
     for action in actions:
         resolved = view.resolve(action)
@@ -409,7 +459,9 @@ def _evaluate_loot(
         if resolved.tag == "T":
             nested = _text_of_element(view, resolved)
             if nested and nested.lstrip("-").isdigit():
-                _merge_loot(nested, entries, strings, seen, tracks, bits, sentiments)
+                _merge_loot(
+                    nested, entries, strings, seen, tracks, bits, sentiments, bit_ops
+                )
             continue
         if resolved.tag != "V":
             continue
@@ -418,19 +470,89 @@ def _evaluate_loot(
         if variant == "actions" and inner:
             nested = _text_of_element(view, inner[0])
             if nested and nested.lstrip("-").isdigit():
-                _merge_loot(nested, entries, strings, seen, tracks, bits, sentiments)
+                _merge_loot(
+                    nested, entries, strings, seen, tracks, bits, sentiments, bit_ops
+                )
         elif variant == "statistics" and inner:
             _merge_statistics(view, inner[0], tracks, sentiments, entries)
         elif variant in ("relationship_bits", "relationship_bits_loot"):
-            for child in inner:
-                for candidate in child.iter():
-                    text = _text_of_element(view, candidate)
-                    if text and text.lstrip("-").isdigit():
-                        bit_id = int(text)
-                        if bit_id not in bits:
-                            bits.append(bit_id)
+            _merge_relationship_bits_loot(view, inner, bits, bit_ops)
 
-    return list(tracks.values()), bits, sentiments
+    return list(tracks.values()), bits, sentiments, bit_ops
+
+
+def _merge_relationship_bits_loot(
+    view: TuningView,
+    inner: list,
+    bits: list[int],
+    bit_ops: list[LootBitOperation],
+) -> None:
+    """Extract ``ADD`` bit operations without reading ``tests`` or ``REMOVE`` ops."""
+    for child in inner:
+        resolved_child = view.resolve(child)
+        if resolved_child is None:
+            continue
+        bit_operations = next(
+            (
+                view.resolve(node)
+                for node in resolved_child
+                if node.get("n") == "bit_operations"
+            ),
+            None,
+        )
+        has_tests = any(node.get("n") == "tests" for node in resolved_child)
+        if bit_operations is not None:
+            for op_node in bit_operations:
+                op_node = view.resolve(op_node)
+                if op_node is None:
+                    continue
+                fields = {
+                    field_node.get("n"): view.resolve(field_node)
+                    for field_node in op_node
+                }
+                bit_id = view.number_of(fields.get("bit"))
+                if bit_id is None:
+                    continue
+                operation = (
+                    _text_of_element(view, fields.get("operation")) or "ADD"
+                ).upper()
+                if operation != "ADD":
+                    continue
+                if bit_id not in bits:
+                    bits.append(bit_id)
+                if not has_tests:
+                    recipients = (
+                        _text_of_element(view, fields.get("recipients"))
+                        or "Actor"
+                    )
+                    targets = (
+                        _text_of_element(view, fields.get("targets"))
+                        or "TargetSim"
+                    )
+                    is_parent = (
+                        view.flag_of(fields.get("is_parent_relationship"))
+                        if "is_parent_relationship" in fields
+                        else False
+                    )
+                    op = LootBitOperation(
+                        bit_id=bit_id,
+                        recipients=recipients,
+                        targets=targets,
+                        is_parent_relationship=is_parent,
+                    )
+                    if op not in bit_ops:
+                        bit_ops.append(op)
+            continue
+
+        # Fallback for simplified <V t="relationship_bits"> shapes without bit_operations.
+        for candidate in resolved_child.iter():
+            if candidate.get("n") == "tests":
+                continue
+            text = _text_of_element(view, candidate)
+            if text and text.lstrip("-").isdigit():
+                bit_id = int(text)
+                if bit_id not in bits:
+                    bits.append(bit_id)
 
 
 def _merge_loot(
@@ -441,8 +563,9 @@ def _merge_loot(
     tracks: dict[int, RelationshipTrackValue],
     bits: list[int],
     sentiments: list[int],
+    bit_ops: list[LootBitOperation],
 ) -> None:
-    nested_tracks, nested_bits, nested_sentiments = _evaluate_loot(
+    nested_tracks, nested_bits, nested_sentiments, nested_ops = _evaluate_loot(
         int(nested), entries, strings, seen
     )
     for item in nested_tracks:
@@ -453,6 +576,9 @@ def _merge_loot(
     for track_id in nested_sentiments:
         if track_id not in sentiments:
             sentiments.append(track_id)
+    for op in nested_ops:
+        if op not in bit_ops:
+            bit_ops.append(op)
 
 
 def _merge_statistics(
@@ -618,6 +744,7 @@ def extract_relationship_tuning(
     pairs_ct = modules.get(RELATIONSHIPS_MODULE)
     if pairs_ct is not None:
         data.pairs = _parse_pairs(pairs_ct, entries, strings)
+        data.family_fixups = _parse_family_fixups(pairs_ct)
 
     global_ct = modules.get(GLOBAL_MODULE)
     if global_ct is not None:

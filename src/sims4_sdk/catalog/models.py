@@ -35,6 +35,8 @@ __all__ = [
     "TraitCondition",
     "ConditionalRelationshipSetup",
     "RelationshipDefault",
+    "LootBitOperation",
+    "PremadeFamilyFixup",
     "PremadeRelationship",
     "GenderOptions",
     "Catalog",
@@ -367,6 +369,39 @@ class RelationshipDefault(Serializable):
 
 
 @dataclass
+class LootBitOperation(Serializable):
+    """A directional relationship-bit addition inside a ``LootActions`` resource."""
+
+    bit_id: int
+    recipients: str = "Actor"
+    targets: str = "TargetSim"
+    is_parent_relationship: bool = False
+
+
+@dataclass
+class PremadeFamilyFixup(Serializable):
+    """One genealogy edge from ``PremadeSimRelationships.FAMILY_RELATIONS_FIXUP``.
+
+    ``flags`` contains one or more of ``"PARENT"``, ``"SECRET_PARENT"``,
+    ``"CHILD"``, or ``"SPOUSE"``.  Either endpoint may be a
+    :class:`~sims4_sdk.catalog.premades.PremadeSim` or a
+    :class:`~sims4_sdk.catalog.premades.PremadeAncestor`.
+    """
+
+    sim_a: int
+    sim_b: int
+    flags: list[str] = field(default_factory=list)
+    sim_a_name: Optional[str] = None
+    sim_b_name: Optional[str] = None
+
+    def __repr__(self) -> str:
+        return (
+            f"PremadeFamilyFixup({self.sim_a_name or hex(self.sim_a)!r} -> "
+            f"{self.sim_b_name or hex(self.sim_b)!r}, flags={self.flags})"
+        )
+
+
+@dataclass
 class PremadeRelationship(Serializable):
     """An initial relationship between two pre-made Sims in different households."""
 
@@ -378,6 +413,12 @@ class PremadeRelationship(Serializable):
     loot_id: Optional[int] = None
     sim_a_name: Optional[str] = None
     sim_b_name: Optional[str] = None
+    bit_operations: list[LootBitOperation] = field(default_factory=list)
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "bit_operations" not in state:
+            self.bit_operations = []
 
     def track(self, track_id: int) -> Optional[RelationshipTrackValue]:
         return next((item for item in self.tracks if item.track_id == track_id), None)
@@ -523,6 +564,7 @@ class Catalog(Serializable):
     relationship_bits: dict[int, RelationshipBit] = field(default_factory=dict)
     relationship_defaults: dict[str, RelationshipDefault] = field(default_factory=dict)
     premade_relationships: list[PremadeRelationship] = field(default_factory=list)
+    family_fixups: list[PremadeFamilyFixup] = field(default_factory=list)
     relationship_track_ranges: dict[int, RelationshipTrackValue] = field(
         default_factory=dict, repr=False
     )
@@ -563,6 +605,8 @@ class Catalog(Serializable):
         self.__dict__.update(state)
         if "diagnostics" not in state:
             self.diagnostics = []
+        if "family_fixups" not in state:
+            self.family_fixups = []
 
     @property
     def visible_traits(self) -> list[Trait]:

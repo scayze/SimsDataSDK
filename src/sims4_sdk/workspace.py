@@ -20,6 +20,7 @@ from typing import Callable, Optional
 
 from .catalog import (
     Catalog,
+    FamilyTree,
     PremadeAncestor,
     PremadeHousehold,
     PremadeLot,
@@ -158,15 +159,28 @@ class Sims4Workspace:
     def find_sim(self, key: str | int) -> Optional[PremadeSim]:
         return self.static_data().sim(key)
 
+    def find_ancestor(self, key: str | int) -> Optional[PremadeAncestor]:
+        return self.static_data().ancestor(key)
+
     def find_household(self, key: str | int) -> Optional[PremadeHousehold]:
         return self.static_data().household(key)
 
     def find_lot(self, key: str | int) -> Optional[PremadeLot]:
         return self.static_data().lot(key)
 
+    def family_tree(
+        self, key: str | int | PremadeSim | PremadeAncestor
+    ) -> Optional[FamilyTree]:
+        """Build the connected family tree around a pre-made Sim or ancestor."""
+        return self.static_data().family_tree(key)
+
     def find_sims(self, *args, **kwargs) -> list[PremadeSim]:
         """Filter pre-made Sims; see :meth:`PremadeBundle.find_sims`."""
         return self.static_data().find_sims(*args, **kwargs)
+
+    def find_ancestors(self, *args, **kwargs) -> list[PremadeAncestor]:
+        """Filter pre-made ancestors; see :meth:`PremadeBundle.find_ancestors`."""
+        return self.static_data().find_ancestors(*args, **kwargs)
 
     def find_households(self, *args, **kwargs) -> list[PremadeHousehold]:
         """Filter pre-made households; see :meth:`PremadeBundle.find_households`."""

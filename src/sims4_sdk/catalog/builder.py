@@ -60,7 +60,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-15"
+CACHE_VERSION = "step2-16"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
@@ -380,6 +380,7 @@ def extract_catalog(
     if relationship_tuning is not None:
         catalog.relationship_defaults = relationship_tuning.defaults
         catalog.premade_relationships = relationship_tuning.pairs
+        catalog.family_fixups = relationship_tuning.family_fixups
         catalog.relationship_track_ranges = relationship_tuning.track_ranges
         catalog.steady_bit_id = relationship_tuning.steady_bit_id
         catalog.engagement_bit_id = relationship_tuning.engagement_bit_id

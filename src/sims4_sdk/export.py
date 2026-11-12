@@ -375,6 +375,25 @@ def _conditional_setup_dict(value: Any, options: _Options) -> dict[str, Any]:
     }
 
 
+def _loot_bit_op_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "bit_id": value.bit_id,
+        "recipients": value.recipients,
+        "targets": value.targets,
+        "is_parent_relationship": value.is_parent_relationship,
+    }
+
+
+def _premade_family_fixup_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "sim_a": value.sim_a,
+        "sim_b": value.sim_b,
+        "sim_a_name": value.sim_a_name,
+        "sim_b_name": value.sim_b_name,
+        "flags": list(value.flags),
+    }
+
+
 def _premade_relationship_dict(value: Any, options: _Options) -> dict[str, Any]:
     return {
         "sim_a": value.sim_a,
@@ -385,6 +404,10 @@ def _premade_relationship_dict(value: Any, options: _Options) -> dict[str, Any]:
         "romance": value.romance,
         "tracks": [_track_value_dict(item, options) for item in value.tracks],
         "bit_ids": list(value.bit_ids),
+        "bit_operations": [
+            _loot_bit_op_dict(item, options)
+            for item in getattr(value, "bit_operations", []) or []
+        ],
         "sentiment_track_ids": list(value.sentiment_track_ids),
         "loot_id": value.loot_id,
     }
@@ -444,6 +467,10 @@ def _catalog_dict(catalog: Any, options: _Options) -> dict[str, Any]:
         "premade_relationships": [
             _premade_relationship_dict(item, options)
             for item in catalog.premade_relationships
+        ],
+        "family_fixups": [
+            _premade_family_fixup_dict(item, options)
+            for item in getattr(catalog, "family_fixups", []) or []
         ],
         "relationship_track_ranges": _by_id(
             catalog.relationship_track_ranges, _track_value_dict, options
@@ -531,6 +558,14 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
             _premade_family_link_dict(item, options)
             for item in getattr(value, "parent_links", []) or []
         ],
+        "child_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "child_links", []) or []
+        ],
+        "sibling_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "sibling_links", []) or []
+        ],
         "extended_family_links": [
             _premade_family_link_dict(item, options)
             for item in getattr(value, "extended_family_links", []) or []
@@ -549,6 +584,11 @@ def _premade_family_link_dict(value: Any, options: _Options) -> dict[str, Any]:
         "name": value.name,
         "sim_id": value.sim_id,
         "target_id": value.target_id,
+        "target_kind": getattr(
+            value,
+            "target_kind",
+            "unlinked" if value.sim_id is None else "sim",
+        ),
     }
 
 
@@ -609,7 +649,85 @@ def _premade_ancestor_dict(value: Any, options: _Options) -> dict[str, Any]:
         "gender": value.gender,
         "death_trait_id": value.death_trait_id,
         "thumbnail": value.thumbnail,
+        "spouse_id": getattr(value, "spouse_id", None),
+        "spouse_name": getattr(value, "spouse_name", None),
+        "parents": list(getattr(value, "parents", []) or []),
+        "children": list(getattr(value, "children", []) or []),
+        "siblings": list(getattr(value, "siblings", []) or []),
+        "extended_family": list(getattr(value, "extended_family", []) or []),
+        "parent_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "parent_links", []) or []
+        ],
+        "child_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "child_links", []) or []
+        ],
+        "sibling_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "sibling_links", []) or []
+        ],
+        "extended_family_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "extended_family_links", []) or []
+        ],
         "source": _source(value.source),
+    }
+
+
+def _family_tree_node_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "id": value.id,
+        "name": value.name,
+        "full_name": value.full_name,
+        "kind": value.kind,
+        "gender": value.gender,
+        "age": value.age,
+        "is_ghost_or_ancestor": value.is_ghost_or_ancestor,
+        "household_id": value.household_id,
+        "household_name": value.household_name,
+        "thumbnail": value.thumbnail,
+        "death_trait_id": value.death_trait_id,
+        "spouse_id": value.spouse_id,
+        "spouse_name": value.spouse_name,
+        "fiance_id": value.fiance_id,
+        "fiance_name": value.fiance_name,
+        "steady_ids": list(value.steady_ids),
+        "parent_ids": list(value.parent_ids),
+        "secret_parent_ids": list(value.secret_parent_ids),
+        "child_ids": list(value.child_ids),
+        "sibling_ids": list(value.sibling_ids),
+        "parent_links": [
+            _premade_family_link_dict(item, options)
+            for item in value.parent_links
+        ],
+        "child_links": [
+            _premade_family_link_dict(item, options)
+            for item in value.child_links
+        ],
+        "sibling_links": [
+            _premade_family_link_dict(item, options)
+            for item in value.sibling_links
+        ],
+        "extended_family_links": [
+            _premade_family_link_dict(item, options)
+            for item in value.extended_family_links
+        ],
+        "unlinked_relations": [
+            _premade_family_link_dict(item, options)
+            for item in value.unlinked_relations
+        ],
+    }
+
+
+def _family_tree_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "root_id": value.root_id,
+        "nodes": _by_id(value.nodes, _family_tree_node_dict, options),
+        "unlinked_relations": [
+            _premade_family_link_dict(item, options)
+            for item in value.unlinked_relations
+        ],
     }
 
 
@@ -641,6 +759,10 @@ def _premade_bundle_dict(value: Any, options: _Options) -> dict[str, Any]:
         "premade_relationships": [
             _premade_relationship_dict(item, options)
             for item in value.premade_relationships
+        ],
+        "family_fixups": [
+            _premade_family_fixup_dict(item, options)
+            for item in getattr(value, "family_fixups", []) or []
         ],
     }
 
@@ -952,7 +1074,9 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         Catalog,
         ConditionalRelationshipSetup,
         GenderOptions,
+        LootBitOperation,
         Milestone,
+        PremadeFamilyFixup,
         PremadeRelationship,
         Preference,
         RelationshipBit,
@@ -964,6 +1088,8 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         TuningSource,
     )
     from .catalog.premades import (
+        FamilyTree,
+        FamilyTreeNode,
         HouseholdMember,
         HouseholdRelationship,
         PremadeAncestor,
@@ -1017,6 +1143,14 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         return _household_relationship_dict(obj, opts)
     if isinstance(obj, PremadeFamilyLink):
         return _premade_family_link_dict(obj, opts)
+    if isinstance(obj, FamilyTreeNode):
+        return _family_tree_node_dict(obj, opts)
+    if isinstance(obj, FamilyTree):
+        return _family_tree_dict(obj, opts)
+    if isinstance(obj, PremadeFamilyFixup):
+        return _premade_family_fixup_dict(obj, opts)
+    if isinstance(obj, LootBitOperation):
+        return _loot_bit_op_dict(obj, opts)
     if isinstance(obj, Trait):
         return _trait_dict(obj, opts)
     if isinstance(obj, Preference):

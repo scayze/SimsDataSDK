@@ -163,6 +163,22 @@ def test_premade_ancestors(static_data) -> None:
     assert "Cornelia Goth" in names
     assert "Darren Dreamer" in names
 
+    cornelia = static_data.ancestor("Cornelia Goth")
+    assert cornelia is not None
+    assert "Mortimer Goth" in cornelia.children
+    assert {"Prudence Crumplebottom", "Simon Crumplebottom"} <= set(cornelia.parents)
+
+    tree = static_data.family_tree("Cassandra Goth")
+    assert tree is not None
+    ancestor_names = {node.full_name for node in tree.ancestors_of()}
+    assert {
+        "Bella Goth",
+        "Mortimer Goth",
+        "Cornelia Goth",
+        "Prudence Crumplebottom",
+        "Simon Crumplebottom",
+    } <= ancestor_names
+
 
 def test_starter_save_household_bff(static_data) -> None:
     """The BFF household has no tuning template at all; it lives in 0xB3C438F0."""
@@ -256,6 +272,15 @@ def test_starter_save_genealogy(static_data) -> None:
     assert bella.spouse_name == "Mortimer Goth"
     assert {"Bella Goth", "Mortimer Goth"} <= set(cassandra.parents)
     assert "Alexander Goth" in cassandra.siblings
+
+    candy = static_data.sim("Candy Behr")
+    yuki = static_data.sim("Yuki Behr")
+    assert "Yuki Behr" in candy.siblings
+    assert "Candy Behr" in yuki.siblings
+
+    johnny = static_data.sim("Johnny Zest")
+    assert {"Geoffrey Landgraab", "Nancy Landgraab"} <= set(johnny.parents)
+    assert "Malcolm Landgraab" in johnny.siblings
 
 
 def test_ep10_household_uses_positional_hints(static_data) -> None:

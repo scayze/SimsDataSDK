@@ -75,15 +75,26 @@ class StaticData(Serializable):
     def sim(self, key: str | int):
         return self.premades.sim(key)
 
+    def ancestor(self, key: str | int):
+        return self.premades.ancestor(key)
+
     def household(self, key: str | int):
         return self.premades.household(key)
 
     def lot(self, key: str | int):
         return self.premades.lot(key)
 
+    def family_tree(self, key):
+        """Build the connected family tree around ``key``; see :meth:`PremadeBundle.family_tree`."""
+        return self.premades.family_tree(key)
+
     def find_sims(self, *args, **kwargs):
         """Filter pre-made Sims; see :meth:`PremadeBundle.find_sims`."""
         return self.premades.find_sims(*args, **kwargs)
+
+    def find_ancestors(self, *args, **kwargs):
+        """Filter pre-made ancestors; see :meth:`PremadeBundle.find_ancestors`."""
+        return self.premades.find_ancestors(*args, **kwargs)
 
     def find_households(self, *args, **kwargs):
         """Filter pre-made households; see :meth:`PremadeBundle.find_households`."""

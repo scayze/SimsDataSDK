@@ -263,6 +263,13 @@ def test_static_data_and_to_json_round_trip(tmp_path: Path) -> None:
     assert parsed["catalog"]["traits"]["1"]["name"] == "trait_Mean"
     assert parsed["premades"]["sims"][0]["full_name"] == "Bella Goth"
 
+    tree = static.family_tree("Bella Goth")
+    assert tree is not None
+    tree_dict = tree.to_dict()
+    assert tree_dict["root_id"] == 100
+    assert tree_dict["nodes"]["100"]["full_name"] == "Bella Goth"
+    json.dumps(tree_dict)
+
 
 def test_resource_key_bytes_and_path_are_json_safe() -> None:
     key = ResourceKey(0x62E94D38, 0, 0x1234)

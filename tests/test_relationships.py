@@ -60,6 +60,11 @@ XML = """<?xml version="1.0"?>
   </M>
   <M n="world.premade_sim_relationships">
     <C n="PremadeSimRelationships">
+      <L n="FAMILY_RELATIONS_FIXUP">
+        <U><L n="flag"><E>PARENT</E></L><T n="sim_a">50</T><T n="sim_b">100</T></U>
+        <U><L n="flag"><E>SECRET_PARENT</E></L><T n="sim_a">51</T><T n="sim_b">100</T></U>
+        <U><L n="flag"><E>SPOUSE</E></L><T n="sim_a">50</T><T n="sim_b">52</T></U>
+      </L>
       <L n="RELATIONSHIP_MAP">
         <U><T n="relationship_loot">9001</T><T n="sim_a">100</T><T n="sim_b">200</T></U>
       </L>
@@ -71,6 +76,40 @@ XML = """<?xml version="1.0"?>
       <V t="statistics"><V n="statistics" t="relationship_set"><U>
         <T n="track">16650</T><T n="value">60</T>
       </U></V></V>
+      <V t="relationship_bits_loot"><U n="relationship_bits_loot">
+        <L n="bit_operations">
+          <U>
+            <T n="bit">8809</T>
+            <T n="is_parent_relationship">True</T>
+            <E n="operation">ADD</E>
+            <E n="recipients">Actor</E>
+            <E n="targets">TargetSim</E>
+          </U>
+          <U>
+            <T n="bit">308100</T>
+            <E n="operation">REMOVE</E>
+            <E n="recipients">Actor</E>
+            <E n="targets">TargetSim</E>
+          </U>
+        </L>
+      </U></V>
+      <V t="relationship_bits_loot"><U n="relationship_bits_loot">
+        <L n="bit_operations">
+          <U>
+            <T n="bit">306356</T>
+            <E n="operation">ADD</E>
+            <E n="recipients">Actor</E>
+            <E n="targets">TargetSim</E>
+          </U>
+        </L>
+        <L n="tests">
+          <L><V t="relationship"><U n="relationship">
+            <U n="required_relationship_bits"><L n="match_any">
+              <T>8808</T><T>8829</T>
+            </L></U>
+          </U></V></L>
+        </L>
+      </U></V>
     </L>
   </I>
   <I c="LootActions" i="action" m="interactions.utils.loot" n="loot_nested" s="9002">
@@ -130,6 +169,23 @@ def test_cross_household_relationship_loot() -> None:
     assert relationship.friendship == 60
     assert relationship.romance == 20
     assert relationship.track(16650).track_name == "LTR_Friendship_Main"
+    # ADD bits are kept; REMOVE bits (308100) and test-only bits (8808, 8829) are ignored.
+    assert relationship.bit_ids == [8809, 306356]
+    assert len(relationship.bit_operations) == 1
+    op = relationship.bit_operations[0]
+    assert op.bit_id == 8809
+    assert op.recipients == "Actor"
+    assert op.targets == "TargetSim"
+    assert op.is_parent_relationship is True
+
+
+def test_family_relations_fixup() -> None:
+    data = _extract()
+    assert [(f.sim_a, f.sim_b, f.flags) for f in data.family_fixups] == [
+        (50, 100, ["PARENT"]),
+        (51, 100, ["SECRET_PARENT"]),
+        (50, 52, ["SPOUSE"]),
+    ]
 
 
 def test_relationship_track_ranges() -> None:
