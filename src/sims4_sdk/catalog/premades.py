@@ -53,6 +53,7 @@ __all__ = [
     "PremadeLot",
     "HouseholdMember",
     "HouseholdRelationship",
+    "PremadeFamilyLink",
     "PremadeBundle",
     "build_premades",
     "parse_resource_key",
@@ -126,6 +127,26 @@ class HouseholdRelationship(Serializable):
     romance_min: Optional[float] = None
     romance_max: Optional[float] = None
     bit_ids: list[int] = field(default_factory=list)
+
+
+@dataclass
+class PremadeFamilyLink(Serializable):
+    """One typed kinship edge, preserving the tuning relation kind.
+
+    ``MOTHER``/``FATHER``/``PARENT`` are direct parents; other kinds
+    (``MOTHERS_MOM``, ``FATHERS_FATHER``, ``GRANDPARENT``, ...) are
+    extended family.  ``FIANCE``/``SPOUSE``/``STEADY`` are partners.
+
+    ``name``/``sim_id`` are set when the relative resolves to a
+    :class:`PremadeSim`; ``target_id`` always holds the raw relation target
+    (starter ``sim_id`` or tuning ``sim_template`` id) so dangling
+    references outside the household are not silently dropped.
+    """
+
+    kind: str
+    name: Optional[str] = None
+    sim_id: Optional[int] = None
+    target_id: Optional[int] = None
 
 
 @dataclass
@@ -208,10 +229,21 @@ class PremadeSim(Serializable):
     household_name: Optional[str] = None
     spouse_id: Optional[int] = None
     spouse_name: Optional[str] = None
+    fiance_id: Optional[int] = None
+    fiance_name: Optional[str] = None
+    steady_ids: list[int] = field(default_factory=list)
+    steady_names: list[str] = field(default_factory=list)
     parents: list[str] = field(default_factory=list)
     children: list[str] = field(default_factory=list)
     siblings: list[str] = field(default_factory=list)
     extended_family: list[str] = field(default_factory=list)
+    #: Typed kinship preserving the tuning ``family_relationship`` kind.
+    #: ``parents``/``extended_family`` stay as plain names for compatibility.
+    parent_links: list[PremadeFamilyLink] = field(default_factory=list)
+    extended_family_links: list[PremadeFamilyLink] = field(default_factory=list)
+    #: Relation targets with no matching Sim in the static data
+    #: (e.g. starter ``gameplay.14`` parents outside the household).
+    unlinked_relations: list[PremadeFamilyLink] = field(default_factory=list)
     aspiration_track_id: Optional[int] = None
     aspiration_track: Optional[AspirationTrack] = None
     career_id: Optional[int] = None
@@ -319,6 +351,25 @@ class PremadeSim(Serializable):
                 if key in mapping:
                     return mapping[key]
         return self.age_hint
+
+    def __setstate__(self, state: dict) -> None:
+        # Snapshots predating fiance/typed-kinship fields lack them.
+        self.__dict__.update(state)
+        for missing, default in (
+            ("fiance_id", None),
+            ("fiance_name", None),
+            ("steady_ids", []),
+            ("steady_names", []),
+            ("parent_links", []),
+            ("extended_family_links", []),
+            ("unlinked_relations", []),
+        ):
+            if missing not in state:
+                setattr(
+                    self,
+                    missing,
+                    list(default) if isinstance(default, list) else default,
+                )
 
     def __repr__(self) -> str:
         return f"PremadeSim({self.full_name!r}, traits={len(self.traits)})"
@@ -700,12 +751,15 @@ def _link_starter_family(
     members: list[StarterMember],
     sim_by_tag: dict[str, PremadeSim],
 ) -> None:
-    """Attach spouse/parent/child/sibling links from ``0xB3C438F0``.
+    """Attach spouse/fiance/parent/child/sibling links from ``0xB3C438F0``.
 
-    The resource stores the spouse in member field 15 and ancestor relations in
-    ``gameplay.14`` as ``(relation_type, target_sim_id)`` pairs.  ``None`` for
-    ``household`` means the tuning household already owns the relationship list
+    The resource stores the spouse in member field 15, the fiance in field
+    68, steadies in field 72, and ancestor relations in ``gameplay.14`` as
+    ``(relation_type, target_sim_id)`` pairs.  ``None`` for ``household``
+    means the tuning household already owns the relationship list
     (Goth/Landgraabs/Zest); only the Sim-level fields are filled then.
+    Relations whose target has no member in this record are kept on
+    :attr:`PremadeSim.unlinked_relations` instead of being dropped.
     """
     tag_by_id = {
         member.sim_id: f"household_member_{index}"
@@ -730,14 +784,60 @@ def _link_starter_family(
                 HouseholdRelationship(kind="spouse", a_tag=tag, b_tag=spouse_tag)
             )
 
-    parent_links: list[tuple[str, str, str]] = []
+    fiance_pairs: set[frozenset[str]] = set()
+    for index, member in enumerate(members, start=1):
+        tag = f"household_member_{index}"
+        if not member.fiance_id:
+            continue
+        fiance_tag = tag_by_id.get(member.fiance_id)
+        if not fiance_tag:
+            continue
+        pair = frozenset((tag, fiance_tag))
+        if pair in fiance_pairs:
+            continue
+        fiance_pairs.add(pair)
+        if household is not None:
+            household.relationships.append(
+                HouseholdRelationship(kind="fiance", a_tag=tag, b_tag=fiance_tag)
+            )
+
+    steady_pairs: set[frozenset[str]] = set()
+    for index, member in enumerate(members, start=1):
+        tag = f"household_member_{index}"
+        for steady_id in member.steady_ids or ():
+            steady_tag = tag_by_id.get(steady_id)
+            if not steady_tag or steady_tag == tag:
+                continue
+            pair = frozenset((tag, steady_tag))
+            if pair in steady_pairs:
+                continue
+            steady_pairs.add(pair)
+            if household is not None:
+                household.relationships.append(
+                    HouseholdRelationship(kind="steady", a_tag=tag, b_tag=steady_tag)
+                )
+
+    parent_links: list[tuple[str, str, str, Optional[int]]] = []
     for index, member in enumerate(members, start=1):
         child_tag = f"household_member_{index}"
         for relation in member.relations:
             parent_tag = tag_by_id.get(relation.target_id)
             if not parent_tag:
+                child = sim_by_tag.get(child_tag)
+                if child is not None:
+                    _append_link_unique(
+                        child.unlinked_relations,
+                        PremadeFamilyLink(
+                            kind=relation.kind,
+                            name=None,
+                            sim_id=None,
+                            target_id=relation.target_id,
+                        ),
+                    )
                 continue
-            parent_links.append((parent_tag, child_tag, relation.kind))
+            parent_links.append(
+                (parent_tag, child_tag, relation.kind, relation.target_id)
+            )
             if household is not None:
                 household.relationships.append(
                     HouseholdRelationship(
@@ -748,7 +848,7 @@ def _link_starter_family(
                     )
                 )
 
-    for parent_tag, child_tag, kind in parent_links:
+    for parent_tag, child_tag, kind, target_id in parent_links:
         parent = sim_by_tag.get(parent_tag)
         child = sim_by_tag.get(child_tag)
         if parent is None or child is None:
@@ -756,8 +856,26 @@ def _link_starter_family(
         if kind in ("MOTHER", "FATHER", "PARENT"):
             _append_unique(child.parents, parent.full_name)
             _append_unique(parent.children, child.full_name)
+            _append_link_unique(
+                child.parent_links,
+                PremadeFamilyLink(
+                    kind=kind,
+                    name=parent.full_name,
+                    sim_id=parent.id,
+                    target_id=target_id,
+                ),
+            )
         else:
             _append_unique(child.extended_family, parent.full_name)
+            _append_link_unique(
+                child.extended_family_links,
+                PremadeFamilyLink(
+                    kind=kind,
+                    name=parent.full_name,
+                    sim_id=parent.id,
+                    target_id=target_id,
+                ),
+            )
 
     for relationship in spouse_pairs:
         a_tag, b_tag = tuple(relationship)
@@ -770,8 +888,34 @@ def _link_starter_family(
         b.spouse_id = a.id
         b.spouse_name = a.full_name
 
+    for relationship in fiance_pairs:
+        a_tag, b_tag = tuple(relationship)
+        a = sim_by_tag.get(a_tag)
+        b = sim_by_tag.get(b_tag)
+        if a is None or b is None:
+            continue
+        if a.fiance_id is None:
+            a.fiance_id = b.id
+            a.fiance_name = b.full_name
+        if b.fiance_id is None:
+            b.fiance_id = a.id
+            b.fiance_name = a.full_name
+
+    for relationship in steady_pairs:
+        a_tag, b_tag = tuple(relationship)
+        a = sim_by_tag.get(a_tag)
+        b = sim_by_tag.get(b_tag)
+        if a is None or b is None:
+            continue
+        if b.id not in (a.steady_ids or []):
+            a.steady_ids.append(b.id)
+            _append_unique(a.steady_names, b.full_name)
+        if a.id not in (b.steady_ids or []):
+            b.steady_ids.append(a.id)
+            _append_unique(b.steady_names, a.full_name)
+
     children_by_parent: dict[str, list[str]] = {}
-    for parent_tag, child_tag, kind in parent_links:
+    for parent_tag, child_tag, kind, _target_id in parent_links:
         if kind in ("MOTHER", "FATHER", "PARENT"):
             children_by_parent.setdefault(parent_tag, []).append(child_tag)
 
@@ -793,11 +937,30 @@ def _append_unique(values: list[str], value: str) -> None:
         values.append(value)
 
 
+def _append_link_unique(
+    values: list[PremadeFamilyLink], link: PremadeFamilyLink
+) -> None:
+    # Resolved edges can arrive twice (starter ``0xB3C438F0`` + tuning
+    # template) with different raw ``target_id``s but the same Sim.
+    # Dedupe on the resolved Sim when present.
+    if link.sim_id is not None:
+        key = (link.kind, link.sim_id)
+        for existing in values:
+            if (existing.kind, existing.sim_id) == key:
+                return
+    else:
+        key = (link.kind, link.target_id)
+        for existing in values:
+            if (existing.kind, existing.target_id) == key and existing.sim_id is None:
+                return
+    values.append(link)
+
+
 def _link_household_relationships(
     households,
     sims: dict[int, PremadeSim],
 ) -> None:
-    """Fill Sim-level spouse/parent/child/sibling fields from household links.
+    """Fill Sim-level spouse/fiance/parent/child/sibling fields from links.
 
     Works for tuning households (``PremadeHouseholdTemplate``) and for starter
     households whose links were decoded from ``0xB3C438F0``.  In both formats
@@ -811,16 +974,31 @@ def _link_household_relationships(
                 tag_to_sim[member.tag] = sim
 
         for relationship in household.relationships:
-            if relationship.kind != "spouse":
+            if relationship.kind not in ("spouse", "fiance", "steady"):
                 continue
             a = tag_to_sim.get(relationship.a_tag)
             b = tag_to_sim.get(relationship.b_tag)
             if a is None or b is None:
                 continue
-            a.spouse_id = b.id
-            a.spouse_name = b.full_name
-            b.spouse_id = a.id
-            b.spouse_name = a.full_name
+            if relationship.kind == "spouse":
+                a.spouse_id = b.id
+                a.spouse_name = b.full_name
+                b.spouse_id = a.id
+                b.spouse_name = a.full_name
+            elif relationship.kind == "fiance":
+                if a.fiance_id is None:
+                    a.fiance_id = b.id
+                    a.fiance_name = b.full_name
+                if b.fiance_id is None:
+                    b.fiance_id = a.id
+                    b.fiance_name = a.full_name
+            elif relationship.kind == "steady":
+                if b.id not in (a.steady_ids or []):
+                    a.steady_ids.append(b.id)
+                    _append_unique(a.steady_names, b.full_name)
+                if a.id not in (b.steady_ids or []):
+                    b.steady_ids.append(a.id)
+                    _append_unique(b.steady_names, a.full_name)
 
         children_by_parent: dict[str, list[str]] = {}
         for relationship in household.relationships:
@@ -831,14 +1009,40 @@ def _link_household_relationships(
             if parent is None or child is None:
                 continue
             kind = relationship.family_relationship or "PARENT"
+            if kind == "FIANCE":
+                if child.fiance_id is None:
+                    child.fiance_id = parent.id
+                    child.fiance_name = parent.full_name
+                if parent.fiance_id is None:
+                    parent.fiance_id = child.id
+                    parent.fiance_name = child.full_name
+                continue
             if kind in ("MOTHER", "FATHER", "PARENT"):
                 _append_unique(child.parents, parent.full_name)
                 _append_unique(parent.children, child.full_name)
+                _append_link_unique(
+                    child.parent_links,
+                    PremadeFamilyLink(
+                        kind=kind,
+                        name=parent.full_name,
+                        sim_id=parent.id,
+                        target_id=parent.id,
+                    ),
+                )
                 children_by_parent.setdefault(relationship.a_tag, []).append(
                     relationship.b_tag
                 )
             elif kind not in ("SPOUSE", "FIANCE", "SIBLING"):
                 _append_unique(child.extended_family, parent.full_name)
+                _append_link_unique(
+                    child.extended_family_links,
+                    PremadeFamilyLink(
+                        kind=kind,
+                        name=parent.full_name,
+                        sim_id=parent.id,
+                        target_id=parent.id,
+                    ),
+                )
 
         for child_tags in children_by_parent.values():
             for child_tag in child_tags:
@@ -1288,15 +1492,26 @@ def _build_household(
             family_element = _child(item, "family_relationship")
             if family_element is not None:
                 family = view.text_of(family_element) or view.raw_text_of(family_element)
-                relationships.append(
-                    HouseholdRelationship(
-                        kind="family",
-                        a_tag=x_tag,
-                        b_tag=y_tag,
-                        family_relationship=family,
-                        bit_ids=bit_ids,
+                if (family or "").upper() == "FIANCE":
+                    relationships.append(
+                        HouseholdRelationship(
+                            kind="fiance",
+                            a_tag=x_tag,
+                            b_tag=y_tag,
+                            family_relationship=family,
+                            bit_ids=bit_ids,
+                        )
                     )
-                )
+                else:
+                    relationships.append(
+                        HouseholdRelationship(
+                            kind="family",
+                            a_tag=x_tag,
+                            b_tag=y_tag,
+                            family_relationship=family,
+                            bit_ids=bit_ids,
+                        )
+                    )
             elif bit_ids:
                 relationships.append(
                     HouseholdRelationship(

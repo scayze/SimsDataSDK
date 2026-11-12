@@ -37,6 +37,7 @@ from .premades import (
     HouseholdRelationship,
     PremadeAncestor,
     PremadeBundle,
+    PremadeFamilyLink,
     PremadeHousehold,
     PremadeLot,
     PremadeSim,
@@ -101,6 +102,7 @@ __all__ = [
     "PremadeBundle",
     "HouseholdMember",
     "HouseholdRelationship",
+    "PremadeFamilyLink",
     "build_premades",
     "parse_resource_key",
     # world / starter-save resources

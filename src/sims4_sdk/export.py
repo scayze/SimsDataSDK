@@ -519,11 +519,36 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "gender_options": _gender_options_dict(value.gender_options, options),
         "spouse_id": value.spouse_id,
         "spouse_name": value.spouse_name,
+        "fiance_id": getattr(value, "fiance_id", None),
+        "fiance_name": getattr(value, "fiance_name", None),
+        "steady_ids": list(getattr(value, "steady_ids", []) or []),
+        "steady_names": list(getattr(value, "steady_names", []) or []),
         "parents": list(value.parents),
         "children": list(value.children),
         "siblings": list(value.siblings),
         "extended_family": list(value.extended_family),
+        "parent_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "parent_links", []) or []
+        ],
+        "extended_family_links": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "extended_family_links", []) or []
+        ],
+        "unlinked_relations": [
+            _premade_family_link_dict(item, options)
+            for item in getattr(value, "unlinked_relations", []) or []
+        ],
         "source": _source(value.source),
+    }
+
+
+def _premade_family_link_dict(value: Any, options: _Options) -> dict[str, Any]:
+    return {
+        "kind": value.kind,
+        "name": value.name,
+        "sim_id": value.sim_id,
+        "target_id": value.target_id,
     }
 
 
@@ -943,6 +968,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         HouseholdRelationship,
         PremadeAncestor,
         PremadeBundle,
+        PremadeFamilyLink,
         PremadeHousehold,
         PremadeLot,
         PremadeSim,
@@ -989,6 +1015,8 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         return _household_member_dict(obj, opts)
     if isinstance(obj, HouseholdRelationship):
         return _household_relationship_dict(obj, opts)
+    if isinstance(obj, PremadeFamilyLink):
+        return _premade_family_link_dict(obj, opts)
     if isinstance(obj, Trait):
         return _trait_dict(obj, opts)
     if isinstance(obj, Preference):

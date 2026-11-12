@@ -248,12 +248,14 @@ household ID.
 
 - **Available:** names, baked traits, preferences, gender options / attraction
   (when the template or SimInfo carries `trait_GenderOptions_*`), household
-  membership, household funds, spouse/parent relationships, ancestors, explicit
-  skills, explicit aspiration and career level, dynasty, occult, pregnancy,
-  gender and age (from starter-save resources), aspiration track, career track,
-  lots, lot↔household links, initial relationship defaults and cross-household
-  relationship values, and the steady/engagement/marriage bits plus family and
-  romance trope IDs.
+  membership, household funds, spouse/fiance/steady plus parent/child/sibling
+  relationships with typed kinds (`MOTHER`/`FATHER`/`MOTHERS_FATHER`/...),
+  dangling out-of-household targets (`PremadeSim.unlinked_relations`),
+  ancestors, explicit skills, explicit aspiration and career level, dynasty,
+  occult, pregnancy, gender and age (from starter-save resources), aspiration
+  track, career track, lots, lot↔household links, initial relationship defaults
+  and cross-household relationship values, and the steady/engagement/marriage
+  bits plus family and romance trope IDs.
 - **Template-only:** some newer-pack Sims (EP19+) do not pin an aspiration,
   career, gender or age in tuning and have no starter-save resource; the field
   is `None` rather than guessed.
