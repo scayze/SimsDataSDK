@@ -72,6 +72,7 @@ class Installation:
         self.locale = locale
         self.include_mods = include_mods
         self._simo_index: Optional[dict[int, tuple[PackageInfo, ResourceEntry]]] = None
+        self._image_index: Optional[dict[tuple[int, int], tuple[PackageInfo, ResourceEntry]]] = None
 
     # ------------------------------------------------------------------
     # package discovery
@@ -177,6 +178,87 @@ class Installation:
 
     def read_resource(self, info: PackageInfo, entry: ResourceEntry) -> bytes:
         return DBPF.read_entry(info.path, entry)
+
+    def image_index(self) -> dict[tuple[int, int], tuple[PackageInfo, ResourceEntry]]:
+        """Map ``(group, instance)`` to its image entry (mods win).
+
+        Tuning icon keys use type ``0x2F7D0004`` but the bytes usually live
+        in the ``0x00B2D882`` DST resource with the same group/instance, so
+        the index is keyed without the type.
+        """
+        if self._image_index is None:
+            from .core.resource_types import ICON_IMAGE_TYPE_IDS
+
+            index: dict[tuple[int, int], tuple[PackageInfo, ResourceEntry]] = {}
+            for info in self.packages:
+                try:
+                    package = DBPF(info.path)
+                except Exception:
+                    continue
+                for entry in package.iter_entries_for_types(ICON_IMAGE_TYPE_IDS):
+                    if entry.is_null:
+                        continue
+                    index[(entry.key.group, entry.key.instance)] = (info, entry)
+            self._image_index = index
+        return self._image_index
+
+    def find_image_entry(
+        self, group: int, instance: int
+    ) -> Optional[tuple[PackageInfo, ResourceEntry]]:
+        """Return the image entry for ``(group, instance)``, if any."""
+        return self.image_index().get((group, instance))
+
+    def read_image(self, key: object) -> Optional["GameImage"]:
+        """Read a tuning icon/thumbnail by key, string, or icon-bearing model.
+
+        Accepts a :class:`ResourceKey`, a ``"TTTT:GGGG:IIII"`` string, or any
+        model with an ``icon`` / ``thumbnail`` / ``icon_key`` attribute.
+        Returns a :class:`GameImage` (unshuffled DDS or PNG bytes plus size
+        metadata), or ``None`` when the key is missing/unresolvable.
+        """
+        from .core.dbpf import ResourceKey
+        from .core.images import decode_image, parse_image_key
+
+        resource_key: Optional[ResourceKey] = None
+        if isinstance(key, ResourceKey):
+            resource_key = key
+        elif isinstance(key, str):
+            resource_key = parse_image_key(key)
+        else:
+            for attr in ("icon_key", "thumbnail_key", "icon", "thumbnail"):
+                value = getattr(key, attr, None)
+                if isinstance(value, ResourceKey):
+                    resource_key = value
+                    break
+                if isinstance(value, str):
+                    parsed = parse_image_key(value)
+                    if parsed is not None:
+                        resource_key = parsed
+                        break
+        if resource_key is None:
+            return None
+        found = self.find_image_entry(resource_key.group, resource_key.instance)
+        if found is None:
+            # Fall back to an exact type/group/instance match.
+            raw = self.find_resource(
+                resource_key.type_id, resource_key.group, resource_key.instance
+            )
+            if raw is None:
+                return None
+            try:
+                return decode_image(resource_key, raw)
+            except Exception:
+                return None
+        info, entry = found
+        try:
+            raw = DBPF.read_entry(info.path, entry)
+            return decode_image(entry.key, raw)
+        except Exception:
+            return None
+
+    def read_icon(self, icon: object) -> Optional["GameImage"]:
+        """Alias for :meth:`read_image` for tuning ``icon`` fields."""
+        return self.read_image(icon)
 
     def find_resource(
         self,

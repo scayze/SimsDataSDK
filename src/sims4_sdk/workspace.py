@@ -245,6 +245,27 @@ class Sims4Workspace:
         )
 
     # ------------------------------------------------------------------
+    # icons / images
+    # ------------------------------------------------------------------
+    def icon_for(self, key: object) -> Optional["GameImage"]:
+        """Return the tuning icon for a catalog model, key, or key string.
+
+        Accepts anything with an ``icon``/``icon_key`` (Trait, Aspiration,
+        AspirationTrack, CareerTrack, Milestone, RelationshipBit) or
+        ``thumbnail``/``thumbnail_key`` (PremadeAncestor), plus raw
+        ``ResourceKey`` and ``"TTTT:GGGG:IIII"`` strings.  Returns ``None``
+        without an installation or when the image is absent.
+        """
+        if self.installation is None:
+            return None
+        return self.installation.read_image(key)
+
+    def icon_bytes(self, key: object) -> Optional[bytes]:
+        """Return raw icon bytes (DDS or PNG) for ``key``, if resolvable."""
+        image = self.icon_for(key)
+        return image.data if image is not None else None
+
+    # ------------------------------------------------------------------
     # wiki validation
     # ------------------------------------------------------------------
     def validate_wiki(

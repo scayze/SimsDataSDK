@@ -183,6 +183,13 @@ def _relationship_bit_ref(value: Any) -> Optional[dict[str, Any]]:
 # ----------------------------------------------------------------------
 # catalog models
 # ----------------------------------------------------------------------
+def _icon_key_str(value: Any) -> Optional[str]:
+    key = value.icon_key if hasattr(value, "icon_key") else None
+    if key is None and hasattr(value, "thumbnail_key"):
+        key = value.thumbnail_key
+    return str(key) if key is not None else None
+
+
 def _trait_dict(value: Any, options: _Options) -> dict[str, Any]:
     return {
         "id": value.id,
@@ -198,6 +205,7 @@ def _trait_dict(value: Any, options: _Options) -> dict[str, Any]:
         "is_internal": value.is_internal,
         "is_personality": value.is_personality,
         "icon": value.icon,
+        "icon_key": _icon_key_str(value),
         "conflicting_trait_ids": list(value.conflicting_trait_ids),
         "source": _source(value.source),
     }
@@ -241,6 +249,7 @@ def _aspiration_track_dict(value: Any, options: _Options) -> dict[str, Any]:
         "primary_trait_id": value.primary_trait_id,
         "reward_id": value.reward_id,
         "icon": value.icon,
+        "icon_key": _icon_key_str(value),
         "source": _source(value.source),
     }
 
@@ -257,6 +266,7 @@ def _aspiration_dict(value: Any, options: _Options) -> dict[str, Any]:
         "objective_ids": list(value.objective_ids),
         "primary_trait_id": value.primary_trait_id,
         "icon": value.icon,
+        "icon_key": _icon_key_str(value),
         "source": _source(value.source),
     }
 
@@ -269,6 +279,7 @@ def _career_track_dict(value: Any, options: _Options) -> dict[str, Any]:
         "description": value.description,
         "level_ids": list(value.level_ids),
         "icon": value.icon,
+        "icon_key": _icon_key_str(value),
         "source": _source(value.source),
     }
 
@@ -316,6 +327,7 @@ def _milestone_dict(value: Any, options: _Options) -> dict[str, Any]:
         "is_primary": value.is_primary,
         "goal_id": value.goal_id,
         "icon": value.icon,
+        "icon_key": _icon_key_str(value),
         "unlocked_text": value.unlocked_text,
         "source": _source(value.source),
     }
@@ -330,6 +342,7 @@ def _relationship_bit_dict(value: Any, options: _Options) -> dict[str, Any]:
         "depth": value.depth,
         "visible": value.visible,
         "icon": value.icon,
+        "icon_key": _icon_key_str(value),
         "triggered_track_id": value.triggered_track_id,
         "source": _source(value.source),
     }
@@ -649,6 +662,7 @@ def _premade_ancestor_dict(value: Any, options: _Options) -> dict[str, Any]:
         "gender": value.gender,
         "death_trait_id": value.death_trait_id,
         "thumbnail": value.thumbnail,
+        "thumbnail_key": _icon_key_str(value),
         "spouse_id": getattr(value, "spouse_id", None),
         "spouse_name": getattr(value, "spouse_name", None),
         "parents": list(getattr(value, "parents", []) or []),
@@ -687,6 +701,7 @@ def _family_tree_node_dict(value: Any, options: _Options) -> dict[str, Any]:
         "household_id": value.household_id,
         "household_name": value.household_name,
         "thumbnail": value.thumbnail,
+        "thumbnail_key": _icon_key_str(value),
         "death_trait_id": value.death_trait_id,
         "spouse_id": value.spouse_id,
         "spouse_name": value.spouse_name,
@@ -1215,6 +1230,17 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         return _source(obj)
     from .save.artwork import Artwork
     from .catalog.diagnostics import ExtractionIssue
+    from .core.images import GameImage
+    if isinstance(obj, GameImage):
+        data: dict[str, Any] = {
+            "key": str(obj.key),
+            "format": obj.format,
+            "width": obj.width,
+            "height": obj.height,
+        }
+        if opts.include_raw:
+            data["data"] = bytes(obj.data).hex()
+        return data
     if isinstance(obj, (SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue)):
         return _dataclass_dict(obj, opts)
     if isinstance(obj, TrayLibrary):

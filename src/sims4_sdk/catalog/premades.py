@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
 from ..core import DBPF, ResourceKey, TuningElement
+from ..core.images import parse_image_key
 from ..export import Serializable
 from ..installation import Installation
 from ..siminfo import SimInfo, SimInfoError
@@ -223,6 +224,15 @@ class PremadeAncestor(Serializable):
     sibling_links: list[PremadeFamilyLink] = field(default_factory=list)
     extended_family_links: list[PremadeFamilyLink] = field(default_factory=list)
     source: Optional[TuningSource] = None
+
+    @property
+    def thumbnail_key(self) -> Optional[ResourceKey]:
+        """Parsed ``thumbnail`` resource key, if present."""
+        return parse_image_key(self.thumbnail)
+
+    @property
+    def has_thumbnail(self) -> bool:
+        return self.thumbnail_key is not None
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
@@ -454,6 +464,15 @@ class FamilyTreeNode(Serializable):
     sibling_links: list[PremadeFamilyLink] = field(default_factory=list)
     extended_family_links: list[PremadeFamilyLink] = field(default_factory=list)
     unlinked_relations: list[PremadeFamilyLink] = field(default_factory=list)
+
+    @property
+    def thumbnail_key(self) -> Optional[ResourceKey]:
+        """Parsed ``thumbnail`` resource key, if present."""
+        return parse_image_key(self.thumbnail)
+
+    @property
+    def has_thumbnail(self) -> bool:
+        return self.thumbnail_key is not None
 
     def __repr__(self) -> str:
         return f"FamilyTreeNode({self.full_name!r}, kind={self.kind!r}, parents={len(self.parent_ids)}, children={len(self.child_ids)})"
@@ -2303,16 +2322,5 @@ def _pregnancy(view: TuningView) -> dict:
 
 
 def parse_resource_key(text: Optional[str]) -> Optional[ResourceKey]:
-    if not text:
-        return None
-    parts = text.strip().split(":")
-    if len(parts) != 3:
-        return None
-    try:
-        return ResourceKey(
-            type_id=int(parts[0], 16),
-            group=int(parts[1], 16),
-            instance=int(parts[2], 16),
-        )
-    except ValueError:
-        return None
+    """Parse ``TTTTTTTT:GGGGGGGG:IIIIIIIIIIIIIIII`` (kept for compatibility)."""
+    return parse_image_key(text)

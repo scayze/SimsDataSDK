@@ -20,6 +20,23 @@ SIMDATA_TYPE_ID: Final = 0x545AC67A
 #: SimInfo (a.k.a. SIMO) — baked Sim data / outfits.
 SIMOUTFIT_TYPE_ID: Final = 0x025ED6F4
 SIMINFO_TYPE_ID: Final = SIMOUTFIT_TYPE_ID
+#: DST (shuffled DDS) image — the storage format for tuning icons.
+DST_IMAGE_TYPE_ID: Final = 0x00B2D882
+#: Alternate DST overlay image type.
+DST_IMAGE_ALT_TYPE_ID: Final = 0xB6C8B6A0
+#: PNG image — tuning icon keys use this type, but the bytes usually live
+#: in the DST resource with the same group/instance.
+PNG_IMAGE_TYPE_ID: Final = 0x2F7D0004
+#: Compressed DDS variant.
+RLE_IMAGE_TYPE_ID: Final = 0x3453CF95
+#: Generic thumbnail image.
+THUMBNAIL_TYPE_ID: Final = 0x9C925813
+#: CAS part thumbnail image.
+CAS_THUMBNAIL_TYPE_ID: Final = 0x3C1AF1F2
+#: Image resource types that may hold a tuning icon's pixels.
+ICON_IMAGE_TYPE_IDS: Final = frozenset(
+    {DST_IMAGE_TYPE_ID, DST_IMAGE_ALT_TYPE_ID, PNG_IMAGE_TYPE_ID}
+)
 #: Tray item metadata.
 TRAYITEM_TYPE_ID: Final = 0x2A8A5E22
 #: Lot/household manifest used to build a new save (one record per lot).

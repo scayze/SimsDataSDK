@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from ..core.dbpf import ResourceKey
+from ..core.images import parse_icon_key
 from ..exceptions import Sims4SDKError
 from ..export import Serializable
 from .diagnostics import ExtractionIssue
@@ -111,6 +112,15 @@ class Trait(Serializable):
     source: Optional[TuningSource] = None
 
     @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        """Parsed ``icon`` resource key (``2f7d0004:...``), if present."""
+        return parse_icon_key(self.icon)
+
+    @property
+    def has_icon(self) -> bool:
+        return self.icon_key is not None
+
+    @property
     def is_personality(self) -> bool:
         return self.trait_type == "PERSONALITY"
 
@@ -186,6 +196,15 @@ class AspirationTrack(Serializable):
     icon: Optional[str] = None
     source: Optional[TuningSource] = None
 
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        """Parsed ``icon`` resource key, if present."""
+        return parse_icon_key(self.icon)
+
+    @property
+    def has_icon(self) -> bool:
+        return self.icon_key is not None
+
 
 @dataclass
 class Aspiration(Serializable):
@@ -201,6 +220,15 @@ class Aspiration(Serializable):
     icon: Optional[str] = None
     source: Optional[TuningSource] = None
 
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        """Parsed ``icon`` resource key, if present."""
+        return parse_icon_key(self.icon)
+
+    @property
+    def has_icon(self) -> bool:
+        return self.icon_key is not None
+
     def __repr__(self) -> str:
         return f"Aspiration({self.name!r}, display={self.display_name!r})"
 
@@ -214,6 +242,15 @@ class CareerTrack(Serializable):
     level_ids: list[int] = field(default_factory=list)
     icon: Optional[str] = None
     source: Optional[TuningSource] = None
+
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        """Parsed ``icon`` resource key, if present."""
+        return parse_icon_key(self.icon)
+
+    @property
+    def has_icon(self) -> bool:
+        return self.icon_key is not None
 
 
 @dataclass
@@ -264,6 +301,15 @@ class Milestone(Serializable):
     unlocked_text: Optional[str] = None
     source: Optional[TuningSource] = None
 
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        """Parsed ``icon`` resource key, if present."""
+        return parse_icon_key(self.icon)
+
+    @property
+    def has_icon(self) -> bool:
+        return self.icon_key is not None
+
     def __repr__(self) -> str:
         return f"Milestone({self.name!r}, display={self.display_name!r})"
 
@@ -279,6 +325,15 @@ class RelationshipBit(Serializable):
     icon: Optional[str] = None
     triggered_track_id: Optional[int] = None
     source: Optional[TuningSource] = None
+
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        """Parsed ``icon`` resource key, if present."""
+        return parse_icon_key(self.icon)
+
+    @property
+    def has_icon(self) -> bool:
+        return self.icon_key is not None
 
 
 @dataclass
