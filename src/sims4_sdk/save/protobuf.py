@@ -128,6 +128,8 @@ def decode_message(
         if spec.kind == "message":
             if spec.message is None:
                 raise ProtobufError(f"field {spec.name!r} has no message schema")
+            if spec.message not in schemas:
+                raise ProtobufError(f"unknown schema {spec.message!r} for field {spec.name!r}")
             try:
                 decoded = decode_message(value, schemas[spec.message], schemas)
             except ProtobufError as exc:

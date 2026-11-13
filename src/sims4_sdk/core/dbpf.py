@@ -319,7 +319,7 @@ class DBPF:
             # Read the whole index once; entry-wise reads dominated the scan.
             fp.seek(index_offset)
             available = file_size - index_offset
-            wanted = min(available, _INDEX_PREFIX + entry_count * _MAX_ENTRY_SIZE)
+            wanted = min(available, index_size, _INDEX_PREFIX + entry_count * _MAX_ENTRY_SIZE)
             index_data = fp.read(wanted)
 
         if len(index_data) < 4:
@@ -459,25 +459,25 @@ class DBPF:
             COMPRESSION_UNCOMPRESSED_ALT,
         ):
             if refpack.is_refpack(raw):
-                return refpack.decompress(raw)
+                return _check_size(refpack.decompress(raw), mem_size)
             if compression == COMPRESSION_UNCOMPRESSED_ALT:
                 return raw
             # Some shipped resources lie about the compression ID.
             try:
-                return refpack.decompress(raw)
+                return _check_size(refpack.decompress(raw), mem_size)
             except refpack.RefPackError:
                 pass
             try:
                 return _zlib_or_fail(raw, mem_size)
-            except DBPFError:
-                return raw
+            except DBPFError as exc:
+                raise DBPFError("invalid RefPack or zlib resource") from exc
 
         if compression == COMPRESSION_NONE:
             return raw
 
         # Unknown compression ID: try the magic bytes before giving up.
         if refpack.is_refpack(raw):
-            return refpack.decompress(raw)
+            return _check_size(refpack.decompress(raw), mem_size)
         try:
             return _zlib_or_fail(raw, mem_size)
         except DBPFError:
@@ -504,10 +504,17 @@ class DBPF:
 
 def _zlib_or_fail(raw: bytes, mem_size: int = 0) -> bytes:
     try:
-        return zlib.decompress(raw)
+        result = zlib.decompress(raw)
     except zlib.error:
         # A handful of resources carry a 4-byte length prefix before the stream.
         try:
-            return zlib.decompress(raw[4:])
+            result = zlib.decompress(raw[4:])
         except zlib.error as exc:
             raise DBPFError(f"zlib decompression failed: {exc}") from exc
+    return _check_size(result, mem_size)
+
+
+def _check_size(data: bytes, expected: int) -> bytes:
+    if expected and len(data) != expected:
+        raise DBPFError(f"decompressed {len(data)} bytes, expected {expected}")
+    return data

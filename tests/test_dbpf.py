@@ -1,3 +1,6 @@
+import struct
+import zlib
+
 import pytest
 
 from sims4_sdk.core import (
@@ -170,3 +173,22 @@ def test_resource_key_text_roundtrip() -> None:
 
 def test_decompress_unknown_id_falls_back_to_raw() -> None:
     assert DBPF.decompress(0x1234, b"raw bytes") == b"raw bytes"
+
+
+def test_index_cannot_read_past_declared_size(tmp_path) -> None:
+    data = bytearray(build_package([
+        {"type": 1, "group": 0, "instance": 1, "data": b"extra bytes"},
+    ]))
+    struct.pack_into("<I", data, 0x2C, 4)
+    with pytest.raises(DBPFError, match="truncated entry table"):
+        DBPF(_write(tmp_path, data))
+
+
+def test_invalid_refpack_resource_raises() -> None:
+    with pytest.raises(DBPFError):
+        DBPF.decompress(0xFFFF, b"not compressed", 20)
+
+
+def test_decompressed_size_mismatch_raises() -> None:
+    with pytest.raises(DBPFError, match="expected 10"):
+        DBPF.decompress(0x5A42, zlib.compress(b"abc"), 10)

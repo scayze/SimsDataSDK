@@ -63,6 +63,12 @@ SCHEMAS = {
 }
 
 
+def test_missing_nested_schema_raises_protobuf_error() -> None:
+    schemas = {"Parent": {1: FieldSpec("child", "message", message="Missing")}}
+    with pytest.raises(ProtobufError, match="unknown schema 'Missing'"):
+        decode(enc_bytes(1, b""), "Parent", schemas)
+
+
 def test_scalars_and_message() -> None:
     child = enc_uint(1, 42)
     data = (
