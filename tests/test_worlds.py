@@ -188,6 +188,38 @@ def test_parse_premade_household_v2_header() -> None:
     assert len(record.members) == 2
 
 
+def test_starter_localized_name_keys_and_resolution() -> None:
+    from sims4_sdk.catalog.models import Catalog
+    from sims4_sdk.catalog.premades import build_premades
+    from sims4_sdk.catalog.static import StaticData
+
+    keyed = (_member("", "", sim_id=101) + _varint_field(55, 1001)
+             + _field(56, 5, struct.pack("<I", 1002)))
+    inline = (_member("Inline", "", sim_id=102) + _varint_field(55, 1003)
+              + _varint_field(56, 1004))
+    payload = _bytes_field(1, _household([keyed, inline], name="Family"))
+    record = parse_premade_household(_v0resource(payload), instance=9,
+                                     strings={1001: "First", 1002: "Last", 1003: "Ignored"})
+    first, second = record.members
+    assert first.full_name == "First Last"
+    assert (first.first_name_key, first.last_name_key) == (1001, 1002)
+    assert second.first_name == "Inline" and second.last_name == ""
+    assert second.last_name_key == 1004  # unresolved, not an empty encoded name
+
+    world = WorldData(households={9: record})
+    catalog = Catalog(strings={1001: "Autre", 1002: "Nom", 1004: "Famille"})
+    bundle = build_premades(None, catalog, {}, {}, world=world, siminfo_index={})
+    assert {sim.full_name for sim in bundle.sims} == {"Autre Nom", "Inline Famille"}
+    exported = StaticData(catalog=catalog, premades=bundle, world=world).to_dict()
+    members = exported["world"]["households"]["9"]["members"]
+    assert members[0]["first_name_key"] == 1001
+    assert members[1]["last_name_key"] == 1004
+
+    world.resolve_names({})
+    assert first.full_name == "" and second.full_name == "Inline"
+    assert first.first_name_key == 1001
+
+
 def test_parse_premade_household_family() -> None:
     mother = _member("Bella", "Goth", sim_id=2, gender=0x2000, age=32)
     father = _member(

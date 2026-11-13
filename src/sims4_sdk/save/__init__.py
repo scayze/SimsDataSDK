@@ -33,7 +33,8 @@ from .models import (
 )
 from .protobuf import ProtobufError, decode, iter_fields
 from .reader import SaveError, read_save, read_save_resource, sim_from_dict
-from .tray import TrayError, read_household_binary, read_tray_item, read_tray_library
+from .tray import (TrayError, TrayListing, TrayListingGroup, list_tray_households,
+                   read_household_binary, read_tray_item, read_tray_library)
 
 __all__ = [
     "Artwork", "ArtworkError", "decode_artwork", "read_tray_image",
@@ -65,6 +66,9 @@ __all__ = [
     "TrayItem",
     "TrayHousehold",
     "TrayLibrary",
+    "TrayListing",
+    "TrayListingGroup",
+    "list_tray_households",
     # readers
     "read_save",
     "read_save_resource",

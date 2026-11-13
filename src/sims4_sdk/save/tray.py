@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import struct
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 from ..catalog.models import Catalog
 from ..exceptions import Sims4SDKError
+from ..export import Serializable
 from .models import SavedSim, TrayHousehold, TrayItem, TrayLibrary
 from .protobuf import ProtobufError, decode
 from .reader import sim_from_dict, _as_list
@@ -19,6 +21,9 @@ __all__ = [
     "read_household_binary",
     "read_tray_library",
     "pair_key",
+    "TrayListingGroup",
+    "TrayListing",
+    "list_tray_households",
 ]
 
 
@@ -143,3 +148,106 @@ def read_tray_library(
         households.append(household)
 
     return TrayLibrary(items=list(items.values()), households=households, errors=errors)
+
+
+@dataclass
+class TrayListingGroup(Serializable):
+    """Files sharing a Tray identifier; duplicate files are kept visible."""
+
+    identifier: str
+    household_files: list[Path] = field(default_factory=list)
+    item_files: list[Path] = field(default_factory=list)
+    household_images: list[Path] = field(default_factory=list)
+    sim_images: list[Path] = field(default_factory=list)
+    household: Optional[TrayHousehold] = None
+    item: Optional[TrayItem] = None
+    modified: Optional[float] = None
+
+
+@dataclass
+class TrayListing(Serializable):
+    groups: list[TrayListingGroup] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
+    unmatched_images: list[Path] = field(default_factory=list)
+
+
+def list_tray_households(folder: str | Path) -> TrayListing:
+    """Discover groups without a catalog or loading images.
+
+    Ambiguous duplicate files are retained but not decoded. Sim portraits are
+    associated by Sim ID, not by filename proximity or Sim name.
+    """
+    result = TrayListing()
+    groups: dict[str, TrayListingGroup] = {}
+    images: list[Path] = []
+    for path in sorted(Path(folder).iterdir(), key=lambda p: p.name.casefold()):
+        if not path.is_file():
+            continue
+        ext = path.suffix.casefold()
+        if ext in (".sgi", ".hhi"):
+            images.append(path)
+        elif ext in (".householdbinary", ".trayitem"):
+            key = pair_key(path).casefold()
+            group = groups.setdefault(key, TrayListingGroup(identifier=key))
+            (group.household_files if ext == ".householdbinary" else group.item_files).append(path)
+
+    def failure(path: Path, exc: Exception) -> None:
+        result.errors.append({"path": str(path), "error": f"{type(exc).__name__}: {exc}"})
+
+    for group in groups.values():
+        for paths in (group.household_files, group.item_files):
+            if len(paths) > 1:
+                for path in paths:
+                    failure(path, TrayError("ambiguous files with the same identifier"))
+        for path in group.household_files + group.item_files:
+            try:
+                modified = path.stat().st_mtime
+                group.modified = max(group.modified or modified, modified)
+            except OSError as exc:
+                failure(path, exc)
+        if len(group.item_files) == 1:
+            try:
+                group.item = read_tray_item(group.item_files[0])
+            except Exception as exc:
+                failure(group.item_files[0], exc)
+        if len(group.household_files) == 1:
+            try:
+                group.household = read_household_binary(group.household_files[0])
+                group.household.item = group.item
+            except Exception as exc:
+                failure(group.household_files[0], exc)
+
+    # Store portrait associations separately: their file ID is a Sim ID, not
+    # the household group ID, and can be ambiguous across library entries.
+    for path in images:
+        try:
+            image_id = int(pair_key(path), 0)
+        except ValueError:
+            result.unmatched_images.append(path)
+            continue
+        matches = []
+        for group in groups.values():
+            if path.suffix.casefold() == ".hhi":
+                try:
+                    if int(group.identifier, 0) == image_id:
+                        matches.append(group)
+                except ValueError:
+                    pass
+            elif group.household:
+                matches.extend(group for sim in group.household.sims if sim.sim_id == image_id)
+        if len(matches) == 1:
+            if path.suffix.casefold() == ".hhi":
+                matches[0].household_images.append(path)
+            else:
+                matches[0].sim_images.append(path)
+            try:
+                modified = path.stat().st_mtime
+                matches[0].modified = max(matches[0].modified or modified, modified)
+            except OSError as exc:
+                failure(path, exc)
+        else:
+            result.unmatched_images.append(path)
+            if len(matches) > 1:
+                failure(path, TrayError("image matches multiple households"))
+    result.groups = list(groups.values())
+    return result

@@ -117,7 +117,24 @@ traits, likes/dislikes, careers, skills, genealogy, and pregnancy work identical
 for dictionaries with `path` and `error` strings; the same diagnostics are
 included in `library.to_dict()`. Direct single-file readers still raise errors.
 
+For a file-oriented view, `sims4_sdk.save.list_tray_households(folder)` returns
+groups with the household and item paths, decoded data, image paths, and latest
+file modification time. Incomplete groups remain visible. Duplicate household
+or item files sharing an identifier are reported as ambiguous and are not
+selected for decoding. Household images are matched by household identifier;
+Sim portraits are matched by decoded Sim ID. Unmatched or ambiguous images are
+retained in `unmatched_images`, and errors in `errors`. This avoids loading a
+catalog or decoding image bytes, but still decodes full household protobufs; it
+is not a names-only parser. Tray item text is not assigned as an aspiration to
+a Sim based on proximity.
+
 ## Artwork
+
+`decode_artwork(data)` and `read_tray_image(path)` reject JPEGs without an end
+marker by default. Pass `tolerate_missing_end=True` to retain a structurally
+parsed image scan without that marker; the returned `Artwork` preserves the
+bytes and sets `missing_end_marker`. This does not validate JPEG pixel data or
+repair truncated segments, and PNG conversion may still fail.
 
 Save thumbnails and lot artwork are read from the save package's image
 resources and exposed as `save.artwork`, keyed by their complete `ResourceKey`.
@@ -157,6 +174,19 @@ fiancé and steady partner IDs, occult flags and the decoded degree tracker on
 `StarterMember`. These use the same relationship and milestone models as saves.
 Skill values remain raw XP: the SDK does not currently infer skill levels or
 distinguish an unassigned skill's floor from a deliberately assigned skill.
+
+For an explicit, shared conversion of raw values from starter, save, or Tray
+data, use `sims4_sdk.skills.convert_skill_xp(value, curve, assigned=...)`.
+`SkillCurve` accepts inclusive thresholds starting at level 1, and values above
+the last threshold are capped. Without a curve the result preserves XP and has
+`status="unresolved_curve"`; assignment defaults to unknown and a known
+unassigned value has no displayed level. A 100 XP value alone does not prove
+assignment. The optional adult, child, toddler, and vampire-lore reference
+curves are historical studio estimates calibrated against observed starter XP,
+not thresholds extracted from game tuning. Select them only when the caller has
+evidence that they apply; skill names are not used to select a curve. Custom
+curves can be supplied with their source. Automatic game/mod curve discovery and
+assignment detection are not implemented.
 
 ## Validation
 

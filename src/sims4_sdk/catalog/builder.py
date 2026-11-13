@@ -60,7 +60,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-17"
+CACHE_VERSION = "step2-18"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
@@ -245,7 +245,7 @@ def collect_package_data(
             package = DBPF(info.path)
         except Exception as exc:
             data.diagnostics.append(ExtractionIssue.from_exception(
-                "package_open", exc, package_path=str(info.path)
+                "package_open", exc, package_path=str(info.path), recoverable=True
             ))
             continue
 
@@ -267,7 +267,8 @@ def collect_package_data(
                     combined_blobs.append((DBPF.read_entry(package.path, entry), entry_source))
                 except Exception as exc:
                     data.diagnostics.append(ExtractionIssue.from_exception(
-                        "resource_read", exc, package_path=str(info.path), resource_key=entry.key
+                        "resource_read", exc, package_path=str(info.path), resource_key=entry.key,
+                        recoverable=True,
                     ))
                     continue
             elif type_id == TUNING_TYPE_ID:
@@ -282,7 +283,8 @@ def collect_package_data(
                         combined = CombinedTuning.from_xml(f"<root>{text}</root>")
                 except Exception as exc:
                     data.diagnostics.append(ExtractionIssue.from_exception(
-                        "tuning_read", exc, package_path=str(info.path), resource_key=entry.key
+                        "tuning_read", exc, package_path=str(info.path), resource_key=entry.key,
+                        recoverable=True,
                     ))
                     continue
                 for tuning in combined:
@@ -294,7 +296,8 @@ def collect_package_data(
                         raw = DBPF.read_entry(package.path, entry)
                     except Exception as exc:
                         data.diagnostics.append(ExtractionIssue.from_exception(
-                            "resource_read", exc, package_path=str(info.path), resource_key=entry.key
+                            "resource_read", exc, package_path=str(info.path), resource_key=entry.key,
+                            recoverable=True,
                         ))
                     else:
                         data.world.add_household(entry.key.instance, raw, entry_source)
@@ -304,7 +307,8 @@ def collect_package_data(
                         raw = DBPF.read_entry(package.path, entry)
                     except Exception as exc:
                         data.diagnostics.append(ExtractionIssue.from_exception(
-                            "resource_read", exc, package_path=str(info.path), resource_key=entry.key
+                            "resource_read", exc, package_path=str(info.path), resource_key=entry.key,
+                            recoverable=True,
                         ))
                     else:
                         data.world.add_lot(entry.key.instance, raw, entry_source)
@@ -323,7 +327,7 @@ def collect_package_data(
                 except Exception as exc:
                     data.diagnostics.append(ExtractionIssue.from_exception(
                         "combined_tuning", exc, package_path=str(info.path),
-                        resource_key=entry_source.resource_key,
+                        resource_key=entry_source.resource_key, recoverable=True,
                     ))
                     continue
                 combined_cache[content_key] = combined

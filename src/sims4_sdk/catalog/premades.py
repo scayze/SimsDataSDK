@@ -787,6 +787,7 @@ def build_premades(
                 sim.household_name = household.name
 
     if world is not None:
+        world.resolve_names(catalog.strings)
         aliases, household_id_aliases = _merge_world(catalog, sims, households, world)
     else:
         aliases, household_id_aliases = {}, {}

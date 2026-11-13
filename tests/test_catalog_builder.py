@@ -112,6 +112,9 @@ def test_scan_preserves_sources_raw_world_and_reports_failed_inputs(tmp_path) ->
     assert broken.package_path == str(path)
     assert broken.resource_key == ResourceKey(COMBINED_TUNING_TYPE_ID, 4, 2)
     assert broken.to_dict()["resource_key"] == str(broken.resource_key)
+    assert broken.recoverable is True
+    assert broken.to_dict()["recoverable"] is True
+    assert broken.to_dict()["unsupported_format"] is None
     trait = data.catalog.traits[1234]
     assert trait.source.path == str(path)
     assert trait.source.resource_key == ResourceKey(COMBINED_TUNING_TYPE_ID, 3, 1)

@@ -102,6 +102,25 @@ def test_rejects_malformed_images_and_wrappers(tmp_path):
         read_tray_image(path)
 
 
+def test_missing_end_marker_requires_explicit_tolerance(tmp_path):
+    incomplete = jpeg()[:-2]
+    with pytest.raises(ArtworkError, match="end marker"):
+        decode_artwork(incomplete)
+    image = decode_artwork(incomplete, tolerate_missing_end=True)
+    assert image.jpeg == incomplete
+    assert image.alpha_mask == PNG
+    assert image.missing_end_marker is True
+    assert image.to_dict()["missing_end_marker"] is True
+    path = tmp_path / "image.hhi"
+    path.write_bytes(wrapped(incomplete))
+    assert read_tray_image(path, tolerate_missing_end=True).missing_end_marker
+    with pytest.raises(ArtworkError):
+        decode_artwork(b"\xff\xd8\xff\xe0\x00\x10bad", tolerate_missing_end=True)
+    with pytest.raises(ArtworkError, match="length mismatch"):
+        decode_artwork(incomplete.replace(len(PNG).to_bytes(4, "big"), (999).to_bytes(4, "big"), 1),
+                       tolerate_missing_end=True)
+
+
 def test_tray_household_images_and_member_portraits(tmp_path):
     hh = TrayHousehold(path=tmp_path / "0x00000000!0x0000000000000123.householdbinary", sims=[SavedSim(sim_id=0x124)])
     (tmp_path / "0x00000002!0x0000000000000123.hhi").write_bytes(wrapped(jpeg(width=30, height=20)))

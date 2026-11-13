@@ -153,6 +153,22 @@ class StarterMember:
     careers: list[StarterCareer] = field(default_factory=list)
     skills: list[tuple[int, float]] = field(default_factory=list)
     relations: list[StarterRelation] = field(default_factory=list)
+    #: Localization keys in fields 55/56, even when resolution fails.
+    first_name_key: Optional[int] = None
+    last_name_key: Optional[int] = None
+    _inline_first_name: str = field(default="", repr=False)
+    _inline_last_name: str = field(default="", repr=False)
+
+    def resolve_names(self, strings: Mapping[int, str]) -> None:
+        """Resolve keyed names; inline names take precedence over STBL values.
+
+        Missing keys remain available in ``first_name_key``/``last_name_key``.
+        The method may be called again with a different locale's string table.
+        """
+        if self.first_name_key is not None:
+            self.first_name = self._inline_first_name or strings.get(self.first_name_key, "")
+        if self.last_name_key is not None:
+            self.last_name = self._inline_last_name or strings.get(self.last_name_key, "")
 
     @property
     def full_name(self) -> str:
@@ -197,6 +213,17 @@ class WorldData:
     #: Winners by full resource key, preserving resources in different groups.
     household_resources: dict[ResourceKey, StarterHouseholdRecord] = field(default_factory=dict)
     lot_resources: dict[ResourceKey, LotRecord] = field(default_factory=dict)
+
+    def resolve_names(self, strings: Mapping[int, str]) -> None:
+        """Resolve starter-member names against a selected locale's STBL map."""
+        records = list(self.household_resources.values()) + list(self.households.values())
+        seen: set[int] = set()
+        for record in records:
+            if id(record) in seen:
+                continue
+            seen.add(id(record))
+            for member in record.members:
+                member.resolve_names(strings)
 
     def find_members(self, sim_id: int) -> list[tuple[StarterHouseholdRecord, StarterMember]]:
         """Return all matching source records; the same ID can occur more than once."""
@@ -367,6 +394,7 @@ def parse_premade_household(
     *,
     instance: int = 0,
     source: Optional[TuningSource] = None,
+    strings: Optional[Mapping[int, str]] = None,
 ) -> StarterHouseholdRecord:
     """Parse one ``0xB3C438F0`` household resource.
 
@@ -385,6 +413,9 @@ def parse_premade_household(
         record = _parse_household_payload(payload, instance, source)
         if record is not None:
             record.raw = data
+            if strings is not None:
+                for member in record.members:
+                    member.resolve_names(strings)
             return record
     raise WorldDataError("household resource has no household message")
 
@@ -459,6 +490,10 @@ def _parse_member(data: bytes, index: int) -> StarterMember:
         spouse_id=_integer(fields, 15) or None,
         fiance_id=_integer(fields, 68) or None,
         aspiration_track_id=_varint(fields, 34),
+        first_name_key=_integer(fields, 55),
+        last_name_key=_integer(fields, 56),
+        _inline_first_name=_text(fields, 5) or "",
+        _inline_last_name=_text(fields, 6) or "",
     )
 
     for number, wire, value in fields:

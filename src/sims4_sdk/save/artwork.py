@@ -36,6 +36,7 @@ class Artwork(Serializable):
     alpha_format: Optional[str] = None
     width: Optional[int] = None
     height: Optional[int] = None
+    missing_end_marker: bool = False
 
     def to_png(self) -> bytes:
         """Return PNG bytes with the embedded alpha mask applied, if present."""
@@ -61,11 +62,13 @@ class Artwork(Serializable):
             raise ArtworkError(f"could not convert artwork to PNG: {exc}") from exc
 
 
-def decode_artwork(data: bytes) -> Artwork:
+def decode_artwork(data: bytes, *, tolerate_missing_end: bool = False) -> Artwork:
     """Parse one JPEG, including its optional Maxis ALFA/ALFJ alpha segment.
 
     Trailing bytes after the JPEG end marker are omitted. Invalid image headers
     raise :class:`ArtworkError`; JPEG pixel data is not decoded or validated.
+    With ``tolerate_missing_end``, a structurally parsed JPEG scan lacking an
+    end marker is returned unchanged and marked ``missing_end_marker``.
     """
     if not data.startswith(b"\xff\xd8"):
         raise ArtworkError("artwork is not a JPEG")
@@ -75,6 +78,17 @@ def decode_artwork(data: bytes) -> Artwork:
     alpha_size: Optional[int] = None
     alpha_format = None
     width = height = None
+
+    def finish(jpeg: bytes, *, missing_end: bool = False) -> Artwork:
+        alpha = b"".join(alpha_parts) if alpha_size is not None else None
+        if alpha_size is not None and len(alpha) != alpha_size:
+            raise ArtworkError("alpha segment length mismatch")
+        if alpha is not None:
+            signature = _PNG_MAGIC if alpha_format == "png" else b"\xff\xd8"
+            if not alpha.startswith(signature):
+                raise ArtworkError(f"invalid {alpha_format} alpha image")
+        return Artwork(jpeg, alpha, alpha_format, width, height, missing_end)
+
     while pos < len(data):
         if in_scan:
             pos = data.find(b"\xff", pos)
@@ -92,14 +106,7 @@ def decode_artwork(data: bytes) -> Artwork:
             continue
         in_scan = False
         if marker == 0xD9:
-            alpha = b"".join(alpha_parts) if alpha_size is not None else None
-            if alpha_size is not None and len(alpha) != alpha_size:
-                raise ArtworkError("alpha segment length mismatch")
-            if alpha is not None:
-                signature = _PNG_MAGIC if alpha_format == "png" else b"\xff\xd8"
-                if not alpha.startswith(signature):
-                    raise ArtworkError(f"invalid {alpha_format} alpha image")
-            return Artwork(data[:pos], alpha, alpha_format, width, height)
+            return finish(data[:pos])
         if marker == 0x01 or 0xD0 <= marker <= 0xD7:
             continue
         if marker in (0, 0xD8) or pos + 2 > len(data):
@@ -127,18 +134,20 @@ def decode_artwork(data: bytes) -> Artwork:
         pos = end
         if marker == 0xDA:
             in_scan = True
+    if tolerate_missing_end and in_scan:
+        return finish(data, missing_end=True)
     raise ArtworkError("JPEG has no end marker")
 
 
-def read_tray_image(path: str | Path) -> Artwork:
+def read_tray_image(path: str | Path, *, tolerate_missing_end: bool = False) -> Artwork:
     """Read a Tray ``.hhi`` or ``.sgi`` image, including supported wrappers."""
     data = Path(path).read_bytes()
     if data.startswith(b"\xff\xd8"):
-        return decode_artwork(data)
+        return decode_artwork(data, tolerate_missing_end=tolerate_missing_end)
     if len(data) < 24 or data[8:24] != _TRAY_MARKER:
         raise ArtworkError("unsupported Tray image wrapper")
     length = int.from_bytes(data[:8], "little")
     if length != len(data) - 24:
         raise ArtworkError("Tray image wrapper length mismatch")
     payload = bytes(value ^ _TRAY_XOR[index % 8] for index, value in enumerate(data[24:]))
-    return decode_artwork(payload)
+    return decode_artwork(payload, tolerate_missing_end=tolerate_missing_end)

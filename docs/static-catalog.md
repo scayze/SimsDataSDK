@@ -49,6 +49,10 @@ Package scans are best effort. Inspect `static.catalog.diagnostics` for
 structured `ExtractionIssue` records describing skipped packages, failed
 resource reads, string tables, and model parsing. The stage, exception type,
 message, package path, resource key and tuning ID are included when known.
+`recoverable` is true when the operation continued after the issue, false when
+it could not continue, and null when unknown; it does not mean the skipped data
+was recovered. `unsupported_format` is populated only when a format is known
+to be unsupported. Both fields serialize to JSON and may be null.
 An empty diagnostics list does not establish that all game data is understood.
 
 ### Classes extracted
@@ -149,6 +153,7 @@ Each household member message carries:
 | Field | Meaning |
 | --- | --- |
 | `5` / `6` | first name / last name |
+| `55` / `56` | first name / last name STBL keys, when names are localized |
 | `7` | gender flag (`0x1000` male, `0x2000` female) |
 | `8` | age flag (`4` child, `8` teen, `16` young adult, `32` adult, `64` elder) |
 | `12` | body/genetics float list |
@@ -158,6 +163,15 @@ Each household member message carries:
 | `30.14` | genealogy: repeated `(relation type, ancestor Sim ID)` — `0` mother, `1` father, `2/3` maternal grandparents, `4/5` paternal grandparents |
 | `15` | spouse Sim ID |
 | `34` | aspiration track ID |
+
+`StarterMember.first_name_key` and `.last_name_key` preserve these keys even
+if the selected locale has no matching string. During a static build the SDK
+resolves them against the same merged locale table as the catalog, before
+building premade Sim models. Inline names take precedence. An unresolved name
+is empty and its key remains available; no name is guessed. Standalone callers
+can pass `strings=` to `parse_premade_household`, or call
+`WorldData.resolve_names(strings)` with a different locale's table. Rebuild a
+cached static snapshot to populate names after upgrading.
 
 Builds cache Combined Tuning parsing per unique resource content: several packs
 ship the same blob in both `SimulationPreload.package` and

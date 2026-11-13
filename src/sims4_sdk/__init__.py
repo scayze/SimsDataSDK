@@ -175,6 +175,9 @@ from .save import (
     TrayHousehold,
     TrayItem,
     TrayLibrary,
+    TrayListing,
+    TrayListingGroup,
+    list_tray_households,
     read_save,
     read_tray_library,
 )
@@ -290,6 +293,9 @@ __all__ = [
     "TrayLibrary",
     "TrayHousehold",
     "TrayItem",
+    "TrayListing",
+    "TrayListingGroup",
+    "list_tray_households",
     "read_tray_library",
     "TrayError",
     # serialization

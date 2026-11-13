@@ -1229,6 +1229,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
     if isinstance(obj, TuningSource):
         return _source(obj)
     from .save.artwork import Artwork
+    from .save.tray import TrayListing, TrayListingGroup
     from .catalog.diagnostics import ExtractionIssue
     from .core.images import GameImage
     if isinstance(obj, GameImage):
@@ -1241,7 +1242,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         if opts.include_raw:
             data["data"] = bytes(obj.data).hex()
         return data
-    if isinstance(obj, (SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue)):
+    if isinstance(obj, (SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue, TrayListing, TrayListingGroup)):
         return _dataclass_dict(obj, opts)
     if isinstance(obj, TrayLibrary):
         return _tray_library_dict(obj, opts)

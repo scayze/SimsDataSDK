@@ -13,7 +13,12 @@ __all__ = ["ExtractionIssue"]
 
 @dataclass(frozen=True)
 class ExtractionIssue(Serializable):
-    """One failed extraction step, with its source when available."""
+    """One failed extraction step, with its source when available.
+
+    ``recoverable`` describes whether the surrounding operation continued, not
+    whether the skipped data can be recovered.  ``None`` means it is unknown.
+    ``unsupported_format`` identifies a format only when positively known.
+    """
 
     stage: str
     message: str
@@ -21,10 +26,14 @@ class ExtractionIssue(Serializable):
     package_path: Optional[str] = None
     resource_key: Optional[ResourceKey] = None
     tuning_id: Optional[int] = None
+    recoverable: Optional[bool] = None
+    unsupported_format: Optional[str] = None
 
     @classmethod
     def from_exception(
         cls, stage: str, exc: Exception, *, package_path: Optional[str] = None,
         resource_key: Optional[ResourceKey] = None, tuning_id: Optional[int] = None,
+        recoverable: Optional[bool] = None, unsupported_format: Optional[str] = None,
     ) -> "ExtractionIssue":
-        return cls(stage, str(exc), type(exc).__name__, package_path, resource_key, tuning_id)
+        return cls(stage, str(exc), type(exc).__name__, package_path, resource_key,
+                   tuning_id, recoverable, unsupported_format)
