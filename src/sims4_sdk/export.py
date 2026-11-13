@@ -470,6 +470,8 @@ def _catalog_dict(catalog: Any, options: _Options) -> dict[str, Any]:
         "career_tracks": _by_id(catalog.career_tracks, _career_track_dict, options),
         "career_levels": _by_id(catalog.career_levels, _career_level_dict, options),
         "milestones": _by_id(catalog.milestones, _milestone_dict, options),
+        "statistics": _by_id(catalog.statistics, _dataclass_dict, options),
+        "tuning_overrides": _jsonable(catalog.tuning_overrides, options),
         "relationship_bits": _by_id(
             catalog.relationship_bits, _relationship_bit_dict, options
         ),
@@ -991,6 +993,8 @@ def _save_file_dict(value: Any, options: _Options) -> dict[str, Any]:
             for key, image in value.artwork.items()
         },
         "artwork_errors": list(value.artwork_errors),
+        "relationship_coverage": value.relationship_coverage,
+        "diagnostics": _jsonable(value.diagnostics, options),
     }
     if options.include_raw:
         data["raw"] = _jsonable(value.raw, options)
@@ -1098,6 +1102,8 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         RelationshipDefault,
         RelationshipTrackValue,
         SkillLevel,
+        StatisticDefinition,
+        TuningCandidate,
         Trait,
         TraitCondition,
         TuningSource,
@@ -1168,6 +1174,10 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         return _loot_bit_op_dict(obj, opts)
     if isinstance(obj, Trait):
         return _trait_dict(obj, opts)
+    if isinstance(obj, StatisticDefinition):
+        return _dataclass_dict(obj, opts)
+    if isinstance(obj, TuningCandidate):
+        return _dataclass_dict(obj, opts)
     if isinstance(obj, Preference):
         return _preference_dict(obj, opts)
     if isinstance(obj, AspirationTrack):

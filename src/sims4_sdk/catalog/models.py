@@ -21,6 +21,7 @@ from .diagnostics import ExtractionIssue
 __all__ = [
     "CatalogError",
     "TuningSource",
+    "TuningCandidate",
     "Trait",
     "Preference",
     "Aspiration",
@@ -30,6 +31,7 @@ __all__ = [
     "CareerTrack",
     "CareerLevel",
     "SkillLevel",
+    "StatisticDefinition",
     "Milestone",
     "RelationshipBit",
     "RelationshipTrackValue",
@@ -91,6 +93,38 @@ class TuningSource(Serializable):
         if self.is_mod:
             return f"MOD:{self.package}"
         return self.pack
+
+
+@dataclass(frozen=True)
+class TuningCandidate(Serializable):
+    """One observed definition for a tuning ID, before SDK precedence."""
+
+    name: str
+    tuning_class: str
+    source: TuningSource
+
+
+@dataclass
+class StatisticDefinition(Serializable):
+    """A statistic tuning; skill classification is unknown for generic classes."""
+
+    id: int
+    name: str
+    tuning_class: str
+    is_skill: Optional[bool]
+    display_name: Optional[str] = None
+    display_name_raw: Optional[str] = None
+    display_name_field: Optional[str] = None
+    icon: Optional[str] = None
+    ages: Optional[list[str]] = None
+    skill_level_type: Optional[str] = None
+    source: Optional[TuningSource] = None
+    #: Uninterpreted SimData enum; absent on XML-only definitions.
+    skill_level_type_raw: Optional[int] = None
+
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        return parse_icon_key(self.icon)
 
 
 @dataclass
@@ -655,6 +689,10 @@ class Catalog(Serializable):
         default_factory=dict, repr=False
     )
     diagnostics: list[ExtractionIssue] = field(default_factory=list)
+    statistics: dict[int, StatisticDefinition] = field(default_factory=dict)
+    statistics_by_name: dict[str, StatisticDefinition] = field(default_factory=dict, repr=False)
+    #: None means the catalog predates capture; empty means capture found no collisions.
+    tuning_overrides: Optional[dict[int, list[TuningCandidate]]] = None
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
@@ -662,6 +700,12 @@ class Catalog(Serializable):
             self.diagnostics = []
         if "family_fixups" not in state:
             self.family_fixups = []
+        if "statistics" not in state:
+            self.statistics = {}
+        if "statistics_by_name" not in state:
+            self.statistics_by_name = {}
+        if "tuning_overrides" not in state:
+            self.tuning_overrides = None
 
     @property
     def visible_traits(self) -> list[Trait]:
@@ -673,6 +717,7 @@ class Catalog(Serializable):
 
     def finalize(self) -> "Catalog":
         """Rebuild name indexes and cross-links."""
+        self.statistics_by_name = {item.name: item for item in self.statistics.values()}
         self.traits_by_name = {item.name: item for item in self.traits.values()}
         self.preferences_by_name = {item.name: item for item in self.preferences.values()}
         self.aspirations_by_name = {item.name: item for item in self.aspirations.values()}
@@ -733,6 +778,20 @@ class Catalog(Serializable):
     # ------------------------------------------------------------------
     # convenience lookups
     # ------------------------------------------------------------------
+    def statistic(self, key: int | str) -> Optional[StatisticDefinition]:
+        if isinstance(key, int):
+            return self.statistics.get(key)
+        return _lookup(self.statistics_by_name, key)
+
+    def find_statistics(self, query: str = "", *, is_skill: Optional[bool] = None,
+                        pack: Optional[str] = None) -> list[StatisticDefinition]:
+        """Search definitions; ``is_skill=True`` only includes known skills."""
+        needle = query.casefold()
+        return [item for item in self.statistics.values()
+                if _matches_text(item.name, item.display_name, needle)
+                and (is_skill is None or item.is_skill is is_skill)
+                and _matches_source(item.source, pack)]
+
     def trait(self, key: int | str) -> Optional[Trait]:
         if isinstance(key, int):
             return self.traits.get(key)

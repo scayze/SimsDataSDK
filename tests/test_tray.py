@@ -54,3 +54,32 @@ def test_listing_does_not_select_duplicate_group_files(tmp_path):
     assert len(listing.groups[0].household_files) == 2
     assert listing.groups[0].household is None
     assert len(listing.errors) == 2
+
+
+def test_lightweight_listing_uses_names_and_ids_without_decoding_trackers(tmp_path):
+    # Malformed nested attributes are intentionally outside a name-only read.
+    # A full read reports the error rather than presenting them as empty.
+    sim = b"\x08\x01\x2a\x03Sam\x32\x03Lee\xf2\x01\x01\xff"
+    family = b"\x1a\x04Test\x32" + bytes([len(sim)]) + sim
+    payload = b"\x0a" + bytes([len(family)]) + family
+    path = tmp_path / "house!0x10.householdbinary"
+    path.write_bytes(bytes(16) + payload)
+    portrait = tmp_path / "sim!0x1.sgi"
+    portrait.write_bytes(b"image")
+
+    listing = list_tray_households(tmp_path, lightweight=True)
+    group = listing.groups[0]
+    assert group.household is None
+    assert group.summary.family_name == "Test"
+    assert [(sim.sim_id, sim.first_name, sim.last_name) for sim in group.summary.sims] == [(1, "Sam", "Lee")]
+    assert group.sim_images == [portrait]
+    assert not listing.errors
+    assert listing.to_dict()["groups"][0]["summary"]["sims"][0]["first_name"] == "Sam"
+    assert list_tray_households(tmp_path).errors
+
+
+def test_lightweight_listing_reports_malformed_household(tmp_path):
+    (tmp_path / "bad!0x10.householdbinary").write_bytes(b"\xff")
+    listing = list_tray_households(tmp_path, lightweight=True)
+    assert listing.groups[0].summary is None
+    assert len(listing.errors) == 1

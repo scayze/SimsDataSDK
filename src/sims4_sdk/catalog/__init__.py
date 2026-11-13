@@ -30,8 +30,10 @@ from .models import (
     RelationshipDefault,
     RelationshipTrackValue,
     SkillLevel,
+    StatisticDefinition,
     Trait,
     TraitCondition,
+    TuningCandidate,
     TuningSource,
 )
 from .premades import (
@@ -80,6 +82,7 @@ __all__ = [
     # models
     "Catalog",
     "CatalogError",
+    "TuningCandidate",
     "Trait",
     "Preference",
     "Aspiration",
@@ -99,6 +102,7 @@ __all__ = [
     "PremadeRelationship",
     "GenderOptions",
     "SkillLevel",
+    "StatisticDefinition",
     "TuningSource",
     # premades
     "PremadeSim",

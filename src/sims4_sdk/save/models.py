@@ -364,6 +364,10 @@ class SaveFile(Serializable):
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
     artwork: dict[ResourceKey, Artwork] = field(default_factory=dict, repr=False)
     artwork_errors: list[dict[str, str]] = field(default_factory=list)
+    #: Whether relationship data can be known to be complete. The reader does
+    #: not currently claim completeness for a save or standalone payload.
+    relationship_coverage: str = "unknown"
+    diagnostics: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def thumbnail_image(self) -> Optional[Artwork]:

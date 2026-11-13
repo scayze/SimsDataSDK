@@ -14,6 +14,7 @@ from .models import SavedSim, TrayHousehold, TrayItem, TrayLibrary
 from .protobuf import ProtobufError, decode
 from .reader import sim_from_dict, _as_list
 from .schema import SCHEMAS
+from .tray_summary import TrayHouseholdSummary, read_household_summary
 
 __all__ = [
     "TrayError",
@@ -160,6 +161,7 @@ class TrayListingGroup(Serializable):
     household_images: list[Path] = field(default_factory=list)
     sim_images: list[Path] = field(default_factory=list)
     household: Optional[TrayHousehold] = None
+    summary: Optional[TrayHouseholdSummary] = None
     item: Optional[TrayItem] = None
     modified: Optional[float] = None
 
@@ -171,9 +173,11 @@ class TrayListing(Serializable):
     unmatched_images: list[Path] = field(default_factory=list)
 
 
-def list_tray_households(folder: str | Path) -> TrayListing:
+def list_tray_households(folder: str | Path, *, lightweight: bool = False) -> TrayListing:
     """Discover groups without a catalog or loading images.
 
+    With ``lightweight=True``, ``group.summary`` contains names and IDs, while
+    ``group.household`` is None. Trackers and appearance are not decoded.
     Ambiguous duplicate files are retained but not decoded. Sim portraits are
     associated by Sim ID, not by filename proximity or Sim name.
     """
@@ -212,8 +216,11 @@ def list_tray_households(folder: str | Path) -> TrayListing:
                 failure(group.item_files[0], exc)
         if len(group.household_files) == 1:
             try:
-                group.household = read_household_binary(group.household_files[0])
-                group.household.item = group.item
+                if lightweight:
+                    group.summary = read_household_summary(group.household_files[0])
+                else:
+                    group.household = read_household_binary(group.household_files[0])
+                    group.household.item = group.item
             except Exception as exc:
                 failure(group.household_files[0], exc)
 
@@ -233,8 +240,10 @@ def list_tray_households(folder: str | Path) -> TrayListing:
                         matches.append(group)
                 except ValueError:
                     pass
-            elif group.household:
-                matches.extend(group for sim in group.household.sims if sim.sim_id == image_id)
+            else:
+                household = group.summary if lightweight else group.household
+                if household:
+                    matches.extend(group for sim in household.sims if sim.sim_id == image_id)
         if len(matches) == 1:
             if path.suffix.casefold() == ".hhi":
                 matches[0].household_images.append(path)

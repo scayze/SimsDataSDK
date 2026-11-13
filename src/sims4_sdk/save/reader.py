@@ -50,6 +50,7 @@ __all__ = [
 
 SAVE_RESOURCE_TYPE = 0x0000000D
 SAVE_ARTWORK_TYPES = frozenset({0x0F, 0x10, 0x12, 0x13, 0x14})
+PERSISTENCE_RESOURCE_TYPE = 0x00000006
 
 
 class SaveError(Sims4SDKError, ValueError):
@@ -72,6 +73,20 @@ def read_save(path: str | Path, catalog: Optional[Catalog] = None) -> SaveFile:
     except ProtobufError as exc:
         raise SaveError(f"{path.name}: {exc}") from exc
     save = _build_save(path, root, catalog)
+    for persistence_entry in package.iter_entries(type_id=PERSISTENCE_RESOURCE_TYPE):
+        if persistence_entry.is_null:
+            continue
+        save.relationship_coverage = "potentially_incomplete"
+        save.diagnostics.append({
+            "stage": "save_persistence",
+            "code": "unsupported_persistence_resource",
+            "message": ("Persistence resource is not decoded and may contain "
+                        "relationship data; relationship results may be incomplete."),
+            "path": str(path),
+            "resource_key": str(persistence_entry.key),
+            "recoverable": True,
+            "unsupported_format": "type-0x00000006 persistence resource",
+        })
     for image_entry in package.iter_entries_for_types(SAVE_ARTWORK_TYPES):
         if image_entry.is_null:
             continue

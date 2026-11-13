@@ -11,6 +11,7 @@ from ..exceptions import Sims4SDKError
 from ..export import Serializable
 from ..installation import Installation, PackageInfo
 from .builder import (
+    add_simdata_statistics,
     cache_key,
     collect_package_data,
     default_cache_dir,
@@ -208,6 +209,8 @@ def build_static(
         strings,
         relationship_tuning=collected.relationship_tuning,
     )
+    catalog.tuning_overrides = collected.tuning_overrides
+    add_simdata_statistics(catalog, collected, strings)
     catalog.errors.extend(world.errors)
     catalog.diagnostics.extend(diagnostics)
     catalog.diagnostics.extend(collected.diagnostics)

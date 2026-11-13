@@ -89,10 +89,19 @@ Each `SimData` contains the full state:
 
 ### Current limitation
 
-Older saves may store friendship/romance relationship services in the legacy
+Some saves may store friendship/romance relationship services in the
 type-`0x00000006` “LDNB” persistence chunks rather than in `SaveGameData`. Those
 chunks are not decoded yet. Such saves still expose spouse, family, traits,
 careers, skills, milestones, and all other per-Sim data.
+
+When `read_save()` finds a non-null type-`0x00000006` resource, it records an
+`unsupported_persistence_resource` diagnostic with the package path and full
+resource key and sets `save.relationship_coverage` to `"potentially_incomplete"`.
+The resource is not decoded: its presence does not prove that it contains
+relationships. The default coverage is `"unknown"`, including for
+`read_save_resource()`, which cannot inspect the package. An empty relationship
+list or absence of these diagnostics does not establish that no relationships
+exist. Diagnostics and coverage are also included in `save.to_dict()`.
 
 The *initial* friendship/romance values are not authored per save; they come from
 tuning (`DefaultRelationshipInHousehold.RelationshipSetupMap` and
@@ -123,10 +132,14 @@ file modification time. Incomplete groups remain visible. Duplicate household
 or item files sharing an identifier are reported as ambiguous and are not
 selected for decoding. Household images are matched by household identifier;
 Sim portraits are matched by decoded Sim ID. Unmatched or ambiguous images are
-retained in `unmatched_images`, and errors in `errors`. This avoids loading a
-catalog or decoding image bytes, but still decodes full household protobufs; it
-is not a names-only parser. Tray item text is not assigned as an aspiration to
-a Sim based on proximity.
+retained in `unmatched_images`, and errors in `errors`. The default decodes full
+household protobufs without loading a catalog or image bytes. For name-only
+listing, pass `lightweight=True`: `group.summary` then holds the household
+name and each Sim's ID and names, and `group.household` is `None`. Unselected
+Sim trackers and appearance sections are not decoded or validated, so a clean
+listing does not guarantee a full decode will succeed. The file is still read
+into memory. Tray item text is not assigned as an aspiration to a Sim based on
+proximity.
 
 ## Artwork
 

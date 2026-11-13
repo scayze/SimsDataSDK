@@ -69,9 +69,23 @@ An empty diagnostics list does not establish that all game data is understood.
 | `CareerLevel` | `CareerLevel` | title, pay, schedule, promotion reward, level |
 | `DevelopmentalMilestone` | `Milestone` | display name, category, ages, repeatable, primary |
 | `RelationshipBit` | `RelationshipBit` | display name, description, depth, track |
+| `Skill`, `TunableSkill`, `Statistic` | `StatisticDefinition` | explicit tuning class, optional name, icon, ages and level type, source |
 
 All localized strings are resolved through the merged STBL tables for the chosen
 locale. The default is `ENG_US`; pass another locale to `Sims4Workspace`.
+
+`catalog.statistics` enumerates these three explicit XML tuning classes from
+combined and individual tuning. `catalog.statistic(id_or_name)` and
+`catalog.find_statistics(query, is_skill=True)` provide lookup and filtering.
+Only `Skill` and `TunableSkill` are classified as skills; for a generic
+`Statistic`, `is_skill` is null because a name is not proof of its semantics.
+`display_name_raw` retains the field or STBL key, and `display_name_field`
+identifies `stat_name` or `display_name`; `display_name` is null if the field
+or localization is unresolved. `ages` is null when absent or unresolved;
+`skill_level_type` preserves the tuning value without claiming a curve mapping.
+The source describes the selected winner under SDK package order. SimData-only
+definitions, other restrictions, curve links, override history, and alternative
+label fields are not decoded here.
 
 `Catalog.visible_traits` excludes known internal trait types and naming patterns,
 hidden traits, and IDs also catalogued as preferences. `Trait.is_internal` exposes

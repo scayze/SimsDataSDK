@@ -22,6 +22,7 @@ from ..core import (
     TuningElement,
 )
 from ..installation import Installation, PackageInfo, SIMINFO_TYPE_ID
+from ..core.fnv import fnv1_32
 from .models import (
     Aspiration,
     AspirationCategory,
@@ -33,11 +34,15 @@ from .models import (
     Milestone,
     Preference,
     RelationshipBit,
+    StatisticDefinition,
     Trait,
+    TuningCandidate,
     TuningSource,
 )
 from .strings import load_strings
 from .diagnostics import ExtractionIssue
+from .simdata_statistics import STATISTIC_SIMDATA_GROUP, statistic_from_simdata
+from ..core.resource_types import SIMDATA_TYPE_ID
 from .values import TuningView
 from .relationships import (
     FRIENDSHIP_TRACK_ID,
@@ -60,7 +65,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-18"
+CACHE_VERSION = "step2-21"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
@@ -75,8 +80,19 @@ _MODEL_CLASSES = frozenset(
         "CareerLevel",
         "DevelopmentalMilestone",
         "RelationshipBit",
+        "Skill",
+        "TunableSkill",
+        "Statistic",
     }
 )
+# Individual XML tuning in mods may use the FNV-1 hash of its class as the
+# resource type. Restrict this list to observed types; unknown types are not
+# interpreted by guessing from arbitrary package bytes.
+_MOD_XML_TYPES = frozenset(fnv1_32(name.lower()) for name in (
+    "Trait", "Skill", "TunableSkill", "Statistic", "Career", "TunableCareerTrack",
+    "Aspiration", "Milestone", "DevelopmentalMilestone", "Preference",
+    "RelationshipBit", "OccultTrait", "Occult",
+))
 #: Resource types the catalog build reads; everything else is skipped without
 #: being materialised.
 _SCANNED_TYPES = frozenset(
@@ -86,6 +102,7 @@ _SCANNED_TYPES = frozenset(
         PREMADE_HOUSEHOLD_TYPE_ID,
         LOT_MANIFEST_TYPE_ID,
         SIMINFO_TYPE_ID,
+        SIMDATA_TYPE_ID,
     }
 )
 
@@ -175,6 +192,8 @@ def build_catalog(
     catalog = extract_catalog(
         entries, sources, strings, relationship_tuning=collected.relationship_tuning
     )
+    catalog.tuning_overrides = collected.tuning_overrides
+    add_simdata_statistics(catalog, collected, strings)
     catalog.diagnostics.extend(diagnostics)
     catalog.diagnostics.extend(collected.diagnostics)
 
@@ -204,6 +223,8 @@ class CollectedPackageData:
 
     entries: dict[int, TuningElement] = field(default_factory=dict)
     sources: dict[int, TuningSource] = field(default_factory=dict)
+    tuning_overrides: dict[int, list[TuningCandidate]] = field(default_factory=dict)
+    simdata_statistics: dict[int, StatisticDefinition] = field(default_factory=dict)
     world: WorldData = field(default_factory=WorldData)
     relationship_modules: dict[str, CombinedTuning] = field(
         default_factory=dict, repr=False
@@ -222,6 +243,18 @@ class CollectedPackageData:
     diagnostics: list[ExtractionIssue] = field(default_factory=list)
 
 
+def add_simdata_statistics(catalog: Catalog, data: CollectedPackageData,
+                           strings: dict[int, str]) -> None:
+    """Add supported DATA-only definitions; never displace tuning XML."""
+    for instance, definition in data.simdata_statistics.items():
+        if instance in data.entries:
+            continue
+        raw = definition.display_name_raw
+        label = strings.get(int(raw, 16)) if raw else None
+        catalog.statistics[instance] = replace(definition, display_name=label)
+    catalog.finalize()
+
+
 def collect_package_data(
     packages: Iterable[PackageInfo],
     *,
@@ -237,6 +270,18 @@ def collect_package_data(
     # the DATA tables is the most expensive part of a cold build, so reuse the
     # parsed object when the raw bytes are identical.
     combined_cache: dict[bytes, CombinedTuning] = {}
+
+    def add_tuning(tuning: TuningElement, source: TuningSource) -> None:
+        instance = tuning.instance_id
+        previous = data.entries.get(instance)
+        if previous is not None:
+            history = data.tuning_overrides.get(instance)
+            if history is None:
+                history = [TuningCandidate(previous.name, previous.cls, data.sources[instance])]
+                data.tuning_overrides[instance] = history
+            history.append(TuningCandidate(tuning.name, tuning.cls, source))
+        data.entries[instance] = tuning
+        data.sources[instance] = source
 
     for info in packages:
         if progress:
@@ -259,7 +304,8 @@ def collect_package_data(
         combined_blobs: list[tuple[bytes, TuningSource]] = []
         # One pass over the index: the entry lists are millions of rows long, so
         # filtering them once saves a full scan per resource type.
-        for entry in package.iter_entries_for_types(_SCANNED_TYPES):
+        scanned_types = _SCANNED_TYPES | _MOD_XML_TYPES if info.is_mod else _SCANNED_TYPES
+        for entry in package.iter_entries_for_types(scanned_types):
             type_id = entry.key.type_id
             entry_source = replace(source, resource_key=entry.key)
             if type_id == COMBINED_TUNING_TYPE_ID:
@@ -271,7 +317,7 @@ def collect_package_data(
                         recoverable=True,
                     ))
                     continue
-            elif type_id == TUNING_TYPE_ID:
+            elif type_id == TUNING_TYPE_ID or (info.is_mod and type_id in _MOD_XML_TYPES):
                 # Individual tuning XML resources (common in mods).
                 try:
                     raw = DBPF.read_entry(package.path, entry)
@@ -288,8 +334,19 @@ def collect_package_data(
                     ))
                     continue
                 for tuning in combined:
-                    data.entries[tuning.instance_id] = tuning
-                    data.sources[tuning.instance_id] = entry_source
+                    try:
+                        if tuning.instance_id == 0 and len(combined.entries) == 1:
+                            # An individual resource's key identifies its single
+                            # definition when the optional XML s attribute is absent.
+                            tuning._instance_id = entry.key.instance
+                        if tuning.instance_id == 0:
+                            raise ValueError("tuning has no instance ID")
+                        add_tuning(tuning, entry_source)
+                    except (ValueError, TypeError) as exc:
+                        data.diagnostics.append(ExtractionIssue.from_exception(
+                            "tuning_identity", exc, package_path=str(info.path),
+                            resource_key=entry.key, recoverable=True,
+                        ))
             elif type_id == PREMADE_HOUSEHOLD_TYPE_ID:
                 if include_world:
                     try:
@@ -315,6 +372,31 @@ def collect_package_data(
             elif type_id == SIMINFO_TYPE_ID:
                 if include_siminfo:
                     data.siminfo_index[entry.key.instance] = (info, entry)
+            elif type_id == SIMDATA_TYPE_ID:
+                # Retail statistics occupy a dedicated resource group. Mods
+                # can use arbitrary groups, so examine all their SimData.
+                if entry.is_null:
+                    continue
+                if not info.is_mod and entry.key.group != STATISTIC_SIMDATA_GROUP:
+                    continue
+                try:
+                    raw = DBPF.read_entry(package.path, entry)
+                    if (info.is_mod and entry.key.group != STATISTIC_SIMDATA_GROUP
+                            and raw.startswith(b"DATA")
+                            and not any(name in raw for name in
+                                        (b"Skill\x00", b"TunableSkill\x00", b"Statistic\x00"))):
+                        # Schema names are NUL-terminated DATA strings. This is
+                        # only a prefilter; classification still uses schemas.
+                        continue
+                    definition = statistic_from_simdata(
+                        raw, entry.key.instance, entry_source)
+                except Exception as exc:
+                    data.diagnostics.append(ExtractionIssue.from_exception(
+                        "simdata_statistic", exc, package_path=str(info.path),
+                        resource_key=entry.key, recoverable=True))
+                    continue
+                if definition is not None:
+                    data.simdata_statistics[entry.key.instance] = definition
 
         # Combined tuning (the main source for retail packages) is applied after
         # the per-entry XML so that it wins within a package.
@@ -332,8 +414,7 @@ def collect_package_data(
                     continue
                 combined_cache[content_key] = combined
             for tuning in combined:
-                data.entries[tuning.instance_id] = tuning
-                data.sources[tuning.instance_id] = entry_source
+                add_tuning(tuning, entry_source)
             if include_relationships:
                 for module_name in RELATIONSHIP_MODULES:
                     if module_name in combined.modules:
@@ -345,6 +426,13 @@ def collect_package_data(
 
     if include_world:
         data.world.finalize()
+    # Retail packages frequently repeat entire combined tuning blobs. Keep
+    # their candidates only when the same ID also has a mod candidate, so
+    # normal catalogs do not retain hundreds of thousands of retail repeats.
+    data.tuning_overrides = {
+        instance: candidates for instance, candidates in data.tuning_overrides.items()
+        if any(candidate.source.is_mod for candidate in candidates)
+    }
     if include_relationships and data.relationship_modules:
         data.relationship_tuning = extract_relationship_tuning(
             data.relationship_modules,
@@ -440,12 +528,34 @@ def _build_models(
                 catalog.relationship_bits[instance_id] = _build_relationship_bit(
                     entry, view, source
                 )
+            elif cls in {"Skill", "TunableSkill", "Statistic"}:
+                catalog.statistics[instance_id] = _build_statistic(entry, view, source)
         except Exception as exc:  # keep one bad definition from aborting the scan
             catalog.errors.append(f"{entry.name} ({entry.cls}): {exc}")
             catalog.diagnostics.append(ExtractionIssue.from_exception(
                 "catalog_model", exc, package_path=source.path if source else None,
                 resource_key=source.resource_key if source else None, tuning_id=instance_id,
             ))
+
+
+def _build_statistic(entry: TuningElement, view: TuningView, source) -> StatisticDefinition:
+    label_field = next((name for name in ("stat_name", "display_name")
+                        if view.raw_text(name) is not None), None)
+    raw = view.raw_text(label_field) if label_field else None
+    label = raw
+    if raw and raw.lower().startswith("0x"):
+        try:
+            label = view.strings.get(int(raw, 16))
+        except ValueError:
+            label = None
+    return StatisticDefinition(
+        id=entry.instance_id, name=entry.name, tuning_class=entry.cls,
+        is_skill=True if entry.cls in {"Skill", "TunableSkill"} else None,
+        display_name=label, display_name_raw=raw, display_name_field=label_field,
+        icon=view.raw_text("icon"),
+        ages=view.list_enums("ages") if view.resolved_child("ages") is not None else None,
+        skill_level_type=view.raw_text("skill_level_type"), source=source,
+    )
 
 
 def _build_trait(entry: TuningElement, view: TuningView, source) -> Trait:
