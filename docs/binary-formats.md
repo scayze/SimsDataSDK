@@ -1,6 +1,6 @@
 # Binary formats used by `sims4-sdk`
 
-This document records the formats implemented in Step 1 and the values that were
+This document records the implemented formats and the values that were
 verified against a real installation.  Everything here was checked by parsing
 actual game files, not just from documentation.
 
@@ -128,7 +128,7 @@ This is the resource referenced by `PremadeSimTemplate.resource_key`.  It is a
 proprietary serialization (version field currently `38`) that interleaves Sim
 data with CAS/appearance data.
 
-The part used by Step 2 is the trait list:
+The part used by the static catalog is the trait list:
 
 ```
 uint32  version                  (38)

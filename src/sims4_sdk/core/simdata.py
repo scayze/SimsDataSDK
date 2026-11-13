@@ -2,8 +2,7 @@
 
 SimData resources are binary ``DATA`` blobs.  They are the compiled companion
 to tuning XML and are also used for client-side catalog data (names, icons,
-descriptions).  In Step 1 we expose the raw table/schema structure; domain
-extractors build on top of it in later steps.
+descriptions).  This reader exposes the raw table and schema structure for domain extractors.
 """
 
 from __future__ import annotations

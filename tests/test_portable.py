@@ -173,6 +173,20 @@ def test_workspace_accepts_in_memory_static_data(tmp_path: Path) -> None:
     assert isinstance(workspace.packs, list)
 
 
+def test_failed_refresh_preserves_offline_snapshot(tmp_path: Path, monkeypatch) -> None:
+    def no_installation(**kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setattr("sims4_sdk.workspace.Installation", no_installation)
+    static = build_static()
+    workspace = Sims4Workspace(static=static, user_dir=tmp_path)
+
+    with pytest.raises(StaticDataError):
+        workspace.refresh()
+
+    assert workspace.static_data() is static
+
+
 def test_workspace_save_static_writes_snapshot(tmp_path: Path) -> None:
     workspace = Sims4Workspace(static=build_static(), user_dir=tmp_path)
     target = workspace.save_static(tmp_path / "exported.pkl")

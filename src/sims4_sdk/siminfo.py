@@ -2,7 +2,7 @@
 
 SimInfo resources store the baked-in data of a pre-made or exported Sim.  The
 full format is a proprietary serialization with several interleaved sections;
-Step 2 implements the part needed for the static catalog:
+The reader extracts the parts needed for the static catalog:
 
 * the resource's trait list (a byte count followed by 64-bit trait IDs),
 * enough header information to locate that list.
@@ -14,7 +14,7 @@ and validating the count byte and the IDs against the catalog.
 
 Aspiration/career/skills baked into SimInfo are intentionally not parsed yet;
 for pre-made Sims those values are usually supplied by the
-``PremadeSimTemplate`` instead.  Save/live-state parsing is Step 3.
+``PremadeSimTemplate`` instead.
 """
 
 from __future__ import annotations

@@ -122,10 +122,7 @@ class Sims4Workspace:
         refresh: bool = False,
         progress: ProgressCallback = None,
     ) -> StaticData:
-        if refresh:
-            self._static = None
-            self._static_provided = False
-        if self._static is None or (not use_cache and not self._static_provided):
+        if refresh or self._static is None or (not use_cache and not self._static_provided):
             if self.installation is None:
                 raise StaticDataError(
                     "no game installation is available; open the workspace with "
@@ -138,6 +135,7 @@ class Sims4Workspace:
                 cache_dir=self.cache_dir,
                 progress=progress,
             )
+            self._static_provided = False
         return self._static
 
     @property

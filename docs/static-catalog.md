@@ -1,6 +1,6 @@
-# Static catalog and pre-made Sims (Step 2)
+# Static catalog and pre-made Sims
 
-Step 2 answers questions that do **not** require a save file:
+The static catalog answers questions that do **not** require a save file:
 
 - What traits, likes/dislikes, aspirations, careers, milestones, and relationship
   bits exist in the installed game, DLCs, and mods?
@@ -116,7 +116,7 @@ uint8   count
 uint64  trait_id    (count times)
 ```
 
-Step 2 walks back from the header pointer, validates the count byte and checks
+The reader walks back from the header pointer, validates the count byte and checks
 every ID against the catalog, then merges those traits with the template's
 explicit list. This is how base-game Sims such as Bella Goth get their trait
 list even though their template only says `num_random`.

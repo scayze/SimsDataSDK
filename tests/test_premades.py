@@ -13,19 +13,8 @@ from sims4_sdk.catalog import (
     Trait,
     WorldData,
     build_premades,
-    parse_resource_key,
 )
 from sims4_sdk.core import CombinedTuning
-
-
-def test_parse_resource_key() -> None:
-    key = parse_resource_key("025ed6f4:00000000:7954cdc9ba5dba03")
-    assert key is not None
-    assert key.type_id == 0x025ED6F4
-    assert key.group == 0
-    assert key.instance == 0x7954CDC9BA5DBA03
-    assert parse_resource_key("nope") is None
-    assert parse_resource_key(None) is None
 
 
 def test_premade_sim_properties() -> None:

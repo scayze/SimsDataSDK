@@ -14,7 +14,7 @@ In The Sims 4 the concrete pre-made population is defined in two places:
   through the lot manifest (``0x729F6C4F``); see :mod:`sims4_sdk.catalog.worlds`.
 
 The referenced ``.siminfo`` resource contains the traits that were baked into the
-Sim, including the result of ``num_random`` trait assignment.  Step 2 reads that
+Sim, including the result of ``num_random`` trait assignment.  The SDK reads that
 trait list with :class:`sims4_sdk.siminfo.SimInfo`.
 """
 
@@ -60,7 +60,6 @@ __all__ = [
     "FamilyTree",
     "PremadeBundle",
     "build_premades",
-    "parse_resource_key",
 ]
 
 
@@ -2210,7 +2209,7 @@ def _siminfo_key(view: TuningView, info) -> Optional[ResourceKey]:
     if element is None:
         return None
     raw = view.raw_text_of(element)
-    return parse_resource_key(raw)
+    return parse_image_key(raw)
 
 
 def _traits(view: TuningView) -> tuple[list[int], Optional[int]]:
@@ -2307,7 +2306,7 @@ def _occult(view: TuningView) -> tuple[Optional[str], Optional[ResourceKey]]:
         occult_type_element
     )
     siminfo_element = _child(payload, "occult_sim_info")
-    return occult_type, parse_resource_key(view.raw_text_of(siminfo_element))
+    return occult_type, parse_image_key(view.raw_text_of(siminfo_element))
 
 
 def _pregnancy(view: TuningView) -> dict:
@@ -2320,8 +2319,3 @@ def _pregnancy(view: TuningView) -> dict:
         or view.raw_text_of(_child(payload, "origin")),
         "progress": view.number_of(_child(payload, "progress")),
     }
-
-
-def parse_resource_key(text: Optional[str]) -> Optional[ResourceKey]:
-    """Parse ``TTTTTTTT:GGGGGGGG:IIIIIIIIIIIIIIII`` (kept for compatibility)."""
-    return parse_image_key(text)

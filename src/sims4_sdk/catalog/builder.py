@@ -56,7 +56,6 @@ from .worlds import WorldData
 
 __all__ = [
     "build_catalog",
-    "collect_entries",
     "collect_package_data",
     "extract_catalog",
     "default_cache_dir",
@@ -440,21 +439,6 @@ def collect_package_data(
             track_sources=data.relationship_track_sources,
         )
     return data
-
-
-def collect_entries(
-    packages: Iterable[PackageInfo],
-    *,
-    progress: ProgressCallback = None,
-) -> tuple[dict[int, TuningElement], dict[int, TuningSource]]:
-    """Collect only tuning entries (kept for backwards compatibility)."""
-    data = collect_package_data(
-        packages,
-        progress=progress,
-        include_world=False,
-        include_relationships=False,
-    )
-    return data.entries, data.sources
 
 
 # ----------------------------------------------------------------------

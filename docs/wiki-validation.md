@@ -1,4 +1,4 @@
-# Sims Wiki validation (Step 4)
+# Sims Wiki validation
 
 The validation layer compares the SDK's extracted data with
 **The Sims Wiki** (`sims.fandom.com`). It is optional; install it with:

@@ -1,6 +1,6 @@
-# Saves and Tray files (Step 3)
+# Saves and Tray files
 
-Step 3 adds the live data that only exists in a playthrough or a Gallery export.
+These readers expose live data that only exists in a playthrough or a Gallery export.
 
 ## Save files
 
