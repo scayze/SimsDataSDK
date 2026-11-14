@@ -49,6 +49,7 @@ from .relationships import FRIENDSHIP_TRACK_ID, ROMANCE_TRACK_ID
 from .diagnostics import ExtractionIssue
 from .values import TuningView
 from .worlds import StarterMember, WorldData
+from .scenarios import ScenarioData
 
 __all__ = [
     "PremadeSim",
@@ -368,6 +369,8 @@ class PremadeSim(Serializable):
     #: Positive evidence of scenario use and ordinary world placement.
     scenario_usage: Optional[bool] = None
     normal_game_usage: Optional[bool] = None
+    scenario_ids: list[int] = field(default_factory=list)
+    normal_walkby_director_ids: list[int] = field(default_factory=list)
 
     @property
     def full_name(self) -> str:
@@ -808,6 +811,7 @@ def build_premades(
     *,
     world: Optional[WorldData] = None,
     siminfo_index: Optional[dict[int, tuple]] = None,
+    scenario_data: Optional[ScenarioData] = None,
 ) -> PremadeBundle:
     sims: dict[int, PremadeSim] = {}
     households: dict[int, PremadeHousehold] = {}
@@ -875,6 +879,46 @@ def build_premades(
             sim.scenario_usage = True
         if household is not None and household.lot_ids:
             sim.normal_game_usage = True
+    if scenario_data is not None:
+        by_identity: dict[tuple, list[PremadeSim]] = {}
+        for sim in sims.values():
+            if sim.siminfo_key and sim.first_name and sim.last_name:
+                identity = (sim.siminfo_key, sim.first_name.casefold(), sim.last_name.casefold())
+                by_identity.setdefault(identity, []).append(sim)
+        def matched_sims(filter_id):
+            sim_filter = scenario_data.sim_filters.get(filter_id)
+            chooser = scenario_data.template_choosers.get(sim_filter.template_chooser_id) if sim_filter else None
+            if chooser is None:
+                return
+            for template_id in chooser.template_ids:
+                template = scenario_data.sim_templates.get(template_id)
+                if not template or not template.siminfo_key or not template.first_name or not template.last_name:
+                    continue
+                identity = (template.siminfo_key, template.first_name.casefold(), template.last_name.casefold())
+                matched = by_identity.get(identity, [])
+                if len(matched) == 1:
+                    yield matched[0]
+
+        for scenario in scenario_data.scenarios.values():
+            for filter_id in scenario.npc_filter_ids:
+                for sim in matched_sims(filter_id):
+                    sim.scenario_usage = True
+                    if scenario.id not in sim.scenario_ids:
+                        sim.scenario_ids.append(scenario.id)
+
+        for director in scenario_data.walkby_directors.values():
+            # shortcut: residential naming is a convention, upgrade when world-to-director links are parsed.
+            if not director.name.casefold().startswith("walkbydirector_residential_"):
+                continue
+            for situation_id in director.situation_ids:
+                situation = scenario_data.specific_sim_situations.get(situation_id)
+                job = scenario_data.situation_jobs.get(situation.job_id) if situation else None
+                if job is None:
+                    continue
+                for sim in matched_sims(job.filter_id):
+                    sim.normal_game_usage = True
+                    if director.id not in sim.normal_walkby_director_ids:
+                        sim.normal_walkby_director_ids.append(director.id)
     bundle = PremadeBundle(
         sims=sorted(sims.values(), key=lambda sim: sim.full_name.casefold()),
         households=sorted(households.values(), key=lambda hh: hh.name.casefold()),

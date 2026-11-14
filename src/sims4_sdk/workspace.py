@@ -187,6 +187,18 @@ class Sims4Workspace:
     def find_sim(self, key: str | int) -> Optional[PremadeSim]:
         return self.static_data().sim(key)
 
+    def scenario(self, key: str | int):
+        """Look up a scenario by ID, name, or name fragment."""
+        return self.static_data().scenario(key)
+
+    def find_scenario(self, key: str | int):
+        """Look up a scenario by ID, name, or name fragment."""
+        return self.scenario(key)
+
+    def find_scenarios(self, query: str = ""):
+        """Find scenarios by case-insensitive name fragment."""
+        return self.static_data().find_scenarios(query)
+
     def find_ancestor(self, key: str | int) -> Optional[PremadeAncestor]:
         return self.static_data().ancestor(key)
 

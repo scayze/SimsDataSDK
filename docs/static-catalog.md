@@ -3,11 +3,15 @@
 ## Filtering scenario and ordinary-world Sims
 
 `find_sims(origin="scenario")` selects Sims with a `Scenario` component in
-their premade Sim or household tuning name, or in a household explicitly
-referenced by a scenario using an exact resource key. This is evidence, not a
-complete enumeration of every Sim referenced by scenario tuning.
+their premade Sim or household tuning name, in a household explicitly
+referenced by a scenario using an exact resource key, or uniquely matched by
+name and SimInfo key to a scenario NPC template chooser. This is evidence, not
+a complete enumeration of every Sim referenced by scenario tuning.
 `origin="normal"` selects Sims whose household is linked to a shipped world
-lot. This includes Sims that also have scenario evidence. `origin="both"`
+lot or whose matching NPC template is scheduled by a residential walkby
+director. Residential directors are identified by their tuning class and name
+convention, not a verified link from a specific world. This includes Sims that
+also have scenario evidence. `origin="both"`
 requires both kinds of evidence; `origin="unknown"` returns Sims with neither.
 The filter is available on `PremadeBundle`, `StaticData`, and the workspace,
 and combines with workspace ownership filtering:
@@ -20,10 +24,29 @@ unclassified = ws.find_sims(origin="unknown", ownership="owned")
 
 Each Sim exports `scenario_usage` and `normal_game_usage`, each `True` when
 there is evidence and `None` when undetermined. Absence of the scenario name
-marker does not prove a Sim is never used by a scenario; absence of a lot link
-does not prove a Sim is scenario-only. Homeless, special, or otherwise
+marker does not prove a Sim is never used by a scenario; absence of a lot or
+walkby link does not prove a Sim is scenario-only. Homeless, special, or otherwise
 unlinked ordinary Sims may therefore be `unknown`. Older snapshots lack the
 evidence and are treated as unknown; rebuild the snapshot to classify them.
+
+### Scenario and NPC tuning
+
+`ws.scenario("StuckInTheirShadow")` and `ws.find_scenarios("shadow")` query
+scenario definitions. The complete extracted maps live at
+`ws.static_data().scenario_data`: scenarios, roles and role criteria, Sim
+filters, template choosers, Sim and NPC household templates, residential
+walkby directors, specific-Sim situations, and situation jobs. Entries retain
+their tuning source and target IDs even when a referenced target is absent.
+The extraction covers observed fields rather than every tuning field; filters
+can select or create Sims dynamically, so a template match alone does not
+guarantee which Sim the game will select at runtime.
+
+For a matching premade, `scenario_ids` and `normal_walkby_director_ids` record
+the linked scenario and director IDs. These lists reflect the specific NPC
+template paths above; other scenario evidence, including household naming or
+direct household references, does not populate `scenario_ids`. Exact matching
+requires a unique premade with the same full name and SimInfo resource key;
+ambiguous or incomplete matches remain unclassified by this path.
 
 The static catalog answers questions that do **not** require a save file:
 

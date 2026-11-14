@@ -523,6 +523,8 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "pack_id": getattr(value, "pack_id", None),
         "scenario_usage": getattr(value, "scenario_usage", None),
         "normal_game_usage": getattr(value, "normal_game_usage", None),
+        "scenario_ids": list(getattr(value, "scenario_ids", [])),
+        "normal_walkby_director_ids": list(getattr(value, "normal_walkby_director_ids", [])),
         "household_id": value.household_id,
         "household_name": value.household_name,
         "age": value.age,
@@ -1053,6 +1055,7 @@ def _static_data_dict(value: Any, options: _Options) -> dict[str, Any]:
         "catalog": _catalog_dict(value.catalog, options),
         "premades": _premade_bundle_dict(value.premades, options),
         "world": _world_data_dict(value.world, options) if value.world is not None else None,
+        "scenario_data": _dataclass_dict(value.scenario_data, options) if getattr(value, "scenario_data", None) is not None else None,
     }
 
 
@@ -1124,6 +1127,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         PremadeSim,
     )
     from .catalog.static import StaticData
+    from .catalog.scenarios import Scenario, ScenarioRole, SimFilter, SimTemplateChooser, SimTemplate, NPCHouseholdTemplate, WalkbyDirector, SpecificSimSituation, SituationJob, ScenarioData
     from .save.models import (
         SaveAccount,
         SaveFile,
@@ -1149,6 +1153,8 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
 
     if isinstance(obj, StaticData):
         return _static_data_dict(obj, opts)
+    if isinstance(obj, (Scenario, ScenarioRole, SimFilter, SimTemplateChooser, SimTemplate, NPCHouseholdTemplate, WalkbyDirector, SpecificSimSituation, SituationJob, ScenarioData)):
+        return _dataclass_dict(obj, opts)
     if isinstance(obj, Catalog):
         return _catalog_dict(obj, opts)
     if isinstance(obj, PremadeBundle):

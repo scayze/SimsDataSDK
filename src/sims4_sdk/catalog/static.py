@@ -22,6 +22,7 @@ from .diagnostics import ExtractionIssue
 from .premades import PremadeBundle, build_premades
 from .strings import load_strings
 from .worlds import WorldData
+from .scenarios import ScenarioData, extract_scenarios
 
 __all__ = [
     "StaticDataError",
@@ -56,6 +57,8 @@ class StaticData(Serializable):
     premades: PremadeBundle = field(default_factory=PremadeBundle)
     #: Original starter-household/lot records; None for older snapshots.
     world: Optional[WorldData] = None
+    #: None for snapshots made before scenario extraction was added.
+    scenario_data: Optional[ScenarioData] = None
 
     @property
     def sims(self):
@@ -84,6 +87,14 @@ class StaticData(Serializable):
 
     def lot(self, key: str | int):
         return self.premades.lot(key)
+
+    def scenario(self, key: str | int):
+        data = getattr(self, "scenario_data", None)
+        return data.scenario(key) if data is not None else None
+
+    def find_scenarios(self, query: str = ""):
+        data = getattr(self, "scenario_data", None)
+        return data.find_scenarios(query) if data is not None else []
 
     def family_tree(self, key):
         """Build the connected family tree around ``key``; see :meth:`PremadeBundle.family_tree`."""
@@ -218,6 +229,7 @@ def build_static(
 
     if progress:
         progress("extracting pre-made Sims")
+    scenario_data = extract_scenarios(entries, sources, strings)
     premades = build_premades(
         installation,
         catalog,
@@ -225,9 +237,10 @@ def build_static(
         sources,
         world=world,
         siminfo_index=collected.siminfo_index,
+        scenario_data=scenario_data,
     )
 
-    data = StaticData(catalog=catalog, premades=premades, world=world)
+    data = StaticData(catalog=catalog, premades=premades, world=world, scenario_data=scenario_data)
 
     if use_cache:
         try:

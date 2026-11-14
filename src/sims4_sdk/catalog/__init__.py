@@ -49,6 +49,7 @@ from .premades import (
     build_premades,
 )
 from .relationships import RelationshipTuningData, extract_relationship_tuning
+from .scenarios import Scenario, ScenarioRole, SimFilter, SimTemplateChooser, SimTemplate, NPCHouseholdTemplate, WalkbyDirector, SpecificSimSituation, SituationJob, ScenarioData, extract_scenarios
 from .static import StaticData, StaticDataError, build_static, load_static
 from .worlds import (
     LotRecord,
@@ -65,6 +66,9 @@ from .worlds import (
 
 __all__ = [
     "ExtractionIssue",
+    "Scenario", "ScenarioRole", "SimFilter", "SimTemplateChooser", "SimTemplate",
+    "NPCHouseholdTemplate", "ScenarioData", "extract_scenarios",
+    "WalkbyDirector", "SpecificSimSituation", "SituationJob",
     # build
     "build_catalog",
     "build_static",
