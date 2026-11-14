@@ -64,7 +64,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-21"
+CACHE_VERSION = "step2-22"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
@@ -426,11 +426,12 @@ def collect_package_data(
     if include_world:
         data.world.finalize()
     # Retail packages frequently repeat entire combined tuning blobs. Keep
-    # their candidates only when the same ID also has a mod candidate, so
-    # normal catalogs do not retain hundreds of thousands of retail repeats.
+    # their candidates only for mod overrides and premade Sims, so most
+    # retail repeats are discarded while Sim pack ambiguity stays visible.
     data.tuning_overrides = {
         instance: candidates for instance, candidates in data.tuning_overrides.items()
-        if any(candidate.source.is_mod for candidate in candidates)
+        if any(candidate.source.is_mod or candidate.tuning_class == "PremadeSimTemplate"
+               for candidate in candidates)
     }
     if include_relationships and data.relationship_modules:
         data.relationship_tuning = extract_relationship_tuning(

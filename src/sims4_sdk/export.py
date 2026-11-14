@@ -520,6 +520,7 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "first_name": value.first_name,
         "last_name": value.last_name,
         "full_name": value.full_name,
+        "pack_id": getattr(value, "pack_id", None),
         "household_id": value.household_id,
         "household_name": value.household_name,
         "age": value.age,

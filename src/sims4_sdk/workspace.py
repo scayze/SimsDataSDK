@@ -16,7 +16,9 @@ snapshot produced with :meth:`StaticData.save`::
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Optional
+from dataclasses import dataclass
+import re
+from typing import Callable, Iterable, Optional
 
 from .catalog import (
     Catalog,
@@ -30,12 +32,34 @@ from .catalog import (
     build_static,
 )
 from .installation import Installation
-from .paths import find_user_dir
+from .paths import find_user_dir, iter_pack_root_folders
+from .exceptions import Sims4SDKError
+from .export import Serializable
 from .save import SaveFile, TrayLibrary, read_save, read_tray_library
 
 __all__ = ["Sims4Workspace"]
 
 ProgressCallback = Optional[Callable[[str], None]]
+
+
+class PackStatusError(Sims4SDKError, ValueError):
+    """Invalid pack ID or ownership filter."""
+
+
+@dataclass(frozen=True)
+class PackStatus(Serializable):
+    pack_id: str
+    owned: Optional[bool]
+    installed: Optional[bool]
+
+    def to_dict(self, **options) -> dict:
+        return {"pack_id": self.pack_id, "owned": self.owned, "installed": self.installed}
+
+
+def _pack_id(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"BASE|(?:EP|GP|SP|FP)\d+", value.upper()):
+        raise PackStatusError(f"invalid pack ID: {value!r}")
+    return value.upper()
 
 
 class Sims4Workspace:
@@ -50,10 +74,14 @@ class Sims4Workspace:
         include_mods: bool = True,
         cache_dir: str | Path | None = None,
         static: StaticData | str | Path | None = None,
+        owned_packs: Iterable[str] | None = None,
     ):
         self.locale = locale
         self.include_mods = include_mods
         self.cache_dir = cache_dir
+        if isinstance(owned_packs, str):
+            raise PackStatusError("owned_packs must be an iterable of pack IDs, not a string")
+        self.owned_packs = None if owned_packs is None else frozenset(_pack_id(p) for p in owned_packs)
         self._static: Optional[StaticData] = None
         self._static_provided = static is not None
         self.installation: Optional[Installation] = None
@@ -97,6 +125,7 @@ class Sims4Workspace:
         locale: str = "ENG_US",
         include_mods: bool = True,
         cache_dir: str | Path | None = None,
+        owned_packs: Iterable[str] | None = None,
     ) -> "Sims4Workspace":
         """Open a workspace backed by a pre-built static-data snapshot.
 
@@ -110,6 +139,7 @@ class Sims4Workspace:
             include_mods=include_mods,
             cache_dir=cache_dir,
             static=static,
+            owned_packs=owned_packs,
         )
 
     # ------------------------------------------------------------------
@@ -172,9 +202,29 @@ class Sims4Workspace:
         """Build the connected family tree around a pre-made Sim or ancestor."""
         return self.static_data().family_tree(key)
 
-    def find_sims(self, *args, **kwargs) -> list[PremadeSim]:
-        """Filter pre-made Sims; see :meth:`PremadeBundle.find_sims`."""
-        return self.static_data().find_sims(*args, **kwargs)
+    def pack_status(self, pack_id: str) -> PackStatus:
+        """Return supplied ownership and the estimated local installation state."""
+        pack = _pack_id(pack_id)
+        owned = True if pack == "BASE" else (None if self.owned_packs is None else pack in self.owned_packs)
+        installed = None
+        if self.installation is not None:
+            installed = pack == "BASE" or pack in {p.name.upper() for p in iter_pack_root_folders(self.installation.install_dir)}
+        return PackStatus(pack, owned, installed)
+
+    def sim_ownership(self, sim: PremadeSim) -> str:
+        """Return owned, unowned, or unknown for a premade Sim."""
+        pack = getattr(sim, "pack_id", None)
+        if not isinstance(pack, str) or not re.fullmatch(r"BASE|(?:EP|GP|SP|FP)\d+", pack.upper()):
+            return "unknown"
+        status = self.pack_status(pack).owned
+        return "unknown" if status is None else "owned" if status else "unowned"
+
+    def find_sims(self, *args, ownership: str | None = None, **kwargs) -> list[PremadeSim]:
+        """Filter pre-made Sims, optionally by owned, unowned, or unknown."""
+        if ownership not in (None, "owned", "unowned", "unknown"):
+            raise PackStatusError(f"invalid ownership filter: {ownership!r}")
+        sims = self.static_data().find_sims(*args, **kwargs)
+        return sims if ownership is None else [sim for sim in sims if self.sim_ownership(sim) == ownership]
 
     def find_ancestors(self, *args, **kwargs) -> list[PremadeAncestor]:
         """Filter pre-made ancestors; see :meth:`PremadeBundle.find_ancestors`."""

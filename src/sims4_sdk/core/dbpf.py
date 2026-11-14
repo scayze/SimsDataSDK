@@ -311,6 +311,9 @@ class DBPF:
 
             fp.seek(0, 2)
             file_size = fp.tell()
+            if entry_count == 0 and index_size == 0 and index_offset == 0:
+                header = DBPFHeader(data[:4], major, minor, 0, 0, 0, file_size)
+                return header, _IndexView(b"", 0, 0, 0, {})
             if index_offset + 4 > file_size:
                 raise DBPFError(
                     f"{self.path.name}: index offset {index_offset} is past EOF"

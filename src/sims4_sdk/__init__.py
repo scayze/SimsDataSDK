@@ -184,7 +184,7 @@ from .save import (
     read_tray_library,
 )
 from .siminfo import SimInfo, SimInfoError
-from .workspace import Sims4Workspace
+from .workspace import PackStatus, PackStatusError, Sims4Workspace
 
 __version__ = "0.9.0"
 
@@ -198,6 +198,8 @@ __all__ = [
     "export",
     # facade
     "Sims4Workspace",
+    "PackStatus",
+    "PackStatusError",
     "Installation",
     "PackageInfo",
     # errors

@@ -438,3 +438,34 @@ second. Pass `include_mods=False` to get game-only data, or a package subset to
 `%LOCALAPPDATA%\sims4-sdk\cache\static-<hash>.pkl`. The hash covers package
 paths, modification times, sizes, the locale, and the cache schema version.
 Deleting the folder (or passing `refresh=True`) forces a rebuild.
+# Filtering premade Sims by ownership
+
+Pass the complete set of owned pack IDs when creating a workspace. Omit it
+when ownership is unknown; an empty set means no DLC packs are owned. The base
+game is treated as owned. IDs are case-insensitive.
+
+```python
+from sims4_sdk import Sims4Workspace
+
+ws = Sims4Workspace(owned_packs={"EP06", "GP08"})
+owned_sims = ws.find_sims(ownership="owned")
+unknown_sims = ws.find_sims(ownership="unknown")
+sim = ws.find_sim("Thorne Bailey")
+if sim:
+    print(sim.pack_id, ws.sim_ownership(sim))
+print(ws.pack_status("EP06"))  # owned and installed are separate states
+```
+
+The ownership filter also accepts `"unowned"`. Ownership is based on the
+supplied list, not launcher entitlements. `installed` is estimated from a
+main pack directory at the game root; `None` means no installation is
+available. A folder alone does not establish entitlement or installation
+completeness. Delta/update folders do not count as an installed pack.
+
+`PremadeSim.pack_id` is inferred from the official definitions seen during
+the static build, independently of the winning `source`. It is `None` when
+the official sources are absent or disagree. Consequently a mod-only Sim,
+an ambiguous Sim, or a Sim in an older snapshot without this field has
+unknown ownership and is excluded from both owned and unowned filters. A
+partial set of scanned packages can limit the evidence available for pack
+attribution. Ownership is workspace-specific and is not stored in snapshots.

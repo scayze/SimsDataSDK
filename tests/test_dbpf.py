@@ -19,6 +19,16 @@ def _write(tmp_path, data: bytes) -> str:
     return str(path)
 
 
+def test_empty_package_without_index(tmp_path) -> None:
+    header = bytearray(96)
+    header[:4] = b"DBPF"
+    struct.pack_into("<II", header, 4, 2, 1)
+    package = DBPF(_write(tmp_path, bytes(header)))
+    assert package.resource_count == 0
+    assert package.entries == []
+    assert list(package.iter_entries(type_id=1)) == []
+
+
 def test_read_entry_without_index_parse(tmp_path) -> None:
     payload = b"direct entry read " * 16
     path = _write(

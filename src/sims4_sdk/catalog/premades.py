@@ -83,6 +83,15 @@ def _source_matches(source: Optional[TuningSource], pack: Optional[str]) -> bool
     return needle in (source.pack.casefold(), source.label.casefold())
 
 
+def _sim_pack_id(sim: PremadeSim, catalog: Catalog) -> Optional[str]:
+    candidates = (catalog.tuning_overrides or {}).get(sim.id, [])
+    official = [candidate.source for candidate in candidates if not candidate.source.is_mod]
+    if sim.source is not None and not sim.source.is_mod:
+        official.append(sim.source)
+    packs = {source.pack.upper() for source in official if source.pack}
+    return next(iter(packs)) if len(packs) == 1 else None
+
+
 @dataclass
 class PremadeLot(Serializable):
     """A lot from the world/lot manifest (``0x729F6C4F``).
@@ -316,6 +325,8 @@ class PremadeSim(Serializable):
     age_hint: Optional[str] = None
     body_blend: Optional[str] = None
     source: Optional[TuningSource] = None
+    #: Pack inferred from official definitions; None if missing or ambiguous.
+    pack_id: Optional[str] = None
 
     @property
     def full_name(self) -> str:
@@ -790,6 +801,9 @@ def build_premades(
         aliases, household_id_aliases = _merge_world(catalog, sims, households, world)
     else:
         aliases, household_id_aliases = {}, {}
+
+    for sim in sims.values():
+        sim.pack_id = _sim_pack_id(sim, catalog)
 
     _link_household_relationships(households.values(), sims, catalog)
     _link_cross_household_and_ancestors(sims, ancestors, catalog)

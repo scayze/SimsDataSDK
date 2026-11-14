@@ -71,6 +71,48 @@ def build_static() -> StaticData:
     )
 
 
+def test_workspace_owned_sims_and_unknown_are_distinct(tmp_path: Path) -> None:
+    static = build_static()
+    static.sims[0].pack_id = "BASE"
+    static.sims.extend([
+        PremadeSim(id=11, name="one", first_name="One", last_name="Sim", pack_id="EP06"),
+        PremadeSim(id=12, name="two", first_name="Two", last_name="Sim", pack_id="GP08"),
+        PremadeSim(id=13, name="unknown", first_name="Unknown", last_name="Sim"),
+    ])
+    ws = Sims4Workspace(install_dir=tmp_path, static=static, owned_packs=["ep06"])
+    assert [s.id for s in ws.find_sims(ownership="owned")] == [10, 11]
+    assert [s.id for s in ws.find_sims(ownership="unowned")] == [12]
+    assert [s.id for s in ws.find_sims(ownership="unknown")] == [13]
+    assert ws.pack_status("ep06").owned is True
+    assert ws.pack_status("ep06").installed is False
+    assert ws.pack_status("ep06").to_dict() == {"pack_id": "EP06", "owned": True, "installed": False}
+    assert '"pack_id": "EP06"' in ws.pack_status("ep06").to_json()
+    (tmp_path / "EP06").mkdir()
+    assert ws.pack_status("EP06").installed is True
+    assert static.sims[1].to_dict()["pack_id"] == "EP06"
+    with pytest.raises(Sims4SDKError):
+        ws.find_sims(ownership="yes")
+    with pytest.raises(Sims4SDKError):
+        Sims4Workspace(install_dir=tmp_path, static=static, owned_packs="EP06")
+    unknown = Sims4Workspace(install_dir=tmp_path, static=static)
+    assert unknown.sim_ownership(static.sims[1]) == "unknown"
+    assert unknown.sim_ownership(static.sims[0]) == "owned"
+
+
+def test_ownership_with_portable_snapshot_without_installation(tmp_path: Path, monkeypatch) -> None:
+    static = build_static()
+    static.sims[0].pack_id = "EP06"
+    snapshot = static.save(tmp_path / "snapshot.pkl")
+    def no_installation(*args, **kwargs):
+        raise FileNotFoundError
+    monkeypatch.setattr("sims4_sdk.workspace.Installation", no_installation)
+    ws = Sims4Workspace.from_static(snapshot, owned_packs=["EP06"])
+    assert ws.pack_status("EP06").installed is None
+    assert ws.find_sims(ownership="owned")[0].pack_id == "EP06"
+    del ws.premade_sims()[0].__dict__["pack_id"]
+    assert ws.sim_ownership(ws.premade_sims()[0]) == "unknown"
+
+
 def test_catalog_save_load_round_trip(tmp_path: Path) -> None:
     catalog = build_catalog()
     target = catalog.save(tmp_path / "nested" / "catalog.pkl")

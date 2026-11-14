@@ -36,7 +36,11 @@ class PremadeCompositeResult(Serializable):
                 "diagnostics": [issue.to_dict(**options) for issue in self.diagnostics]}
 
     def largest(self, template_id: int) -> Optional[PremadeComposite]:
-        """Return the largest known dimensions, breaking ties by resource key."""
+        """Return the largest image for a household resource instance ID.
+
+        Ties are broken by resource key. The instance may differ from the
+        tuning ID exposed by ``PremadeHousehold.id``.
+        """
         matches = (item for item in self.images if item.key.instance == template_id)
         return max(matches, key=lambda item: ((item.artwork.width or 0) *
                    (item.artwork.height or 0), item.key), default=None)
@@ -63,7 +67,7 @@ class PremadeCompositeIndex:
                     "composite_index", exc, package_path=str(info.path), recoverable=True))
 
     def read(self, template_ids: Iterable[int]) -> PremadeCompositeResult:
-        """Decode all variants for requested template IDs, retaining failures."""
+        """Decode variants for household resource instance IDs, retaining failures."""
         wanted = set(template_ids)
         result = PremadeCompositeResult(diagnostics=list(self.diagnostics))
         for key, (info, entry) in sorted(self._entries.items()):
