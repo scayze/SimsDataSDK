@@ -64,7 +64,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-22"
+CACHE_VERSION = "step2-23"
 
 _LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(

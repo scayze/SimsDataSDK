@@ -152,6 +152,40 @@ def test_localized_household_and_lot_links_follow_template_aliases() -> None:
     assert bundle.household("Test") is household
     assert bundle.find_households("localized") == [household]
     assert household.to_dict()["lot_id"] == 30
+    assert bundle.sim(1).normal_game_usage is True
+    assert bundle.sim(1).scenario_usage is None
+
+
+def test_scenario_name_and_world_placement_are_independent_evidence() -> None:
+    xml = '''<root>
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_Scenario_Test" s="1" />
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_Other" s="2" />
+    <I c="PremadeSimTemplate" n="premadeSimTemplate_Unknown" s="5" />
+    <I c="PremadeHouseholdTemplate" n="premadeHouseholdTemplate_Scenario_Test" s="3">
+      <L n="_household_members"><U><T n="household_member_tag">a</T>
+      <T n="sim_template">1</T></U></L></I>
+    <I c="PremadeHouseholdTemplate" n="OrdinaryName" s="4">
+      <L n="_household_members"><U><T n="household_member_tag">a</T>
+      <T n="sim_template">2</T></U></L></I>
+    <I c="Scenario" n="test" s="9">
+      <L n="compatible_premade_household_templates">
+        <T>b3c438f0:00000000:000000000000000b</T>
+      </L></I></root>'''
+    entries = {item.instance_id: item for item in CombinedTuning.from_xml(xml)}
+    world = WorldData(
+        households={10: StarterHouseholdRecord(instance=10, name="premadeHouseholdTemplate_Scenario_Test", members=[StarterMember(sim_id=20)]),
+                    11: StarterHouseholdRecord(instance=11, name="OrdinaryName", members=[StarterMember(sim_id=21)])},
+        lots={30: LotRecord(instance=30, household_id=10)},
+    )
+    bundle = build_premades(None, Catalog(), entries, {}, world=world, siminfo_index={})
+    sim = bundle.sim(1)
+    assert sim.scenario_usage is True and sim.normal_game_usage is True
+    assert {item.id for item in bundle.find_sims(origin="scenario")} == {1, 2}
+    assert bundle.find_sims(origin="normal") == [sim]
+    assert bundle.find_sims(origin="both") == [sim]
+    assert [item.id for item in bundle.find_sims(origin="unknown")] == [5]
+    assert sim.to_dict()["scenario_usage"] is True
+    assert sim.to_dict()["normal_game_usage"] is True
 
 
 def test_multiple_lots_do_not_choose_conflicting_localized_values() -> None:

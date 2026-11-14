@@ -74,6 +74,7 @@ def build_static() -> StaticData:
 def test_workspace_owned_sims_and_unknown_are_distinct(tmp_path: Path) -> None:
     static = build_static()
     static.sims[0].pack_id = "BASE"
+    static.sims[0].normal_game_usage = True
     static.sims.extend([
         PremadeSim(id=11, name="one", first_name="One", last_name="Sim", pack_id="EP06"),
         PremadeSim(id=12, name="two", first_name="Two", last_name="Sim", pack_id="GP08"),
@@ -81,6 +82,7 @@ def test_workspace_owned_sims_and_unknown_are_distinct(tmp_path: Path) -> None:
     ])
     ws = Sims4Workspace(install_dir=tmp_path, static=static, owned_packs=["ep06"])
     assert [s.id for s in ws.find_sims(ownership="owned")] == [10, 11]
+    assert [s.id for s in ws.find_sims(ownership="owned", origin="normal")] == [10]
     assert [s.id for s in ws.find_sims(ownership="unowned")] == [12]
     assert [s.id for s in ws.find_sims(ownership="unknown")] == [13]
     assert ws.pack_status("ep06").owned is True
@@ -92,6 +94,8 @@ def test_workspace_owned_sims_and_unknown_are_distinct(tmp_path: Path) -> None:
     assert static.sims[1].to_dict()["pack_id"] == "EP06"
     with pytest.raises(Sims4SDKError):
         ws.find_sims(ownership="yes")
+    with pytest.raises(Sims4SDKError):
+        ws.find_sims(origin="yes")
     with pytest.raises(Sims4SDKError):
         Sims4Workspace(install_dir=tmp_path, static=static, owned_packs="EP06")
     unknown = Sims4Workspace(install_dir=tmp_path, static=static)
@@ -111,6 +115,7 @@ def test_ownership_with_portable_snapshot_without_installation(tmp_path: Path, m
     assert ws.find_sims(ownership="owned")[0].pack_id == "EP06"
     del ws.premade_sims()[0].__dict__["pack_id"]
     assert ws.sim_ownership(ws.premade_sims()[0]) == "unknown"
+    assert ws.find_sims(origin="unknown") == ws.premade_sims()
 
 
 def test_catalog_save_load_round_trip(tmp_path: Path) -> None:

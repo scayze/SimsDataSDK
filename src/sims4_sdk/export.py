@@ -521,6 +521,8 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "last_name": value.last_name,
         "full_name": value.full_name,
         "pack_id": getattr(value, "pack_id", None),
+        "scenario_usage": getattr(value, "scenario_usage", None),
+        "normal_game_usage": getattr(value, "normal_game_usage", None),
         "household_id": value.household_id,
         "household_name": value.household_name,
         "age": value.age,

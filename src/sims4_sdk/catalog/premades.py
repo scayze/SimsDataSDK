@@ -21,11 +21,13 @@ trait list with :class:`sims4_sdk.siminfo.SimInfo`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Iterable, Optional
 
 from ..core import DBPF, ResourceKey, TuningElement
 from ..core.images import parse_image_key
 from ..export import Serializable
+from ..exceptions import Sims4SDKError
 from ..installation import Installation
 from ..siminfo import SimInfo, SimInfoError
 from .models import (
@@ -60,7 +62,12 @@ __all__ = [
     "FamilyTree",
     "PremadeBundle",
     "build_premades",
+    "PremadeFilterError",
 ]
+
+
+class PremadeFilterError(Sims4SDKError, ValueError):
+    """An invalid premade filter was supplied."""
 
 
 def _exact_name(mapping: dict[str, object], key: str):
@@ -90,6 +97,37 @@ def _sim_pack_id(sim: PremadeSim, catalog: Catalog) -> Optional[str]:
         official.append(sim.source)
     packs = {source.pack.upper() for source in official if source.pack}
     return next(iter(packs)) if len(packs) == 1 else None
+
+
+def _scenario_households(entries, world: Optional[WorldData], aliases: dict[int, int]) -> set[int]:
+    """Resolve exact scenario household keys to merged household IDs."""
+    if world is None:
+        return set()
+    result: set[int] = set()
+    for entry in entries.values():
+        if entry.cls != "Scenario":
+            continue
+        view = TuningView(entry, {})
+        field = view.resolved_child("compatible_premade_household_templates")
+        if field is None:
+            continue
+        for item in field:
+            text = view.raw_text_of(item)
+            parts = text.split(":") if text else []
+            if len(parts) != 3:
+                continue
+            try:
+                key = ResourceKey(*(int(part, 16) for part in parts))
+            except ValueError:
+                continue
+            if key.type_id != 0xB3C438F0:
+                continue
+            record = world.household_resources.get(key)
+            if record is None and key.group == 0:
+                record = world.households.get(key.instance)
+            if record is not None:
+                result.add(aliases.get(record.instance, record.instance))
+    return result
 
 
 @dataclass
@@ -327,6 +365,9 @@ class PremadeSim(Serializable):
     source: Optional[TuningSource] = None
     #: Pack inferred from official definitions; None if missing or ambiguous.
     pack_id: Optional[str] = None
+    #: Positive evidence of scenario use and ordinary world placement.
+    scenario_usage: Optional[bool] = None
+    normal_game_usage: Optional[bool] = None
 
     @property
     def full_name(self) -> str:
@@ -634,8 +675,11 @@ class PremadeBundle(Serializable):
         household: str | int | None = None,
         age: Optional[str] = None,
         occult: Optional[str] = None,
+        origin: Optional[str] = None,
     ) -> list[PremadeSim]:
-        """Filter pre-made Sims by name, pack, household, age, or occult."""
+        """Filter Sims by name, pack, household, age, occult, or origin evidence."""
+        if origin not in (None, "normal", "scenario", "both", "unknown"):
+            raise PremadeFilterError(f"invalid origin filter: {origin!r}")
         needle = query.casefold()
         results: list[PremadeSim] = []
         for sim in self.sims:
@@ -652,6 +696,16 @@ class PremadeBundle(Serializable):
             if age and (sim.age or "").casefold() != age.casefold():
                 continue
             if occult and (sim.occult or "").casefold() != occult.casefold():
+                continue
+            scenario = getattr(sim, "scenario_usage", None) is True
+            normal = getattr(sim, "normal_game_usage", None) is True
+            if origin == "scenario" and not scenario:
+                continue
+            if origin == "normal" and not normal:
+                continue
+            if origin == "both" and not (scenario and normal):
+                continue
+            if origin == "unknown" and (scenario or normal):
                 continue
             results.append(sim)
         return results
@@ -811,6 +865,16 @@ def build_premades(
 
     lots = _build_lots(catalog, world, household_id_aliases)
     _link_lots(households, lots)
+    scenario_households = _scenario_households(entries, world, household_id_aliases)
+    for sim in sims.values():
+        household = households.get(sim.household_id)
+        names = (sim.name, sim.household_name or "")
+        if sim.household_id in scenario_households or any(
+            re.search(r"(?:^|_)scenario(?:_|$)", name, re.IGNORECASE) for name in names
+        ):
+            sim.scenario_usage = True
+        if household is not None and household.lot_ids:
+            sim.normal_game_usage = True
     bundle = PremadeBundle(
         sims=sorted(sims.values(), key=lambda sim: sim.full_name.casefold()),
         households=sorted(households.values(), key=lambda hh: hh.name.casefold()),

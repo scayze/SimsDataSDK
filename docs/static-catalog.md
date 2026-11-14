@@ -1,5 +1,30 @@
 # Static catalog and pre-made Sims
 
+## Filtering scenario and ordinary-world Sims
+
+`find_sims(origin="scenario")` selects Sims with a `Scenario` component in
+their premade Sim or household tuning name, or in a household explicitly
+referenced by a scenario using an exact resource key. This is evidence, not a
+complete enumeration of every Sim referenced by scenario tuning.
+`origin="normal"` selects Sims whose household is linked to a shipped world
+lot. This includes Sims that also have scenario evidence. `origin="both"`
+requires both kinds of evidence; `origin="unknown"` returns Sims with neither.
+The filter is available on `PremadeBundle`, `StaticData`, and the workspace,
+and combines with workspace ownership filtering:
+
+```python
+world_sims = ws.find_sims(origin="normal", ownership="owned")
+scenario_sims = ws.find_sims(origin="scenario", ownership="owned")
+unclassified = ws.find_sims(origin="unknown", ownership="owned")
+```
+
+Each Sim exports `scenario_usage` and `normal_game_usage`, each `True` when
+there is evidence and `None` when undetermined. Absence of the scenario name
+marker does not prove a Sim is never used by a scenario; absence of a lot link
+does not prove a Sim is scenario-only. Homeless, special, or otherwise
+unlinked ordinary Sims may therefore be `unknown`. Older snapshots lack the
+evidence and are treated as unknown; rebuild the snapshot to classify them.
+
 The static catalog answers questions that do **not** require a save file:
 
 - What traits, likes/dislikes, aspirations, careers, milestones, and relationship
