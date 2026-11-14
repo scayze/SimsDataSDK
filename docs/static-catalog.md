@@ -29,6 +29,21 @@ walkby link does not prove a Sim is scenario-only. Homeless, special, or otherwi
 unlinked ordinary Sims may therefore be `unknown`. Older snapshots lack the
 evidence and are treated as unknown; rebuild the snapshot to classify them.
 
+### Townie street assignments
+
+Premade households expose `townie_street_status` (`"enabled"`, `"disabled"`,
+or `"unknown"`) and `townie_street_id` (an integer reference or `None`). An
+enabled status with a `None` ID means the street reference could not be read;
+unknown includes absent or unresolved tuning and households without a tuning
+template. The ID is a world-description reference, not a generic tuning ID.
+
+The game uses an enabled assignment to set an existing townie household's home
+world. It is evidence of intended townie use, not proof that the household is
+created in a particular save, appears during play, or is excluded from a
+scenario. A disabled or unknown assignment does not establish the opposite.
+The origin filters do not currently use this field. Rebuild older static
+snapshots to obtain the new values.
+
 ### Scenario and NPC tuning
 
 `ws.scenario("StuckInTheirShadow")` and `ws.find_scenarios("shadow")` query

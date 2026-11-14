@@ -219,7 +219,8 @@ class PremadeHousehold(Serializable):
     members: list[HouseholdMember] = field(default_factory=list)
     relationships: list[HouseholdRelationship] = field(default_factory=list)
     hidden: bool = False
-    townie_street: Optional[str] = None
+    townie_street_status: str = "unknown"
+    townie_street_id: Optional[int] = None
     funds: Optional[int] = None
     source: Optional[TuningSource] = None
     localized_name: Optional[str] = None
@@ -2242,13 +2243,18 @@ def _build_household(
                     )
                 )
 
+    street_variant, street_payload = view.variant("_townie_street")
+    street_status = street_variant if street_variant in ("enabled", "disabled") else "unknown"
+    street_id = view.number_of(street_payload) if street_status == "enabled" else None
+
     return PremadeHousehold(
         id=entry.instance_id,
         name=entry.name,
         members=members,
         relationships=relationships,
         hidden=view.flag("_hidden"),
-        townie_street=view.text("_townie_street") or view.raw_text("_townie_street"),
+        townie_street_status=street_status,
+        townie_street_id=street_id,
         funds=view.number("_household_funds"),
         source=source,
     )

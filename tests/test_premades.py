@@ -128,6 +128,29 @@ def test_premade_sim_gender_options() -> None:
     assert options.can_be_impregnated is True
 
 
+def test_townie_street_variant_and_serialization() -> None:
+    xml = '''<root><g>
+      <V x="1" t="enabled"><r n="enabled" x="2" /></V>
+      <T x="2">20384</T><V x="3" t="disabled" />
+    </g>
+    <I c="PremadeHouseholdTemplate" n="Enabled" s="1"><r n="_townie_street" x="1" /></I>
+    <I c="PremadeHouseholdTemplate" n="Disabled" s="2"><r n="_townie_street" x="3" /></I>
+    <I c="PremadeHouseholdTemplate" n="Missing" s="3" />
+    <I c="PremadeHouseholdTemplate" n="Incomplete" s="4"><V n="_townie_street" t="enabled"><r x="99" /></V></I>
+    <I c="PremadeHouseholdTemplate" n="Unresolved" s="5"><r n="_townie_street" x="99" /></I>
+    </root>'''
+    entries = {item.instance_id: item for item in CombinedTuning.from_xml(xml)}
+    bundle = build_premades(None, Catalog(), entries, {}, siminfo_index={})
+    assert (bundle.household(1).townie_street_status, bundle.household(1).townie_street_id) == ("enabled", 20384)
+    assert (bundle.household(2).townie_street_status, bundle.household(2).townie_street_id) == ("disabled", None)
+    assert (bundle.household(3).townie_street_status, bundle.household(3).townie_street_id) == ("unknown", None)
+    assert (bundle.household(4).townie_street_status, bundle.household(4).townie_street_id) == ("enabled", None)
+    assert bundle.household(5).townie_street_status == "unknown"
+    data = bundle.household(1).to_dict()
+    assert data["townie_street_status"] == "enabled" and data["townie_street_id"] == 20384
+    assert '"townie_street_id": 20384' in bundle.household(1).to_json()
+
+
 def test_localized_household_and_lot_links_follow_template_aliases() -> None:
     xml = """<root>
     <I c="PremadeSimTemplate" n="premadeSimTemplate_Test" s="1" />

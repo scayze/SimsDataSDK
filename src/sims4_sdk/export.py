@@ -647,7 +647,8 @@ def _premade_household_dict(value: Any, options: _Options) -> dict[str, Any]:
         "lot_id": value.lot_id,
         "lot_ids": list(value.lot_ids),
         "hidden": value.hidden,
-        "townie_street": value.townie_street,
+        "townie_street_status": value.townie_street_status,
+        "townie_street_id": value.townie_street_id,
         "funds": value.funds,
         "member_ids": list(value.member_ids),
         "members": [
