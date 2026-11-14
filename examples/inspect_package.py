@@ -4,7 +4,7 @@ Usage::
 
     python examples/inspect_package.py "C:/path/to/Some.package"
 
-This is intentionally small; it only demonstrates the Step 1 readers.
+This small example demonstrates the package readers.
 """
 
 from __future__ import annotations

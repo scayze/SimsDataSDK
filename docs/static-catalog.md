@@ -74,19 +74,6 @@ The static catalog answers questions that do **not** require a save file:
 All of it is extracted from the installation (`Data/`, `Delta/`, and `Mods/`)
 and cached, so downstream tools can call it without a save.
 
-## Revised roadmap
-
-| Step | Scope | Status |
-| --- | --- | --- |
-| 1 | DBPF/RefPack/STBL/DATA/Combined Tuning readers | done |
-| 2 | Static catalog + pre-made Sims (no save) | done |
-| 3 | Saves, Tray files, live Sim state | done |
-| 4 | Sims Wiki validation | done |
-| 5 | Public library API (serialization, lookups, portable snapshots) | done |
-
-Saves remain a first-class feature, but they are no longer a prerequisite for
-reading the base definitions.
-
 ## Tuning sources
 
 The catalog is built from `CombinedTuning` resources (`0x62E94D38`) in load
@@ -214,8 +201,7 @@ tuning template at all.  They are defined by two non-tuning resources:
 
 These live in `Data/Client/ClientFullBuild0.package` and
 `Data/Client/ClientDeltaBuild0.package` (and `Delta/<PACK>/ClientDeltaBuild0.package`).
-Scanning only `Data/Simulation` silently hides them, which is why earlier builds
-were missing most base-game households.
+Scanning only `Data/Simulation` omits these households.
 
 `PremadeHousehold.localized_name` and `.description` resolve the associated
 manifest's household strings. `.display_name` uses the localized name when
@@ -254,8 +240,7 @@ Builds cache Combined Tuning parsing per unique resource content: several packs
 ship the same blob in both `SimulationPreload.package` and
 `SimulationDeltaBuild0.package`, so identical bytes are decoded once. SimInfo
 lookups also read directly from their existing index entry instead of re-parsing
-each package index. On a full install this cuts the cold build from roughly 285 s
-to 130 s.
+each package index.
 
 The SDK merges these into the normal models:
 
@@ -286,8 +271,7 @@ not collide with 32-bit tuning instance IDs.
 
 ### Initial relationship values
 
-The numeric friendship/romance values are tuning data, not hardcoded, and the
-SDK now exposes them:
+The SDK exposes numeric friendship/romance values from tuning data:
 
 - `Catalog.relationship_defaults` — per genealogy link (`Roommate` 15,
   `FamilyMember` 45, `Spouse` 75 romance, `Fiance` 75, `Steady` 40, pets 33).

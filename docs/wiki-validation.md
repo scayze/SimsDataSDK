@@ -98,16 +98,9 @@ These are reported rather than hidden.
 ### Static pre-made coverage
 
 Comparing `--no-save` is stricter because many base-game pre-made Sims do not
-pin age/gender/career/skills in tuning. The validation run also revealed a real
-static extraction gap, which has since been fixed:
-
-- **BFF household** — Liberty Lee, Travis Scott, and Summer Holiday were not
-  emitted by `PremadeSimTemplate` extraction because they have no tuning
-  template at all. They are defined by the lot manifest (`0x729F6C4F`) and a
-  pre-made household resource (`0xB3C438F0`) under `Data/Client`. The SDK now
-  scans those packages and merges the households, so BFF, Pancakes, Caliente,
-  Roomies and Spencer-Kim-Lewis (and the equivalent households in EP02–EP18)
-  are part of the static catalog.
+pin age, gender, career, or skills in tuning. The static catalog also includes
+households defined by lot manifests and pre-made household resources under
+`Data/Client`, including BFF and Pancakes.
 
 ## False-positive controls
 
