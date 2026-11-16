@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import struct
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
 from ..catalog.models import Catalog
-from ..exceptions import Sims4SDKError
 from ..export import Serializable
 from .models import SavedSim, TrayHousehold, TrayItem, TrayLibrary
-from .protobuf import ProtobufError, decode
 from .reader import sim_from_dict, _as_list
-from .schema import SCHEMAS
+from .tray_source import TrayError, TraySource, extract_tray_item, extract_household_binary
 from .tray_summary import TrayHouseholdSummary, read_household_summary
 
 __all__ = [
     "TrayError",
+    "TraySource", "extract_tray_item", "extract_household_binary",
+    "resolve_tray_item", "resolve_household_binary",
     "read_tray_item",
     "read_household_binary",
     "read_tray_library",
@@ -28,24 +28,11 @@ __all__ = [
 ]
 
 
-class TrayError(Sims4SDKError, ValueError):
-    """Raised when a Tray file cannot be parsed."""
-
-
-def read_tray_item(path: str | Path) -> TrayItem:
-    """Read a ``.trayitem`` metadata file."""
-    path = Path(path)
-    data = path.read_bytes()
-    if len(data) < 8:
-        raise TrayError(f"{path.name}: file is too small")
-    _version, length = struct.unpack_from("<II", data, 0)
-    payload = data[8 : 8 + length] if 0 < length <= len(data) - 8 else data[8:]
-    try:
-        raw = decode(payload, "TrayItem", SCHEMAS)
-    except ProtobufError as exc:
-        raise TrayError(f"{path.name}: {exc}") from exc
-
-    nested = raw.get("data", {}) or {}
+def resolve_tray_item(source: TraySource) -> TrayItem:
+    if source.kind != "item":
+        raise TrayError("expected a Tray item source")
+    path = source.path
+    raw = deepcopy(source.decoded)
     return TrayItem(
         path=path,
         item_id=raw.get("item_id"),
@@ -59,29 +46,15 @@ def read_tray_item(path: str | Path) -> TrayItem:
     )
 
 
-def read_household_binary(
-    path: str | Path,
-    catalog: Optional[Catalog] = None,
-) -> TrayHousehold:
-    """Read a ``.householdbinary`` file into a :class:`TrayHousehold`."""
-    path = Path(path)
-    data = path.read_bytes()
-    raw = None
-    last_error: Optional[Exception] = None
-    # The normal container header is 16 bytes; tolerate variants.
-    for offset in (16, 12, 8, 0):
-        if offset >= len(data):
-            continue
-        try:
-            candidate = decode(data[offset:], "FamilyData", SCHEMAS)
-        except ProtobufError as exc:
-            last_error = exc
-            continue
-        if candidate.get("family_account") is not None:
-            raw = candidate
-            break
-    if raw is None:
-        raise TrayError(f"{path.name}: could not decode FamilyData ({last_error})")
+def read_tray_item(path: str | Path) -> TrayItem:
+    return resolve_tray_item(extract_tray_item(path))
+
+
+def resolve_household_binary(source: TraySource, catalog: Optional[Catalog] = None) -> TrayHousehold:
+    if source.kind != "household":
+        raise TrayError("expected a Tray household source")
+    path = source.path
+    raw = deepcopy(source.decoded)
 
     family = raw.get("family_account", {}) or {}
     raw_sims = _as_list(family.get("sim"))
@@ -103,6 +76,10 @@ def read_household_binary(
         sims=sims,
         raw=raw,
     )
+
+
+def read_household_binary(path: str | Path, catalog: Optional[Catalog] = None) -> TrayHousehold:
+    return resolve_household_binary(extract_household_binary(path), catalog)
 
 
 def pair_key(path: Path) -> str:

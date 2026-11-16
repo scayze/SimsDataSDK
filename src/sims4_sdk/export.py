@@ -292,6 +292,7 @@ def _career_level_dict(value: Any, options: _Options) -> dict[str, Any]:
         "description": value.description,
         "track_id": value.track_id,
         "level": value.level,
+        "level_evidence": value.level_evidence,
         "pay_per_hour": value.pay_per_hour,
         "pay_type": value.pay_type,
         "aspiration_id": value.aspiration_id,
@@ -538,7 +539,7 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "siminfo_key": str(value.siminfo_key) if value.siminfo_key else None,
         "explicit_trait_ids": list(value.explicit_trait_ids),
         "siminfo_trait_ids": list(value.siminfo_trait_ids),
-        "unknown_trait_ids": list(value.unknown_trait_ids),
+        "unresolved_trait_ids": list(value.unresolved_trait_ids),
         "random_trait_count": value.random_trait_count,
         "traits": [_trait_ref(item) for item in value.traits],
         "personality_traits": [
@@ -906,6 +907,7 @@ def _saved_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "primary_aspiration_track_id": value.primary_aspiration_track_id,
         "aspiration_track": _aspiration_track_ref(value.aspiration_track),
         "traits": [_trait_ref(item) for item in value.traits],
+        "trait_ids": list(value.trait_ids),
         "personality_traits": [
             _trait_ref(item) for item in value.personality_traits
         ],
@@ -913,7 +915,7 @@ def _saved_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "preferences": [_preference_ref(item) for item in value.preferences],
         "likes": [_preference_ref(item) for item in value.likes],
         "dislikes": [_preference_ref(item) for item in value.dislikes],
-        "unknown_trait_ids": list(value.unknown_trait_ids),
+        "unresolved_trait_ids": list(value.unresolved_trait_ids),
         "gender_options": _gender_options_dict(value.gender_options, options),
         "careers": [_saved_career_dict(item, options) for item in value.careers],
         "skills": [_saved_skill_dict(item, options) for item in value.skills],
@@ -921,10 +923,13 @@ def _saved_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
             _saved_relationship_dict(item, options) for item in value.relationships
         ],
         "spouse_id": value.spouse_id,
+        "spouse_origin": value.spouse_origin,
         "spouse_name": value.spouse_name,
         "fiance_id": value.fiance_id,
+        "fiance_origin": value.fiance_origin,
         "fiance_name": value.fiance_name,
         "steady_ids": list(value.steady_ids),
+        "steady_origins": {str(key): origin for key, origin in value.steady_origins.items()},
         "steady_names": list(value.steady_names),
         "tropes": [_saved_trope_dict(item, options) for item in value.tropes],
         "parents": [
@@ -1249,6 +1254,9 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
     if isinstance(obj, TuningSource):
         return _source(obj)
     from .save.artwork import Artwork
+    from .save.source import SaveSource
+    from .save.tray_source import TraySource
+    from .catalog.static import StaticSource
     from .save.tray import TrayListing, TrayListingGroup
     from .catalog.diagnostics import ExtractionIssue
     from .core.images import GameImage
@@ -1262,7 +1270,10 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         if opts.include_raw:
             data["data"] = bytes(obj.data).hex()
         return data
-    if isinstance(obj, (SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue, TrayListing, TrayListingGroup)):
+    if isinstance(obj, StaticSource):
+        return obj.to_dict(include_raw=opts.include_raw, include_strings=opts.include_strings,
+                           include_tuning_index=opts.include_tuning_index)
+    if isinstance(obj, (SaveSource, TraySource, SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue, TrayListing, TrayListingGroup)):
         return _dataclass_dict(obj, opts)
     if isinstance(obj, TrayLibrary):
         return _tray_library_dict(obj, opts)

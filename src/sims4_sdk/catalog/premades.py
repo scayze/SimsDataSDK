@@ -318,7 +318,7 @@ class PremadeSim(Serializable):
     siminfo_trait_ids: list[int] = field(default_factory=list)
     traits: list[Trait] = field(default_factory=list)
     preferences: list[Preference] = field(default_factory=list)
-    unknown_trait_ids: list[int] = field(default_factory=list)
+    unresolved_trait_ids: list[int] = field(default_factory=list)
     random_trait_count: Optional[int] = None
     skills: list[SkillLevel] = field(default_factory=list)
     aspiration_id: Optional[int] = None
@@ -1855,7 +1855,7 @@ def _starter_sim(
         explicit_trait_ids=list(member.trait_ids),
         traits=traits,
         preferences=preferences,
-        unknown_trait_ids=unknown,
+        unresolved_trait_ids=unknown,
         skills=skills,
         aspiration_track_id=member.aspiration_track_id,
         aspiration_track=aspiration_track,
@@ -2140,7 +2140,7 @@ def _build_sim(
         siminfo_trait_ids=siminfo_trait_ids,
         traits=traits,
         preferences=preferences,
-        unknown_trait_ids=unknown,
+        unresolved_trait_ids=unknown,
         random_trait_count=random_trait_count,
         skills=skills,
         aspiration_id=aspiration_id,

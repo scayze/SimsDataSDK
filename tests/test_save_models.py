@@ -101,6 +101,14 @@ def test_career_display_name_comes_from_start_track() -> None:
     assert career.to_dict()["display_name"] == "Test Career"
 
 
+def test_out_of_range_career_index_does_not_guess_a_level() -> None:
+    sim = sim_from_dict({"sim_id": 1, "attributes": {"sim_careers": {
+        "careers": [{"career_uid": 20, "track_uid": 21, "track_level": 99}]}}},
+        build_catalog())
+    assert sim.career.track_level == 99
+    assert sim.career.level_id is None
+
+
 def test_sim_from_dict() -> None:
     data = {
         "sim_id": 100,
@@ -169,7 +177,7 @@ def test_sim_from_dict() -> None:
     assert sim.aspiration_track is not None and sim.aspiration_track.id == 10
     assert [trait.id for trait in sim.traits] == [1]
     assert [preference.id for preference in sim.preferences] == [2]
-    assert sim.unknown_trait_ids == [999]
+    assert sim.unresolved_trait_ids == [999]
     assert sim.personality_traits == sim.traits
     assert [preference.name for preference in sim.likes] == ["trait_Test_Likes_Cooking"]
     assert sim.dislikes == []

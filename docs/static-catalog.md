@@ -1,5 +1,26 @@
 # Static catalog and pre-made Sims
 
+`extract_static(installation)` collects supported tuning, world resources,
+strings, selected sources, and diagnostics into `StaticSource`. The selected
+tuning entries, source keys, and original household/lot resource bytes are
+available under `source.collected`. World resources are parsed during resolution.
+`resolve_static(source)` constructs the catalog and premade
+views without changing the source records; `build_static` performs both stages.
+The source keeps SimInfo package locations and index entries, so those package
+files must remain available when resolving it. Its JSON export is for inspection,
+not a reloadable snapshot.
+At the catalog level, `extract_catalog(...)` builds an unlinked projection
+with localized text and field fallbacks; it is not the source representation.
+`resolve_catalog(...)` returns a separately linked copy. Resolution includes
+derived values such as career level numbers, whose `level_evidence` indicates
+whether they came from a name or position in a track. Tuning entries can refer to shared
+Combined Tuning values, so their exported XML is not necessarily standalone.
+
+The source is a selection of supported decoded data, not a complete or
+lossless image of the installation. Selected package paths and resource keys
+allow callers to read original resources using `DBPF`. Override precedence and
+other extraction choices are described below; inspect diagnostics for gaps.
+
 ## Filtering scenario and ordinary-world Sims
 
 `find_sims(origin="scenario")` selects Sims with a `Scenario` component in

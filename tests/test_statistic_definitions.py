@@ -32,6 +32,7 @@ def test_statistics_use_explicit_classes_and_keep_mod_source(tmp_path):
     collected = collect_package_data([PackageInfo(base, "BASE"), PackageInfo(mod, "MOD", True)],
                                      include_world=False, include_relationships=False)
     catalog = extract_catalog(collected.entries, collected.sources, {0x1234: "Charisma"})
+    catalog = catalog.finalize()
     skill = catalog.statistic(16699)
     assert skill.name == "skill_Charisma_Mod" and skill.is_skill is True
     assert skill.display_name == "Charisma" and skill.display_name_raw == "0x1234"

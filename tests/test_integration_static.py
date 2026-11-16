@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from sims4_sdk import Installation
-from sims4_sdk.catalog import build_static, load_static
+from sims4_sdk.catalog import build_static, load_static, extract_static, resolve_static
 from sims4_sdk.save import read_save, read_tray_library
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow]
@@ -51,6 +51,20 @@ def _selected_packages(installation: Installation):
         and info.path.name in {"SimulationDeltaBuild0.package", "ClientDeltaBuild0.package"}
     )
     return selected
+
+
+def test_static_source_and_resolution_on_local_base(install_dir: Path):
+    installation = Installation(install_dir, include_mods=False)
+    package = next(info for info in installation.base_packages
+                   if info.path.name == "SimulationFullBuild0.package")
+    source = extract_static(installation, packages=[package], strings_packages=[])
+    before = set(source.collected.entries)
+    assert len(before) > 1000
+    assert source.collected.sources
+    resolved = resolve_static(source)
+    assert resolved.catalog.traits
+    assert set(source.collected.entries) == before
+    assert resolved.world is not None
 
 
 @pytest.fixture(scope="session")

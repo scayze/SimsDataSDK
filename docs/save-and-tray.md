@@ -4,6 +4,23 @@ These readers expose live data that only exists in a playthrough or a Gallery ex
 
 ## Save files
 
+`extract_save(path)` returns a `SaveSource` containing schema-selected decoded
+fields, the package path and resource key, artwork, and diagnostics. It does not
+resolve IDs or derive family links. `resolve_save(source, catalog)` produces a
+separate `SaveFile`; the catalog is optional. `read_save(path, catalog)` runs
+both stages. Standalone payloads can be decoded with `extract_save_resource`;
+they have no package resource key or package-level coverage information.
+
+Unknown protobuf fields are skipped, so `SaveSource.decoded` is not lossless.
+The original payload can be read using its package path and resource key. A
+resolved Sim retains all `trait_ids`, including IDs successfully resolved to
+traits or preferences. Family relation `origin` distinguishes `recorded`,
+`reverse_parent`, and `shared_parent`; spouse and fiancé origins distinguish
+recorded values, reverse partner links, and relationship bits. Trope
+`kind_evidence` distinguishes tuning membership from a name-prefix fallback.
+These are interpretations, not claims about unobserved game state.
+
+
 A `.save` file is a DBPF container. The main payload is a `SaveGameData`
 protobuf in resource type `0x0000000D`:
 
@@ -59,7 +76,8 @@ Each `SimData` contains the full state:
 - **Identity:** name, age, gender, species, occult flags, household, zone/world.
 - **Traits / likes / dislikes:** the trait tracker holds personality traits, hidden
   traits, and preference traits. The SDK splits them into `traits` and
-  `preferences` and reports unknown/modded IDs separately.
+  `preferences` and reports `unresolved_trait_ids` separately. An unresolved ID
+  may refer to missing content or simply have no catalog supplied.
 - **Aspiration:** the primary aspiration **track** is resolved (e.g.
   `Track_Popularity_C` → “Party Animal”). The exact aspiration inside the track
   is only present when the save stores it in the event data tracker.
@@ -112,6 +130,13 @@ values have changed through play. See
 [`binary-formats.md`](binary-formats.md#module-level-tuning-blocks-and-initial-relationship-values).
 
 ## Tray files
+
+`extract_tray_item` and `extract_household_binary` expose schema-selected
+fields, the source path, and the selected payload offset. `resolve_tray_item`
+and `resolve_household_binary` build separate convenience models.
+`read_tray_item`, `read_household_binary`, and `read_tray_library` combine
+those stages. Household header offsets are tried in a fixed order; the selected
+offset records how the SDK decoded the file and may vary across Tray files.
 
 | File | Contents |
 | --- | --- |

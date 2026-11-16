@@ -146,6 +146,11 @@ def test_catalog_load_rejects_foreign_files(tmp_path: Path) -> None:
     with pytest.raises(CatalogError):
         Catalog.load(wrong_type)
 
+    old_version = tmp_path / "old-catalog.pkl"
+    old_version.write_bytes(pickle.dumps({"version": 999, "data": build_catalog()}))
+    with pytest.raises(CatalogError, match="unsupported.*version"):
+        Catalog.load(old_version)
+
     with pytest.raises(CatalogError):
         Catalog.load(tmp_path / "missing.pkl")
 
@@ -193,6 +198,11 @@ def test_static_data_load_rejects_foreign_files(tmp_path: Path) -> None:
     wrong_type.write_bytes(pickle.dumps([1, 2, 3]))
     with pytest.raises(StaticDataError):
         StaticData.load(wrong_type)
+
+    old_version = tmp_path / "old-version.pkl"
+    old_version.write_bytes(pickle.dumps({"version": 999, "data": build_static()}))
+    with pytest.raises(StaticDataError, match="unsupported.*version"):
+        StaticData.load(old_version)
 
 
 def test_workspace_from_static_runs_without_installation(tmp_path: Path) -> None:

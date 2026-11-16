@@ -30,12 +30,16 @@ from .catalog import (
     StaticData,
     StaticDataError,
     build_static,
+    StaticSource,
+    extract_static,
+    resolve_static,
 )
 from .installation import Installation
 from .paths import find_user_dir, iter_pack_root_folders
 from .exceptions import Sims4SDKError
 from .export import Serializable
-from .save import SaveFile, TrayLibrary, read_save, read_tray_library
+from .save import (SaveFile, SaveSource, TrayLibrary, extract_save, resolve_save,
+                   read_save, read_tray_library)
 
 __all__ = ["Sims4Workspace"]
 
@@ -145,6 +149,14 @@ class Sims4Workspace:
     # ------------------------------------------------------------------
     # static data
     # ------------------------------------------------------------------
+    def extract_static(self, *, progress: ProgressCallback = None) -> StaticSource:
+        if self.installation is None:
+            raise StaticDataError("no game installation is available")
+        return extract_static(self.installation, progress=progress)
+
+    def resolve_static(self, source: StaticSource, *, progress: ProgressCallback = None) -> StaticData:
+        return resolve_static(source, progress=progress)
+
     def static_data(
         self,
         *,
@@ -264,6 +276,12 @@ class Sims4Workspace:
     # ------------------------------------------------------------------
     # saves and Tray
     # ------------------------------------------------------------------
+    def extract_save(self, path: str | Path) -> SaveSource:
+        return extract_save(path)
+
+    def resolve_save(self, source: SaveSource, catalog: Optional[Catalog] = None) -> SaveFile:
+        return resolve_save(source, catalog if catalog is not None else self.catalog)
+
     def read_save(self, path: str | Path, catalog: Optional[Catalog] = None) -> SaveFile:
         return read_save(path, catalog if catalog is not None else self.catalog)
 

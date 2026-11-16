@@ -47,6 +47,7 @@ def test_simdata_only_and_xml_precedence_with_mod_groups(tmp_path):
                                 include_world=False, include_relationships=False)
     catalog = extract_catalog(data.entries, data.sources, {})
     add_simdata_statistics(catalog, data, {0x1234: "Localized"})
+    catalog = catalog.finalize()
     assert catalog.statistic(100).display_name == "Localized"
     assert catalog.statistic(100).skill_level_type_raw == 0
     assert catalog.statistic(100).source.resource_key.type_id == SIMDATA_TYPE_ID

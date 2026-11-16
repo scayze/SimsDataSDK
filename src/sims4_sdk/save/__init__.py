@@ -32,8 +32,11 @@ from .models import (
     TrayLibrary,
 )
 from .protobuf import ProtobufError, decode, iter_fields
-from .reader import SaveError, read_save, read_save_resource, sim_from_dict
+from .source import SaveError, SaveSource, extract_save, extract_save_resource
+from .tray_source import TraySource, extract_tray_item, extract_household_binary
+from .reader import resolve_save, read_save, read_save_resource, sim_from_dict
 from .tray import (TrayError, TrayListing, TrayListingGroup, list_tray_households,
+                   resolve_tray_item, resolve_household_binary,
                    read_household_binary, read_tray_item, read_tray_library)
 
 __all__ = [
@@ -71,6 +74,9 @@ __all__ = [
     "list_tray_households",
     # readers
     "read_save",
+    "SaveSource", "extract_save", "extract_save_resource", "resolve_save",
+    "TraySource", "extract_tray_item", "extract_household_binary",
+    "resolve_tray_item", "resolve_household_binary",
     "read_save_resource",
     "sim_from_dict",
     "read_tray_item",

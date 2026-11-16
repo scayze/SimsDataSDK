@@ -1,4 +1,5 @@
 from sims4_sdk.save.tray import list_tray_households, read_household_binary, read_tray_library
+from sims4_sdk.save import extract_household_binary, resolve_household_binary
 
 
 def test_tray_varint_float_and_per_file_errors(tmp_path, monkeypatch):
@@ -8,6 +9,12 @@ def test_tray_varint_float_and_per_file_errors(tmp_path, monkeypatch):
     payload = b"\x0a" + bytes([len(family)]) + family
     good = tmp_path / "good.householdbinary"
     good.write_bytes(bytes(16) + payload)
+    source = extract_household_binary(good)
+    assert source.payload_offset == 16
+    assert source.to_dict()["decoded"]["family_account"]["sim"][0]["sim_id"] == 1
+    resolved = resolve_household_binary(source)
+    resolved.raw["family_account"].clear()
+    assert source.decoded["family_account"]["familyname"] == "Test"
     (tmp_path / "bad.householdbinary").write_bytes(b"\xff")
     (tmp_path / "bad.trayitem").write_bytes(b"\xff")
     assert read_household_binary(good).sims[0].raw["voice_pitch"] == 2.0

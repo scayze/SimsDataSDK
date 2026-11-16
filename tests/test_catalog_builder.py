@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import pytest
 import struct
+import json
 
-from sims4_sdk.catalog import build_static, collect_package_data, load_static
+from sims4_sdk.catalog import (build_static, collect_package_data, load_static,
+                               extract_static, resolve_static, resolve_catalog)
 from sims4_sdk.core import COMBINED_TUNING_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID, STRING_TABLE_TYPE_ID, TUNING_TYPE_ID, CombinedTuning, ResourceKey
 from sims4_sdk.installation import Installation, PackageInfo
+from sims4_sdk.catalog.builder import resolve_world_resources
 
 from conftest import build_package, build_stbl
 
@@ -26,6 +29,39 @@ OTHER_XML = """<?xml version="1.0" encoding="utf-8"?>
   </I>
 </combined>
 """
+
+
+def test_static_source_can_be_resolved_without_mutating_records(tmp_path):
+    package = _package(tmp_path, "source.package", XML.encode())
+    installation = Installation(tmp_path, include_mods=False)
+    source = extract_static(installation, packages=[package], strings_packages=[])
+    assert source.collected.entries[1234].name == "trait_Test"
+    exported = source.to_dict()
+    assert 'trait_Test' in exported["entries"]["1234"]["xml"]
+    source.strings[1] = "example"
+    assert json.loads(source.to_json(include_strings=True))["strings"]["1"] == "example"
+    result = resolve_static(source)
+    assert result.catalog.trait("trait_Test").id == 1234
+    assert source.collected.entries[1234].name == "trait_Test"
+    assert result.world is not None
+    result.catalog.strings[1] = "changed"
+    assert source.strings[1] == "example"
+
+
+def test_catalog_resolution_does_not_modify_extraction():
+    from sims4_sdk.catalog import Catalog, CareerLevel, CareerTrack
+
+    source = Catalog(career_tracks={1: CareerTrack(id=1, name="track", display_name=None,
+                                                  description=None, level_ids=[2])},
+                     career_levels={2: CareerLevel(id=2, name="level", title=None,
+                                                   description=None)})
+    resolved = resolve_catalog(source)
+    assert source.career_levels[2].level is None
+    assert source.career_levels[2].track_id is None
+    assert resolved.career_levels[2].level == 1
+    assert resolved.career_levels[2].level_evidence == "track_position"
+    assert resolved.career_levels[2].to_dict()["level_evidence"] == "track_position"
+    assert resolved.career_levels[2].track_id == 1
 
 
 def _package(tmp_path, name: str, payload: bytes) -> PackageInfo:
@@ -103,6 +139,11 @@ def test_scan_preserves_sources_raw_world_and_reports_failed_inputs(tmp_path) ->
     ]))
     bad = PackageInfo(tmp_path / "missing.package", "BASE")
     good = PackageInfo(path, "BASE")
+    source = extract_static(Installation(tmp_path, include_mods=False),
+                            packages=[bad, good], strings_packages=[])
+    household = next(item for item in source.to_dict()["world_resources"]
+                     if item["source"]["resource_key"] == str(ResourceKey(PREMADE_HOUSEHOLD_TYPE_ID, 6, 8)))
+    assert bytes.fromhex(household["data"]) == resource
     data = build_static(Installation(tmp_path, include_mods=False), packages=[bad, good],
                         strings_packages=[], use_cache=False)
     assert {issue.stage for issue in data.catalog.diagnostics} == {
@@ -158,7 +199,7 @@ def test_world_preserves_distinct_resource_groups_and_last_override(tmp_path) ->
             {"type": LOT_MANIFEST_TYPE_ID, "group": 1, "instance": 9, "data": struct.pack("<IIII", 0, 30, 0, 0)},
         ]),
     ]
-    world = collect_package_data(packages).world
+    world = resolve_world_resources(collect_package_data(packages))
     key_a = ResourceKey(PREMADE_HOUSEHOLD_TYPE_ID, 1, 8)
     key_b = ResourceKey(PREMADE_HOUSEHOLD_TYPE_ID, 2, 8)
     assert world.household_resources[key_a].name == "C"

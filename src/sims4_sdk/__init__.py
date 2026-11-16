@@ -83,6 +83,11 @@ from .catalog import (
     StarterMember,
     StarterRelation,
     StaticData,
+    StaticSource,
+    extract_static,
+    resolve_static,
+    extract_catalog,
+    resolve_catalog,
     StaticDataError,
     Trait,
     TuningCandidate,
@@ -156,6 +161,15 @@ from .paths import (
     tray_dir,
 )
 from .save import (
+    SaveSource,
+    TraySource,
+    extract_tray_item,
+    extract_household_binary,
+    resolve_tray_item,
+    resolve_household_binary,
+    extract_save,
+    extract_save_resource,
+    resolve_save,
     Artwork,
     ArtworkError,
     decode_artwork,
@@ -199,6 +213,10 @@ from .workspace import PackStatus, PackStatusError, Sims4Workspace
 __version__ = "0.9.0"
 
 __all__ = [
+    "SaveSource", "extract_save", "extract_save_resource", "resolve_save",
+    "TraySource", "extract_tray_item", "extract_household_binary",
+    "resolve_tray_item", "resolve_household_binary",
+    "StaticSource", "extract_static", "resolve_static", "extract_catalog", "resolve_catalog",
     "__version__",
     # modules
     "core",

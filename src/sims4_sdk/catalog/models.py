@@ -7,6 +7,8 @@ with the game.
 
 from __future__ import annotations
 
+import re
+
 import pickle
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -295,6 +297,7 @@ class CareerLevel(Serializable):
     description: Optional[str]
     track_id: Optional[int] = None
     level: Optional[int] = None
+    level_evidence: Optional[str] = None
     pay_per_hour: Optional[int] = None
     pay_type: Optional[str] = None
     aspiration_id: Optional[int] = None
@@ -749,7 +752,15 @@ class Catalog(Serializable):
                     if aspiration.primary_trait_id is None:
                         aspiration.primary_trait_id = track.primary_trait_id
 
-        # Link career levels to their tracks and infer level numbers.
+        # Name-based numbering is a convention, not a tuning field.
+        for level in self.career_levels.values():
+            if level.level is None:
+                match = re.search(r"(?:^|_)Level(\d+)(?:$|_)", level.name, re.IGNORECASE)
+                if match:
+                    level.level = int(match.group(1))
+                    level.level_evidence = "name"
+
+        # Link career levels to their tracks and infer remaining level numbers.
         for track in self.career_tracks.values():
             for index, level_id in enumerate(track.level_ids, start=1):
                 level = self.career_levels.get(level_id)
@@ -757,6 +768,7 @@ class Catalog(Serializable):
                     level.track_id = track.id
                     if level.level is None:
                         level.level = index
+                        level.level_evidence = "track_position"
 
         for career in self.careers.values():
             track = self.career_tracks.get(career.start_track_id)
@@ -972,7 +984,8 @@ class Catalog(Serializable):
             if target.parent:
                 target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("wb") as handle:
-                pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump({"version": 1, "data": self}, handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
         except OSError as exc:
             raise CatalogError(f"cannot write catalog to {target}: {exc}") from exc
         return target
@@ -990,9 +1003,11 @@ class Catalog(Serializable):
             raise CatalogError(
                 f"{target} is not a valid catalog snapshot: {exc}"
             ) from exc
-        if not isinstance(value, cls):
+        if not isinstance(value, dict) or value.get("version") != 1:
+            raise CatalogError(f"{target} has an unsupported catalog snapshot version")
+        if not isinstance(value.get("data"), cls):
             raise CatalogError(f"{target} does not contain a Catalog")
-        return value
+        return value["data"]
 
     def relationship_default(self, link: str) -> Optional[RelationshipDefault]:
         return self.relationship_defaults.get(link)

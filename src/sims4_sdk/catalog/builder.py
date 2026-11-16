@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 import os
 import pickle
-import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -22,6 +22,7 @@ from ..core import (
     TuningElement,
 )
 from ..installation import Installation, PackageInfo, SIMINFO_TYPE_ID
+from ..export import Serializable
 from ..core.fnv import fnv1_32
 from .models import (
     Aspiration,
@@ -58,15 +59,15 @@ __all__ = [
     "build_catalog",
     "collect_package_data",
     "extract_catalog",
+    "resolve_catalog", "resolve_world_resources", "resolve_relationship_tuning", "WorldResource",
     "default_cache_dir",
     "cache_key",
 ]
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "step2-28"
+CACHE_VERSION = "source-resolved-1"
 
-_LEVEL_PATTERN = re.compile(r"(?:^|_)Level(\d+)(?:$|_)", re.IGNORECASE)
 _MODEL_CLASSES = frozenset(
     {
         "Trait",
@@ -189,7 +190,7 @@ def build_catalog(
         progress(f"extracted {len(entries):,} tuning entries")
 
     catalog = extract_catalog(
-        entries, sources, strings, relationship_tuning=collected.relationship_tuning
+        entries, sources, strings, relationship_tuning=resolve_relationship_tuning(collected)
     )
     catalog.tuning_overrides = collected.tuning_overrides
     add_simdata_statistics(catalog, collected, strings)
@@ -217,6 +218,17 @@ def build_catalog(
 # tuning collection
 # ----------------------------------------------------------------------
 @dataclass
+class WorldResource(Serializable):
+    """A supported world resource and the package entry it came from."""
+
+    source: TuningSource
+    data: bytes
+
+    def to_dict(self, **options) -> dict:
+        return {"source": self.source.to_dict(), "data": self.data.hex()}
+
+
+@dataclass
 class CollectedPackageData:
     """Tuning plus world resources collected from one package pass."""
 
@@ -224,15 +236,12 @@ class CollectedPackageData:
     sources: dict[int, TuningSource] = field(default_factory=dict)
     tuning_overrides: dict[int, list[TuningCandidate]] = field(default_factory=dict)
     simdata_statistics: dict[int, StatisticDefinition] = field(default_factory=dict)
-    world: WorldData = field(default_factory=WorldData)
+    world_resources: list[WorldResource] = field(default_factory=list)
     relationship_modules: dict[str, CombinedTuning] = field(
         default_factory=dict, repr=False
     )
     relationship_track_sources: dict[int, TuningElement] = field(
         default_factory=dict, repr=False
-    )
-    relationship_tuning: RelationshipTuningData = field(
-        default_factory=RelationshipTuningData
     )
     #: SimInfo instance -> (package, index entry), collected in the same pass so
     #: pre-made Sim extraction does not have to re-open every package.
@@ -250,8 +259,7 @@ def add_simdata_statistics(catalog: Catalog, data: CollectedPackageData,
             continue
         raw = definition.display_name_raw
         label = strings.get(int(raw, 16)) if raw else None
-        catalog.statistics[instance] = replace(definition, display_name=label)
-    catalog.finalize()
+        catalog.statistics[instance] = replace(deepcopy(definition), display_name=label)
 
 
 def collect_package_data(
@@ -356,7 +364,7 @@ def collect_package_data(
                             recoverable=True,
                         ))
                     else:
-                        data.world.add_household(entry.key.instance, raw, entry_source)
+                        data.world_resources.append(WorldResource(entry_source, raw))
             elif type_id == LOT_MANIFEST_TYPE_ID:
                 if include_world:
                     try:
@@ -367,7 +375,7 @@ def collect_package_data(
                             recoverable=True,
                         ))
                     else:
-                        data.world.add_lot(entry.key.instance, raw, entry_source)
+                        data.world_resources.append(WorldResource(entry_source, raw))
             elif type_id == SIMINFO_TYPE_ID:
                 if include_siminfo:
                     data.siminfo_index[entry.key.instance] = (info, entry)
@@ -423,8 +431,6 @@ def collect_package_data(
                     if element is not None and has_interval_data(element):
                         data.relationship_track_sources[track_id] = element
 
-    if include_world:
-        data.world.finalize()
     # Retail packages frequently repeat entire combined tuning blobs. Keep
     # their candidates only for mod overrides and premade Sims, so most
     # retail repeats are discarded while Sim pack ambiguity stays visible.
@@ -433,13 +439,30 @@ def collect_package_data(
         if any(candidate.source.is_mod or candidate.tuning_class == "PremadeSimTemplate"
                for candidate in candidates)
     }
-    if include_relationships and data.relationship_modules:
-        data.relationship_tuning = extract_relationship_tuning(
+    return data
+
+
+def resolve_world_resources(data: CollectedPackageData) -> WorldData:
+    """Parse and link the collected household and lot resources."""
+    world = WorldData()
+    for resource in data.world_resources:
+        key = resource.source.resource_key
+        if key.type_id == PREMADE_HOUSEHOLD_TYPE_ID:
+            world.add_household(key.instance, resource.data, resource.source)
+        elif key.type_id == LOT_MANIFEST_TYPE_ID:
+            world.add_lot(key.instance, resource.data, resource.source)
+    return world.finalize()
+
+
+def resolve_relationship_tuning(data: CollectedPackageData) -> RelationshipTuningData:
+    """Interpret collected relationship modules and track tuning."""
+    if data.relationship_modules:
+        return extract_relationship_tuning(
             data.relationship_modules,
             data.entries,
             track_sources=data.relationship_track_sources,
         )
-    return data
+    return RelationshipTuningData()
 
 
 # ----------------------------------------------------------------------
@@ -452,6 +475,7 @@ def extract_catalog(
     *,
     relationship_tuning: Optional[RelationshipTuningData] = None,
 ) -> Catalog:
+    """Extract supported tuning fields without linking catalog records."""
     catalog = Catalog(strings=strings)
     _build_models(catalog, entries, sources, strings)
     if relationship_tuning is not None:
@@ -464,8 +488,12 @@ def extract_catalog(
         catalog.marriage_bit_id = relationship_tuning.marriage_bit_id
         catalog.family_trope_ids = relationship_tuning.family_trope_ids
         catalog.romance_trope_ids = relationship_tuning.romance_trope_ids
-    catalog.finalize()
     return catalog
+
+
+def resolve_catalog(source: Catalog) -> Catalog:
+    """Return a linked catalog while preserving the extracted records."""
+    return deepcopy(source).finalize()
 
 
 def _build_models(
@@ -677,13 +705,11 @@ def _build_career_level(
     pay_type, pay_payload = view.variant("pay_type")
     pay_per_hour = view.number_of(pay_payload)
     work_days, work_start, work_duration = _work_schedule(view)
-    level = _level_number(entry.name)
     return CareerLevel(
         id=entry.instance_id,
         name=entry.name,
         title=view.text("title") or entry.name,
         description=view.text("title_description"),
-        level=level,
         pay_per_hour=pay_per_hour,
         pay_type=pay_type,
         aspiration_id=view.number("aspiration"),
@@ -693,11 +719,6 @@ def _build_career_level(
         work_duration=work_duration,
         source=source,
     )
-
-
-def _level_number(name: str) -> Optional[int]:
-    match = _LEVEL_PATTERN.search(name)
-    return int(match.group(1)) if match else None
 
 
 def _work_schedule(view: TuningView) -> tuple[list[str], Optional[int], Optional[int]]:

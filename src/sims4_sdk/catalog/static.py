@@ -3,19 +3,24 @@
 from __future__ import annotations
 
 import pickle
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
+from xml.etree import ElementTree
 
 from ..exceptions import Sims4SDKError
-from ..export import Serializable
+from ..export import Serializable, to_dict
 from ..installation import Installation, PackageInfo
 from .builder import (
+    CollectedPackageData,
     add_simdata_statistics,
     cache_key,
     collect_package_data,
     default_cache_dir,
     extract_catalog,
+    resolve_relationship_tuning,
+    resolve_world_resources,
 )
 from .models import Catalog
 from .diagnostics import ExtractionIssue
@@ -27,12 +32,93 @@ from .scenarios import ScenarioData, extract_scenarios
 __all__ = [
     "StaticDataError",
     "StaticData",
+    "StaticSource",
+    "extract_static",
+    "resolve_static",
     "build_static",
     "build_catalog",
     "load_static",
 ]
 
 ProgressCallback = Optional[Callable[[str], None]]
+SNAPSHOT_VERSION = 1
+
+
+@dataclass
+class StaticSource(Serializable):
+    """Selected package data and strings before catalog and premade resolution.
+
+    Tuning entries retain the selected source resource and can be inspected
+    directly. Package collection covers supported formats, not every resource.
+    """
+
+    collected: CollectedPackageData
+    strings: dict[int, str]
+    diagnostics: list[ExtractionIssue] = field(default_factory=list)
+
+    def to_dict(self, *, include_strings: bool = False, **options) -> dict:
+        """Export collected records; tuning XML may contain shared references."""
+        data = self.collected
+        result = {
+            "entries": {str(key): {"xml": ElementTree.tostring(entry.element, encoding="unicode"),
+                                   "source": data.sources.get(key)}
+                        for key, entry in data.entries.items()},
+            "tuning_overrides": data.tuning_overrides,
+            "simdata_statistics": data.simdata_statistics,
+            "world_resources": data.world_resources,
+            "siminfo_sources": {str(key): {"path": str(info.path),
+                                             "resource_key": str(entry.key)}
+                                for key, (info, entry) in data.siminfo_index.items()},
+            "diagnostics": [*self.diagnostics, *data.diagnostics],
+        }
+        if include_strings:
+            result["strings"] = self.strings
+        return to_dict(result, include_strings=include_strings, **options)
+
+
+def extract_static(
+    installation: Installation, *, packages: Optional[list[PackageInfo]] = None,
+    strings_packages: Optional[list[PackageInfo]] = None,
+    progress: ProgressCallback = None,
+) -> StaticSource:
+    """Collect supported source data without building linked catalog views."""
+    selected = packages if packages is not None else installation.packages
+    string_sources = _string_packages(installation, packages, strings_packages)
+    diagnostics: list[ExtractionIssue] = []
+    if progress:
+        progress(f"loading strings for {installation.locale}")
+    strings = load_strings(installation, packages=string_sources, diagnostics=diagnostics)
+    if progress:
+        progress(f"scanning {len(selected)} packages")
+    collected = collect_package_data(selected, progress=progress)
+    return StaticSource(collected, strings, diagnostics)
+
+
+def resolve_static(
+    source: StaticSource, *, progress: ProgressCallback = None,
+) -> "StaticData":
+    """Build linked views without changing the collected source data."""
+    collected = source.collected
+    entries, sources = collected.entries, collected.sources
+    strings = dict(source.strings)
+    world = resolve_world_resources(collected)
+    if progress:
+        progress("resolving catalog")
+    catalog = extract_catalog(entries, sources, strings,
+                              relationship_tuning=resolve_relationship_tuning(collected))
+    catalog.tuning_overrides = deepcopy(collected.tuning_overrides)
+    add_simdata_statistics(catalog, collected, strings)
+    catalog.finalize()
+    catalog.errors.extend(world.errors)
+    catalog.diagnostics.extend(deepcopy(source.diagnostics))
+    catalog.diagnostics.extend(deepcopy(collected.diagnostics))
+    catalog.diagnostics.extend(world.diagnostics)
+    if progress:
+        progress("resolving pre-made Sims")
+    scenario_data = extract_scenarios(entries, sources, strings)
+    premades = build_premades(None, catalog, entries, sources, world=world,
+                              siminfo_index=collected.siminfo_index, scenario_data=scenario_data)
+    return StaticData(catalog=catalog, premades=premades, world=world, scenario_data=scenario_data)
 
 
 def _string_packages(installation, packages, strings_packages):
@@ -131,7 +217,8 @@ class StaticData(Serializable):
             if target.parent:
                 target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("wb") as handle:
-                pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                pickle.dump({"version": SNAPSHOT_VERSION, "data": self}, handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
         except OSError as exc:
             raise StaticDataError(f"cannot write static data to {target}: {exc}") from exc
         return target
@@ -151,9 +238,11 @@ class StaticData(Serializable):
             raise StaticDataError(
                 f"{target} is not a valid static-data snapshot: {exc}"
             ) from exc
-        if not isinstance(value, cls):
+        if not isinstance(value, dict) or value.get("version") != SNAPSHOT_VERSION:
+            raise StaticDataError(f"{target} has an unsupported static-data snapshot version")
+        if not isinstance(value.get("data"), cls):
             raise StaticDataError(f"{target} does not contain StaticData")
-        return value
+        return value["data"]
 
     def summary(self) -> str:
         return (
@@ -192,55 +281,9 @@ def build_static(
         except Exception:
             pass
 
-    if progress:
-        progress(f"loading strings for {installation.locale}")
-    diagnostics: list[ExtractionIssue] = []
-    strings = load_strings(installation, packages=strings_packages, diagnostics=diagnostics)
-    if progress:
-        progress(f"loaded {len(strings):,} strings")
-
-    if progress:
-        progress(f"scanning {len(selected)} packages")
-    collected = collect_package_data(selected, progress=progress)
-    entries, sources, world = collected.entries, collected.sources, collected.world
-    if progress:
-        progress(
-            f"extracted {len(entries):,} tuning entries, "
-            f"{len(world.households):,} household resources, "
-            f"{len(world.lots):,} lot records, "
-            f"{len(collected.relationship_tuning.defaults):,} relationship defaults, "
-            f"{len(collected.relationship_tuning.pairs):,} premade relationships"
-        )
-
-    if progress:
-        progress("extracting catalog")
-    catalog = extract_catalog(
-        entries,
-        sources,
-        strings,
-        relationship_tuning=collected.relationship_tuning,
-    )
-    catalog.tuning_overrides = collected.tuning_overrides
-    add_simdata_statistics(catalog, collected, strings)
-    catalog.errors.extend(world.errors)
-    catalog.diagnostics.extend(diagnostics)
-    catalog.diagnostics.extend(collected.diagnostics)
-    catalog.diagnostics.extend(world.diagnostics)
-
-    if progress:
-        progress("extracting pre-made Sims")
-    scenario_data = extract_scenarios(entries, sources, strings)
-    premades = build_premades(
-        installation,
-        catalog,
-        entries,
-        sources,
-        world=world,
-        siminfo_index=collected.siminfo_index,
-        scenario_data=scenario_data,
-    )
-
-    data = StaticData(catalog=catalog, premades=premades, world=world, scenario_data=scenario_data)
+    source = extract_static(installation, packages=selected, strings_packages=strings_packages,
+                            progress=progress)
+    data = resolve_static(source, progress=progress)
 
     if use_cache:
         try:

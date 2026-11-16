@@ -20,7 +20,8 @@ from sims4_sdk.core import (
     SimData,
     StringTable,
 )
-from sims4_sdk.save import read_save, read_tray_library
+from sims4_sdk.save import (extract_save, resolve_save, read_save, read_tray_library,
+                            extract_household_binary, resolve_household_binary)
 
 pytestmark = pytest.mark.integration
 
@@ -29,6 +30,34 @@ def _require(path: Path) -> Path:
     if not path.exists():
         pytest.skip(f"missing {path}")
     return path
+
+
+def test_save_extraction_and_resolution_against_local_save(user_dir: Path) -> None:
+    saves = sorted((user_dir / "saves").glob("*.save"))
+    if not saves:
+        pytest.skip("no save files in the user directory")
+    source = extract_save(saves[0])
+    before = source.to_json()
+    resolved = resolve_save(source)
+    assert source.resource_key.type_id == 0x0D
+    assert source.to_json() == before
+    assert resolved.relationship_coverage == source.relationship_coverage
+    assert resolved.diagnostics == source.diagnostics
+    for sim in resolved.sims.values():
+        tracker = sim.raw.get("attributes", {}).get("trait_tracker", {})
+        assert sim.trait_ids == tracker.get("trait_ids", [])
+
+
+def test_tray_extraction_and_resolution_against_local_household(user_dir: Path) -> None:
+    files = sorted((user_dir / "Tray").glob("*.householdbinary"))
+    if not files:
+        pytest.skip("no Tray households in the user directory")
+    source = extract_household_binary(files[0])
+    before = source.to_json()
+    household = resolve_household_binary(source)
+    assert source.to_json() == before
+    assert household.path == source.path
+    assert source.decoded.get("family_account") is not None
 
 
 def test_base_delta_package_index(install_dir: Path) -> None:

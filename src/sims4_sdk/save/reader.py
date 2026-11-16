@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from copy import deepcopy
 from typing import Any, Mapping, Optional
 
 from ..catalog.models import Catalog
-from ..core import DBPF
-from ..exceptions import Sims4SDKError
 from .enums import (
     AGE_NAMES,
     FAMILY_RELATION_NAMES,
@@ -36,9 +35,8 @@ from .models import (
     SavedStatistic,
     SavedTimedAspiration,
 )
-from .protobuf import ProtobufError, decode
-from .artwork import ArtworkError, decode_artwork
-from .schema import SCHEMAS
+from .source import (SaveError, SaveSource, SAVE_RESOURCE_TYPE, extract_save,
+                     extract_save_resource)
 
 __all__ = [
     "SaveError",
@@ -46,61 +44,27 @@ __all__ = [
     "sim_from_dict",
     "read_save_resource",
     "SAVE_RESOURCE_TYPE",
+    "SaveSource", "extract_save", "extract_save_resource", "resolve_save",
 ]
 
-SAVE_RESOURCE_TYPE = 0x0000000D
-SAVE_ARTWORK_TYPES = frozenset({0x0F, 0x10, 0x12, 0x13, 0x14})
-PERSISTENCE_RESOURCE_TYPE = 0x00000006
-
-
-class SaveError(Sims4SDKError, ValueError):
-    """Raised when a save file cannot be parsed."""
+def resolve_save(source: SaveSource, catalog: Optional[Catalog] = None) -> SaveFile:
+    """Build a linked and derived view without modifying the source."""
+    save = _build_save(source.path, deepcopy(source.decoded), catalog)
+    save.artwork = deepcopy(source.artwork)
+    save.artwork_errors = deepcopy(source.artwork_errors)
+    save.relationship_coverage = source.relationship_coverage
+    save.diagnostics = deepcopy(source.diagnostics)
+    return save
 
 
 def read_save(path: str | Path, catalog: Optional[Catalog] = None) -> SaveFile:
-    """Read a ``.save`` file, optionally resolving IDs against a catalog."""
-    path = Path(path)
-    package = DBPF(path)
-    entry = next(
-        (entry for entry in package.entries if entry.key.type_id == SAVE_RESOURCE_TYPE),
-        None,
-    )
-    if entry is None:
-        raise SaveError(f"{path.name}: no SaveGameData resource (0x0000000D)")
-    try:
-        data = package.read_resource(entry)
-        root = decode(data, "SaveGameData", SCHEMAS)
-    except ProtobufError as exc:
-        raise SaveError(f"{path.name}: {exc}") from exc
-    save = _build_save(path, root, catalog)
-    for persistence_entry in package.iter_entries(type_id=PERSISTENCE_RESOURCE_TYPE):
-        if persistence_entry.is_null:
-            continue
-        save.relationship_coverage = "potentially_incomplete"
-        save.diagnostics.append({
-            "stage": "save_persistence",
-            "code": "unsupported_persistence_resource",
-            "message": ("Persistence resource is not decoded and may contain "
-                        "relationship data; relationship results may be incomplete."),
-            "path": str(path),
-            "resource_key": str(persistence_entry.key),
-            "recoverable": True,
-            "unsupported_format": "type-0x00000006 persistence resource",
-        })
-    for image_entry in package.iter_entries_for_types(SAVE_ARTWORK_TYPES):
-        if image_entry.is_null:
-            continue
-        try:
-            save.artwork[image_entry.key] = decode_artwork(package.read_resource(image_entry))
-        except (ArtworkError, OSError, Sims4SDKError) as exc:
-            save.artwork_errors.append({"key": str(image_entry.key), "error": f"{type(exc).__name__}: {exc}"})
-    return save
+    """Extract and resolve a save, optionally using a catalog."""
+    return resolve_save(extract_save(path), catalog)
 
 
 def read_save_resource(data: bytes, catalog: Optional[Catalog] = None, name: str = "<memory>") -> SaveFile:
     """Read an already-extracted SaveGameData payload."""
-    root = decode(data, "SaveGameData", SCHEMAS)
-    return _build_save(Path(name), root, catalog)
+    return resolve_save(extract_save_resource(data, name), catalog)
 
 
 def _build_save(path: Path, root: Mapping[str, Any], catalog: Optional[Catalog]) -> SaveFile:
@@ -218,7 +182,7 @@ def sim_from_dict(
     trait_ids = _as_list(attributes.get("trait_tracker", {}).get("trait_ids"))
     traits = []
     preferences = []
-    unknown_trait_ids = []
+    unresolved_trait_ids = []
     for trait_id in trait_ids:
         trait = catalog.traits.get(trait_id) if catalog else None
         preference = catalog.preferences.get(trait_id) if catalog else None
@@ -227,7 +191,7 @@ def sim_from_dict(
         elif preference is not None:
             preferences.append(preference)
         else:
-            unknown_trait_ids.append(trait_id)
+            unresolved_trait_ids.append(trait_id)
 
     aspiration_track_id = data.get("primary_aspiration")
     aspiration_track = (
@@ -286,14 +250,18 @@ def sim_from_dict(
         primary_aspiration_track_id=aspiration_track_id,
         aspiration_track=aspiration_track,
         traits=traits,
+        trait_ids=trait_ids,
         preferences=preferences,
-        unknown_trait_ids=unknown_trait_ids,
+        unresolved_trait_ids=unresolved_trait_ids,
         careers=careers,
         skills=skills,
         relationships=relationships,
         spouse_id=data.get("significant_other") or None,
+        spouse_origin="recorded" if data.get("significant_other") else None,
         fiance_id=data.get("fiance") or None,
+        fiance_origin="recorded" if data.get("fiance") else None,
         steady_ids=_as_list(data.get("steady_ids")),
+        steady_origins={item: "recorded" for item in _as_list(data.get("steady_ids"))},
         tropes=tropes,
         parents=parents,
         siblings=siblings,
@@ -336,11 +304,8 @@ def _careers(raw: Mapping[str, Any], catalog: Optional[Catalog]) -> list[SavedCa
         track = catalog.career_tracks.get(track_id) if catalog else None
         level_id = None
         level = None
-        if track is not None and track.level_ids:
-            index = track_level
-            if not 0 <= index < len(track.level_ids):
-                index = max(0, min(track_level - 1, len(track.level_ids) - 1))
-            level_id = track.level_ids[index]
+        if track is not None and 0 <= track_level < len(track.level_ids):
+            level_id = track.level_ids[track_level]
             level = catalog.career_levels.get(level_id) if catalog else None
         careers.append(
             SavedCareer(
@@ -451,16 +416,21 @@ def _relationship_tropes(
         trope_id = entry.get("trope_id", 0)
         bit = catalog.relationship_bits.get(trope_id) if catalog else None
         kind = "UNKNOWN"
+        evidence = None
         if catalog is not None:
             if trope_id in catalog.family_trope_ids:
                 kind = "FAMILY"
+                evidence = "tuning"
             elif trope_id in catalog.romance_trope_ids:
                 kind = "ROMANCE"
+                evidence = "tuning"
         if kind == "UNKNOWN" and bit is not None:
             if bit.name.startswith("familyTrope"):
                 kind = "FAMILY"
+                evidence = "name_prefix"
             elif bit.name.startswith("romanceTrope"):
                 kind = "ROMANCE"
+                evidence = "name_prefix"
         tropes.append(
             SavedRelationshipTrope(
                 sim_id=target_id,
@@ -472,6 +442,7 @@ def _relationship_tropes(
                     else (catalog.tuning_names.get(trope_id) if catalog else None)
                 ),
                 kind=kind,
+                kind_evidence=evidence,
             )
         )
     return tropes
@@ -567,18 +538,20 @@ def _link_family(sims: Mapping[int, SavedSim]) -> None:
             spouse = sims[sim.spouse_id]
             if spouse.spouse_id is None:
                 spouse.spouse_id = sim.sim_id
+                spouse.spouse_origin = "reverse_partner"
                 spouse.spouse_name = sim.full_name
         if sim.fiance_id and sim.fiance_id in sims:
             fiance = sims[sim.fiance_id]
             if fiance.fiance_id is None:
                 fiance.fiance_id = sim.sim_id
+                fiance.fiance_origin = "reverse_partner"
 
     children: dict[int, dict[int, SavedFamilyRelation]] = {sim_id: {} for sim_id in sims}
     for sim in sims.values():
         for parent in sim.parents:
             if parent.sim_id in sims:
                 children[parent.sim_id][sim.sim_id] = SavedFamilyRelation(
-                    kind="CHILD", sim_id=sim.sim_id, name=sim.full_name
+                    kind="CHILD", sim_id=sim.sim_id, name=sim.full_name, origin="reverse_parent"
                 )
 
     for sim in sims.values():
@@ -597,7 +570,8 @@ def _link_family(sims: Mapping[int, SavedSim]) -> None:
             if parent_ids & {parent.sim_id for parent in candidate.parents}:
                 sim.siblings.append(
                     SavedFamilyRelation(
-                        kind="SIBLING", sim_id=candidate.sim_id, name=candidate.full_name
+                        kind="SIBLING", sim_id=candidate.sim_id, name=candidate.full_name,
+                        origin="shared_parent"
                     )
                 )
 
@@ -628,6 +602,7 @@ def _link_special_relationships(
             fiance = sims[sim.fiance_id]
             if fiance.fiance_id is None:
                 fiance.fiance_id = sim.sim_id
+                fiance.fiance_origin = "reverse_partner"
                 fiance.fiance_name = sim.full_name
 
         # Preserve explicit IDs, including partners absent from this save, and
@@ -640,6 +615,7 @@ def _link_special_relationships(
             if steady_bit is not None and steady_bit in relationship.bits:
                 if target_id not in steady_ids:
                     steady_ids.append(target_id)
+                    sim.steady_origins[target_id] = "relationship_bit"
         sim.steady_ids = steady_ids
         sim.steady_names = [sims[target_id].full_name for target_id in steady_ids if target_id in sims]
 
@@ -648,6 +624,7 @@ def _link_special_relationships(
                 for target_id in sims:
                     if target_id != sim.sim_id and has_bit(sim, target_id, marriage_bit):
                         sim.spouse_id = target_id
+                        sim.spouse_origin = "relationship_bit"
                         sim.spouse_name = sims[target_id].full_name
                         break
             elif sim.spouse_name is None and sim.spouse_id in sims:
@@ -657,6 +634,7 @@ def _link_special_relationships(
             for target_id in sims:
                 if target_id != sim.sim_id and has_bit(sim, target_id, engagement_bit):
                     sim.fiance_id = target_id
+                    sim.fiance_origin = "relationship_bit"
                     sim.fiance_name = sims[target_id].full_name
                     break
 

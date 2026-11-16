@@ -171,6 +171,7 @@ class SavedFamilyRelation(Serializable):
     kind: str
     sim_id: int
     name: Optional[str] = None
+    origin: str = "recorded"
 
 
 @dataclass
@@ -182,6 +183,7 @@ class SavedRelationshipTrope(Serializable):
     sim_name: Optional[str] = None
     trope_name: Optional[str] = None
     kind: str = "UNKNOWN"  # FAMILY | ROMANCE | UNKNOWN
+    kind_evidence: Optional[str] = None
 
     def __repr__(self) -> str:
         return (
@@ -247,17 +249,21 @@ class SavedSim(Serializable):
     aspiration_track: Optional[AspirationTrack] = None
 
     traits: list[Trait] = field(default_factory=list)
+    trait_ids: list[int] = field(default_factory=list)
     preferences: list[Preference] = field(default_factory=list)
-    unknown_trait_ids: list[int] = field(default_factory=list)
+    unresolved_trait_ids: list[int] = field(default_factory=list)
     careers: list[SavedCareer] = field(default_factory=list)
     skills: list[SavedSkill] = field(default_factory=list)
     relationships: list[SavedRelationship] = field(default_factory=list)
 
     spouse_id: Optional[int] = None
+    spouse_origin: Optional[str] = None
     spouse_name: Optional[str] = None
     fiance_id: Optional[int] = None
+    fiance_origin: Optional[str] = None
     fiance_name: Optional[str] = None
     steady_ids: list[int] = field(default_factory=list)
+    steady_origins: dict[int, str] = field(default_factory=dict)
     steady_names: list[str] = field(default_factory=list)
     tropes: list[SavedRelationshipTrope] = field(default_factory=list)
     parents: list[SavedFamilyRelation] = field(default_factory=list)

@@ -47,6 +47,29 @@ default; pass `cache_dir` to change it. Extraction issues are available in
 
 ## Data and serialization
 
+The SDK separates source extraction from interpretation. Extraction exposes
+supported decoded fields and their source; resolution links records, resolves
+names, and derives convenience values. The workspace's usual `read_save()` and
+`static_data()` methods perform both stages. Use the stages directly when you
+need to inspect the evidence or apply your own rules:
+
+```python
+source = ws.extract_save(ws.latest_save_path())
+print(source.sims)                 # schema-selected protobuf fields
+save = ws.resolve_save(source)     # linked and derived view
+
+static_source = ws.extract_static()
+print(static_source.collected.entries)  # selected tuning entries and sources
+static = ws.resolve_static(static_source)
+```
+
+Resolution does not change the source's semantic data. Save source fields are
+schema-selected, not a lossless protobuf representation; unknown fields are
+skipped. For a file-backed save, `source.path` and `source.resource_key` locate
+the original bytes through `DBPF`. Static extraction covers supported resource
+types and follows the SDK's package precedence; it does not extract every game
+resource. Inspect diagnostics for failures and unsupported data.
+
 The catalog includes traits, preferences, aspirations, careers, milestones,
 relationships, pre-made Sims, households and lots. Save and Tray readers expose
 Sims, households, relationships, skills and artwork. See the
@@ -65,7 +88,8 @@ offline = Sims4Workspace.from_static("static.pkl", user_dir="path/to/The Sims 4"
 ```
 
 Snapshots use Python pickle. **Load only trusted snapshots:** unpickling can
-execute arbitrary code. Use JSON for interchange with other programs.
+execute arbitrary code. Catalog and static snapshots are versioned; unsupported versions
+must be rebuilt. Use JSON for interchange with other programs.
 
 SDK-specific exceptions derive from `sims4_sdk.Sims4SDKError`. Filesystem and
 other standard Python errors may also be raised.

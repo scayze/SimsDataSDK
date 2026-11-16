@@ -8,6 +8,10 @@ from .builder import (
     cache_key,
     collect_package_data,
     extract_catalog,
+    resolve_catalog,
+    resolve_world_resources,
+    resolve_relationship_tuning,
+    WorldResource,
 )
 from .models import (
     Aspiration,
@@ -50,7 +54,8 @@ from .premades import (
 )
 from .relationships import RelationshipTuningData, extract_relationship_tuning
 from .scenarios import Scenario, ScenarioRole, SimFilter, SimTemplateChooser, SimTemplate, NPCHouseholdTemplate, WalkbyDirector, SpecificSimSituation, SituationJob, ScenarioData, extract_scenarios
-from .static import StaticData, StaticDataError, build_static, load_static
+from .static import (StaticData, StaticDataError, StaticSource, extract_static,
+                     resolve_static, build_static, load_static)
 from .worlds import (
     LotRecord,
     StarterCareer,
@@ -76,6 +81,9 @@ __all__ = [
     "collect_package_data",
     "CollectedPackageData",
     "extract_catalog",
+    "resolve_catalog",
+    "WorldResource", "resolve_world_resources", "resolve_relationship_tuning",
+    "StaticSource", "extract_static", "resolve_static",
     "cache_key",
     # static container
     "StaticData",
