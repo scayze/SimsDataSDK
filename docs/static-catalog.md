@@ -164,6 +164,29 @@ internal traits may remain, and inclusion does not imply a trait is assignable.
 For compatibility, `find_traits(visible_only=True)` still filters only the
 `is_hidden` flag.
 
+### Aspiration stages and internal tuning
+
+`catalog.aspirations` includes aspiration stages used by player-facing tracks
+and internal entries such as tutorial and utility objectives. `Aspiration` has
+no verified visibility flag. After catalog resolution, a linked track and
+category provide a useful way to select likely player-facing stages without
+depending on their names:
+
+```python
+likely_visible_stages = [
+    aspiration for aspiration in catalog.aspirations.values()
+    if aspiration.track_id is not None and aspiration.category_id is not None
+]
+```
+
+This is a heuristic, not a guarantee that a stage is selectable or visible.
+Incomplete package scans, missing links, mods, or unusual game content can
+leave relevant stages unlinked. `extract_catalog` alone does not resolve these
+links; use a resolved catalog, such as one from `build_static` or
+`resolve_static`. For the aspirations a player selects, inspect
+`catalog.aspiration_tracks` as well: `Aspiration` records often represent
+individual stages within a track, rather than the selectable track itself.
+
 ## Pre-made Sims
 
 The concrete pre-made population is defined by tuning, not by the user save:
