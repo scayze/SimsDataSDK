@@ -34,13 +34,12 @@ director. Residential directors are identified by their tuning class and name
 convention, not a verified link from a specific world. This includes Sims that
 also have scenario evidence. `origin="both"`
 requires both kinds of evidence; `origin="unknown"` returns Sims with neither.
-The filter is available on `PremadeBundle`, `StaticData`, and the workspace,
-and combines with workspace ownership filtering:
+The filter is available on `PremadeBundle`, `StaticData`, and the workspace:
 
 ```python
-world_sims = ws.find_sims(origin="normal", ownership="owned")
-scenario_sims = ws.find_sims(origin="scenario", ownership="owned")
-unclassified = ws.find_sims(origin="unknown", ownership="owned")
+world_sims = ws.find_sims(origin="normal")
+scenario_sims = ws.find_sims(origin="scenario")
+unclassified = ws.find_sims(origin="unknown")
 ```
 
 Each Sim exports `scenario_usage` and `normal_game_usage`, each `True` when
@@ -506,34 +505,34 @@ second. Pass `include_mods=False` to get game-only data, or a package subset to
 `%LOCALAPPDATA%\sims4-sdk\cache\static-<hash>.pkl`. The hash covers package
 paths, modification times, sizes, the locale, and the cache schema version.
 Deleting the folder (or passing `refresh=True`) forces a rebuild.
-# Filtering premade Sims by ownership
+## Pack attribution
 
-Pass the complete set of owned pack IDs when creating a workspace. Omit it
-when ownership is unknown; an empty set means no DLC packs are owned. The base
-game is treated as owned. IDs are case-insensitive.
+Callers can use pack attribution to apply their own filtering policy:
 
 ```python
 from sims4_sdk import Sims4Workspace
 
-ws = Sims4Workspace(owned_packs={"EP06", "GP08"})
-owned_sims = ws.find_sims(ownership="owned")
-unknown_sims = ws.find_sims(ownership="unknown")
-sim = ws.find_sim("Thorne Bailey")
-if sim:
-    print(sim.pack_id, ws.sim_ownership(sim))
-print(ws.pack_status("EP06"))  # owned and installed are separate states
+ws = Sims4Workspace()
+allowed_packs = {"BASE", "EP06", "GP08"}
+matching_sims = [sim for sim in ws.find_sims() if sim.pack_id in allowed_packs]
+unknown_sims = [sim for sim in ws.find_sims() if sim.pack_id is None]
 ```
-
-The ownership filter also accepts `"unowned"`. Ownership is based on the
-supplied list, not launcher entitlements. `installed` is estimated from a
-main pack directory at the game root; `None` means no installation is
-available. A folder alone does not establish entitlement or installation
-completeness. Delta/update folders do not count as an installed pack.
 
 `PremadeSim.pack_id` is inferred from the official definitions seen during
 the static build, independently of the winning `source`. It is `None` when
 the official sources are absent or disagree. Consequently a mod-only Sim,
-an ambiguous Sim, or a Sim in an older snapshot without this field has
-unknown ownership and is excluded from both owned and unowned filters. A
-partial set of scanned packages can limit the evidence available for pack
-attribution. Ownership is workspace-specific and is not stored in snapshots.
+an ambiguous Sim, or a Sim in an older snapshot without this field has unknown
+pack attribution. A partial set of scanned packages can limit the evidence
+available. Attribution identifies observed sources; it does not establish
+ownership or all packs needed to use the content.
+
+To limit extraction itself, pass selected `PackageInfo` objects to
+`extract_static` or `build_static` via `packages=`. For example:
+
+```python
+from sims4_sdk import Installation, extract_static, resolve_static
+
+installation = Installation(include_mods=False)
+packages = [p for p in installation.packages if p.pack in allowed_packs]
+static = resolve_static(extract_static(installation, packages=packages))
+```

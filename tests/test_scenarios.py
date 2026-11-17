@@ -59,7 +59,7 @@ def test_extract_and_link_scenario_and_world_npc_data(tmp_path):
     assert sim.scenario_ids == [10] and sim.scenario_usage is True
     assert sim.normal_walkby_director_ids == [72] and sim.normal_game_usage is True
     static = StaticData(premades=bundle, scenario_data=data)
-    ws = Sims4Workspace(install_dir=tmp_path, static=static, owned_packs=[])
+    ws = Sims4Workspace(install_dir=tmp_path, static=static)
     assert ws.scenario("test scenario").id == 10
     assert ws.find_scenario(10).id == 10
     assert ws.find_scenarios("TEST")[0].id == 10

@@ -208,7 +208,7 @@ from .save import (
     read_tray_library,
 )
 from .siminfo import SimInfo, SimInfoError
-from .workspace import PackStatus, PackStatusError, Sims4Workspace
+from .workspace import Sims4Workspace
 
 __version__ = "0.9.0"
 
@@ -229,8 +229,6 @@ __all__ = [
     "Scenario", "ScenarioRole", "ScenarioData", "SimFilter", "SimTemplate",
     "SimTemplateChooser", "NPCHouseholdTemplate", "WalkbyDirector",
     "SpecificSimSituation", "SituationJob",
-    "PackStatus",
-    "PackStatusError",
     "Installation",
     "PackageInfo",
     # errors
