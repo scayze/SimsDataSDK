@@ -27,6 +27,7 @@ from ..core.fnv import fnv1_32
 from .models import (
     Aspiration,
     AspirationCategory,
+    AspirationObjective,
     AspirationTrack,
     Career,
     CareerLevel,
@@ -66,7 +67,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "source-resolved-1"
+CACHE_VERSION = "source-resolved-3"
 
 _MODEL_CLASSES = frozenset(
     {
@@ -478,6 +479,7 @@ def extract_catalog(
     """Extract supported tuning fields without linking catalog records."""
     catalog = Catalog(strings=strings)
     _build_models(catalog, entries, sources, strings)
+    _build_aspiration_objectives(catalog, entries, sources, strings)
     if relationship_tuning is not None:
         catalog.relationship_defaults = relationship_tuning.defaults
         catalog.premade_relationships = relationship_tuning.pairs
@@ -549,6 +551,84 @@ def _build_models(
                 "catalog_model", exc, package_path=source.path if source else None,
                 resource_key=source.resource_key if source else None, tuning_id=instance_id,
             ))
+
+
+def _build_aspiration_objectives(catalog, entries, sources, strings) -> None:
+    objective_ids = {oid for aspiration in catalog.aspirations.values()
+                     for oid in aspiration.objective_ids}
+    for oid in objective_ids:
+        entry = entries.get(oid)
+        if entry is None or entry.cls != "Objective":
+            continue
+        view = TuningView(entry, strings)
+        test_type, payload = view.variant("objective_test")
+        test = view.child("objective_test")
+        expanded = _expanded_test(view, test) if test is not None else None
+        skill_id, skill_level = _objective_skill_threshold(view, test_type, payload, entries)
+        catalog.aspiration_objectives[oid] = AspirationObjective(
+            id=oid, name=entry.name, display_text=view.text("display_text"),
+            tooltip=view.text("tooltip"), test_type=test_type,
+            test_xml=ET.tostring(expanded, encoding="unicode") if expanded is not None else None,
+            skill_id=skill_id, skill_level=skill_level, source=sources.get(oid),
+            test_tree=_test_tree(expanded) if expanded is not None else None,
+        )
+
+
+def _expanded_test(view, element, depth=0):
+    # Retain unresolved references and their keys when resolution fails or cycles.
+    if element.tag == "r":
+        resolved = view.resolve(element) if depth < 32 else None
+        if resolved is None or resolved.tag == "r":
+            return deepcopy(element)
+        expanded = _expanded_test(view, resolved, depth + 1)
+        if element.get("n") is not None:
+            expanded.set("n", element.get("n"))
+        expanded.tail = element.tail
+        return expanded
+    result = ET.Element(element.tag, {k: v for k, v in element.attrib.items() if k != "x"})
+    result.text = element.text
+    result.tail = element.tail
+    for child in element:
+        result.append(_expanded_test(view, child, depth + 1))
+    return result
+
+
+def _test_tree(element):
+    return {
+        "tag": element.tag,
+        "attributes": dict(element.attrib),
+        "text": element.text,
+        "tail": element.tail,
+        "children": [_test_tree(child) for child in element],
+    }
+
+
+def _objective_skill_threshold(view, test_type, payload, entries):
+    if test_type != "statistic" or payload is None:
+        return None, None
+    def child(parent, name):
+        return next((item for item in parent if item.get("n") == name), None)
+    stat_id = view.number_of(child(payload, "stat"))
+    skill = entries.get(stat_id)
+    if skill is None or skill.cls not in {"Skill", "TunableSkill"}:
+        return None, None
+    threshold = view.resolve(child(payload, "threshold"))
+    if threshold is None or threshold.tag != "V" or threshold.get("t") != "value_threshold":
+        return None, None
+    threshold_data = view.resolve(child(threshold, "value_threshold"))
+    if threshold_data is None:
+        return None, None
+    level = view.number_of(child(threshold_data, "value"))
+    skill_view = TuningView(skill, view.strings)
+    level_data = skill_view.resolved_child("level_data")
+    if level is None or level_data is None:
+        return None, None
+    levels = set()
+    for item in level_data:
+        item = skill_view.resolve(item)
+        if item is not None:
+            levels.add(skill_view.number_of(child(item, "key")))
+    return (stat_id, level) if level in levels else (None, None)
 
 
 def _build_statistic(entry: TuningElement, view: TuningView, source) -> StatisticDefinition:

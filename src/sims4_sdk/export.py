@@ -461,6 +461,7 @@ def _catalog_dict(catalog: Any, options: _Options) -> dict[str, Any]:
         "traits": _by_id(catalog.traits, _trait_dict, options),
         "preferences": _by_id(catalog.preferences, _preference_dict, options),
         "aspirations": _by_id(catalog.aspirations, _aspiration_dict, options),
+        "aspiration_objectives": _by_id(catalog.aspiration_objectives, _dataclass_dict, options),
         "aspiration_tracks": _by_id(
             catalog.aspiration_tracks, _aspiration_track_dict, options
         ),
@@ -1099,6 +1100,7 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
         Aspiration,
         AspirationCategory,
         AspirationTrack,
+        AspirationObjective,
         Career,
         CareerLevel,
         CareerTrack,
@@ -1190,6 +1192,8 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
     if isinstance(obj, Trait):
         return _trait_dict(obj, opts)
     if isinstance(obj, StatisticDefinition):
+        return _dataclass_dict(obj, opts)
+    if isinstance(obj, AspirationObjective):
         return _dataclass_dict(obj, opts)
     if isinstance(obj, TuningCandidate):
         return _dataclass_dict(obj, opts)

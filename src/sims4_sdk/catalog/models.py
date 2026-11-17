@@ -29,6 +29,7 @@ __all__ = [
     "Aspiration",
     "AspirationTrack",
     "AspirationCategory",
+    "AspirationObjective",
     "Career",
     "CareerTrack",
     "CareerLevel",
@@ -208,6 +209,22 @@ class Preference(Serializable):
 
     def __repr__(self) -> str:
         return f"Preference({self.name!r}, type={self.preference_type!r})"
+
+
+@dataclass
+class AspirationObjective(Serializable):
+    """Objective tuning referenced by one or more aspiration milestones."""
+
+    id: int
+    name: str
+    display_text: Optional[str] = None
+    tooltip: Optional[str] = None
+    test_type: Optional[str] = None
+    test_xml: Optional[str] = None
+    skill_id: Optional[int] = None
+    skill_level: Optional[int] = None
+    source: Optional[TuningSource] = None
+    test_tree: Optional[dict] = None
 
 
 @dataclass
@@ -693,6 +710,8 @@ class Catalog(Serializable):
     )
     diagnostics: list[ExtractionIssue] = field(default_factory=list)
     statistics: dict[int, StatisticDefinition] = field(default_factory=dict)
+    aspiration_objectives: dict[int, AspirationObjective] = field(default_factory=dict)
+    aspiration_objectives_by_name: dict[str, AspirationObjective] = field(default_factory=dict, repr=False)
     statistics_by_name: dict[str, StatisticDefinition] = field(default_factory=dict, repr=False)
     #: None means the catalog predates capture; empty means capture found no collisions.
     tuning_overrides: Optional[dict[int, list[TuningCandidate]]] = None
@@ -705,6 +724,10 @@ class Catalog(Serializable):
             self.family_fixups = []
         if "statistics" not in state:
             self.statistics = {}
+        if "aspiration_objectives" not in state:
+            self.aspiration_objectives = {}
+        if "aspiration_objectives_by_name" not in state:
+            self.aspiration_objectives_by_name = {}
         if "statistics_by_name" not in state:
             self.statistics_by_name = {}
         if "tuning_overrides" not in state:
@@ -721,6 +744,7 @@ class Catalog(Serializable):
     def finalize(self) -> "Catalog":
         """Rebuild name indexes and cross-links."""
         self.statistics_by_name = {item.name: item for item in self.statistics.values()}
+        self.aspiration_objectives_by_name = {item.name: item for item in self.aspiration_objectives.values()}
         self.traits_by_name = {item.name: item for item in self.traits.values()}
         self.preferences_by_name = {item.name: item for item in self.preferences.values()}
         self.aspirations_by_name = {item.name: item for item in self.aspirations.values()}
@@ -790,6 +814,16 @@ class Catalog(Serializable):
     # ------------------------------------------------------------------
     # convenience lookups
     # ------------------------------------------------------------------
+    def aspiration_objective(self, key: int | str) -> Optional[AspirationObjective]:
+        if isinstance(key, int):
+            return self.aspiration_objectives.get(key)
+        return _lookup(self.aspiration_objectives_by_name, key)
+
+    def find_aspiration_objectives(self, query: str = "") -> list[AspirationObjective]:
+        query = query.casefold()
+        return [item for item in self.aspiration_objectives.values()
+                if query in item.name.casefold() or query in (item.display_text or "").casefold()]
+
     def statistic(self, key: int | str) -> Optional[StatisticDefinition]:
         if isinstance(key, int):
             return self.statistics.get(key)

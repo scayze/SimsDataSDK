@@ -16,6 +16,7 @@ from .builder import (
 from .models import (
     Aspiration,
     AspirationCategory,
+    AspirationObjective,
     AspirationTrack,
     Career,
     CareerLevel,
@@ -97,6 +98,7 @@ __all__ = [
     "Aspiration",
     "AspirationTrack",
     "AspirationCategory",
+    "AspirationObjective",
     "Career",
     "CareerTrack",
     "CareerLevel",

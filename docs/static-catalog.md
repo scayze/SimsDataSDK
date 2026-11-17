@@ -21,6 +21,42 @@ lossless image of the installation. Selected package paths and resource keys
 allow callers to read original resources using `DBPF`. Override precedence and
 other extraction choices are described below; inspect diagnostics for gaps.
 
+## Aspiration objectives
+
+`AspirationTrack.aspiration_ids` identifies aspiration milestones. Each
+`Aspiration.objective_ids` identifies its objectives; these are distinct from
+the catalog's developmental `Milestone` records. Look up an objective with
+`catalog.aspiration_objective(id_or_name)` or search with
+`catalog.find_aspiration_objectives(text)`. The catalog builds objective records
+for referenced objectives in every extracted aspiration, including aspirations
+without a resolved track or category. Missing objective tuning remains visible
+as an ID with no matching record.
+
+Objective records include display text, tooltip, test type, source,
+`test_xml`, and `test_tree`. The tree is a JSON-safe dictionary whose `tag`,
+`attributes`, `text`, `tail`, and ordered `children` preserve the tuning
+structure, including repeated fields. Values remain strings; the tree does not
+interpret their meaning. For example, the children of a `skill_tag` test
+include its quantity, tag, and threshold fields. Shared references in both
+representations are expanded where possible; an `r` element left in the tree
+or XML is unresolved, and its `x` attribute identifies the reference.
+Localized fields can contain their raw
+localization key when a string is unavailable. The XML is a projection of the
+test, not the full objective or an evaluation of it; inspect `StaticSource`
+for the original tuning and other objective fields.
+
+`skill_id` and `skill_level` describe a threshold in a `statistic` test only
+when its statistic is identified as a skill and the threshold matches a key in
+that skill's level data. For example, one base-game package has Freelance
+Botanist Gardening thresholds 5, 8 and 10; updates or mods can override them.
+These fields do not encode the comparison operator or other
+conditions and do not by themselves establish what is required to complete a
+milestone. A missing value means the SDK could not establish that interpretation,
+not that there is no skill requirement. In particular, `ranked_statistic`,
+`skill_tag`, groups, alternatives, non-skill statistics and thresholds without
+matching skill-level evidence are left uninterpreted. Rebuild older snapshots
+to populate these records.
+
 ## Filtering scenario and ordinary-world Sims
 
 `find_sims(origin="scenario")` selects Sims with a `Scenario` component in

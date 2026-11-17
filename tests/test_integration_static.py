@@ -65,6 +65,12 @@ def test_static_source_and_resolution_on_local_base(install_dir: Path):
     assert resolved.catalog.traits
     assert set(source.collected.entries) == before
     assert resolved.world is not None
+    catalog = resolved.catalog
+    track = catalog.aspiration_track(40647)
+    linked = {oid for aid in track.aspiration_ids for oid in catalog.aspiration(aid).objective_ids}
+    assert {40675, 40684, 40693} <= linked
+    assert [(catalog.aspiration_objective(i).skill_id, catalog.aspiration_objective(i).skill_level)
+            for i in (40675, 40684, 40693)] == [(16700, 5), (16700, 8), (16700, 10)]
 
 
 @pytest.fixture(scope="session")

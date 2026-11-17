@@ -31,6 +31,54 @@ OTHER_XML = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 
+def test_aspiration_objectives_resolve_shared_tests_and_preserve_unknowns():
+    from sims4_sdk.catalog.builder import extract_catalog
+
+    xml = '''<combined><g>
+      <T x="stat">16700</T><T x="five">5</T><T x="eight">8</T><T x="ten">10</T>
+      <U x="threshold"><r n="value" x="five"/></U>
+      <V x="test" t="statistic"><U n="statistic"><r n="stat" x="stat"/>
+        <V n="threshold" t="value_threshold"><r n="value_threshold" x="threshold"/></V>
+      </U></V>
+      </g>
+      <I c="Aspiration" n="asp" s="1"><L n="objectives"><T>40675</T><T>40684</T><T>40693</T><T>7</T><T>8</T><T>9</T><T>10</T></L></I>
+      <I c="Skill" n="gardening" s="16700"><L n="level_data">
+        <U><r n="key" x="five"/></U><U><r n="key" x="eight"/></U><U><r n="key" x="ten"/></U>
+      </L></I>
+      <I c="Objective" n="one" s="40675"><T n="display_text">0x1234</T><r n="objective_test" x="test"/></I>
+      <I c="Objective" n="two" s="40684"><V n="objective_test" t="statistic"><U n="statistic"><r n="stat" x="stat"/><V n="threshold" t="value_threshold"><U n="value_threshold"><r n="value" x="eight"/></U></V></U></V></I>
+      <I c="Objective" n="three" s="40693"><V n="objective_test" t="statistic"><U n="statistic"><r n="stat" x="stat"/><V n="threshold" t="value_threshold"><U n="value_threshold"><r n="value" x="ten"/></U></V></U></V></I>
+      <I c="Objective" n="group" s="7"><V n="objective_test" t="skill_tag"><U n="skill_tag"><T n="skill_quantity">2</T><E n="skill_tag">Skill_Child</E><U n="skill_threshold"><T n="value">4</T></U><T n="extra">a</T><T n="extra">b</T></U></V></I>
+      <I c="Objective" n="ranked" s="8"><V n="objective_test" t="ranked_statistic"><U n="ranked_statistic"><T n="ranked_stat">188229</T><r n="threshold" x="missing"/></U></V></I>
+      <I c="Objective" n="non_skill" s="9"><V n="objective_test" t="statistic"><U n="statistic"><T n="stat">55</T></U></V></I>
+      </combined>'''
+    tuning = CombinedTuning.from_xml(xml)
+    catalog = extract_catalog({e.instance_id: e for e in tuning}, {}, {0x1234: "Reach level 5"}).finalize()
+    assert catalog.aspiration(1).objective_ids[-1] == 10
+    assert [catalog.aspiration_objective(i).skill_level for i in (40675, 40684, 40693)] == [5, 8, 10]
+    obj = catalog.aspiration_objective("ONE")
+    assert obj.skill_id == 16700 and obj.display_text == "Reach level 5"
+    assert 'n="stat">16700' in obj.test_xml
+    assert catalog.aspiration_objective(7).skill_level is None
+    assert catalog.aspiration_objective(8).test_type == "ranked_statistic"
+    assert 'x="missing"' in catalog.aspiration_objective(8).test_xml
+    tree = obj.test_tree
+    assert tree["attributes"] == {"t": "statistic", "n": "objective_test"}
+    stat, threshold = tree["children"][0]["children"]
+    assert stat["attributes"]["n"] == "stat" and stat["text"] == "16700"
+    assert threshold["children"][0]["children"][0]["text"] == "5"
+    group = catalog.aspiration_objective(7).test_tree["children"][0]["children"]
+    assert [(node["attributes"]["n"], node["text"]) for node in group[-2:]] == [("extra", "a"), ("extra", "b")]
+    ranked = catalog.aspiration_objective(8).test_tree["children"][0]["children"]
+    assert ranked[0]["text"] == "188229"
+    assert ranked[1]["tag"] == "r" and ranked[1]["attributes"] == {"n": "threshold", "x": "missing"}
+    assert catalog.aspiration_objective(9).skill_id is None
+    assert catalog.aspiration_objective(10) is None
+    assert catalog.find_aspiration_objectives("LEVEL 5") == [obj]
+    assert json.loads(catalog.to_json())["aspiration_objectives"]["40675"]["skill_level"] == 5
+    assert json.loads(obj.to_json())["test_tree"] == tree
+
+
 def test_static_source_can_be_resolved_without_mutating_records(tmp_path):
     package = _package(tmp_path, "source.package", XML.encode())
     installation = Installation(tmp_path, include_mods=False)
