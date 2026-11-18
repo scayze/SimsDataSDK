@@ -290,6 +290,17 @@ manifests disagree on a localized name or description, that value is left unset
 instead of choosing one arbitrarily. Older portable snapshots remain readable,
 but need to be rebuilt to populate the new household links.
 
+For tuning households, `starter_record_ids` lists candidate instance IDs from
+`world.households`, matched by template name or complete member names. These
+are possible matches, not proof of identity. `selected_starter_record_id`
+identifies the record used for hints and lot aliases; `starter_selection_reason`
+is `"lot"`, `"only_candidate"`, `"funds"`, or `"ambiguous"`. A unique
+lot-referenced candidate takes precedence. If none is placed, a unique match
+to the tuning funds breaks a tie; otherwise tied candidates remain unresolved
+and supply no hints or aliases. Multiple placed candidates remain unresolved.
+Starter-only households expose their own record ID. Older snapshots must be
+rebuilt to populate this selection information.
+
 Each household member message carries:
 
 | Field | Meaning |

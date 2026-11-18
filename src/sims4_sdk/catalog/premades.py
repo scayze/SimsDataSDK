@@ -226,12 +226,21 @@ class PremadeHousehold(Serializable):
     localized_name: Optional[str] = None
     description: Optional[str] = None
     lot_ids: list[int] = field(default_factory=list)
+    starter_record_ids: list[int] = field(default_factory=list)
+    selected_starter_record_id: Optional[int] = None
+    starter_selection_reason: Optional[str] = None
 
     def __setstate__(self, state: dict) -> None:
         # Portable snapshots created before lot links existed have no list field.
         self.__dict__.update(state)
         if "lot_ids" not in state:
             self.lot_ids = []
+        if "starter_record_ids" not in state:
+            self.starter_record_ids = []
+        if "selected_starter_record_id" not in state:
+            self.selected_starter_record_id = None
+        if "starter_selection_reason" not in state:
+            self.starter_selection_reason = None
 
     @property
     def display_name(self) -> Optional[str]:
@@ -1002,20 +1011,69 @@ def _merge_world(
         if sim.full_name:
             by_name.setdefault(sim.full_name.casefold(), sim)
 
-    tuning_by_members = {
-        frozenset(member.full_name.casefold() for member in household.members if member.full_name): household
-        for household in households.values()
-        if household.members
-    }
+    tuning_by_members: dict[tuple[str, ...], list[PremadeHousehold]] = {}
+    for household in households.values():
+        if household.members and all(member.full_name for member in household.members):
+            key = tuple(sorted(member.full_name.casefold() for member in household.members))
+            tuning_by_members.setdefault(key, []).append(household)
     households_by_name = {
         household.name.casefold(): household for household in households.values()
     }
     taken_names = {household.name.casefold() for household in households.values()}
 
+    placed_ids = {lot.household_id for lot in world.lots.values() if lot.household_id is not None}
+    candidates: dict[int, list] = {}
+    contested_ids: set[int] = set()
+    for record in world.households.values():
+        if not record.members:
+            continue
+        match = households_by_name.get(record.name.casefold()) if record.name else None
+        if match is not None and len(match.members) != len(record.members):
+            match = None
+        if match is None and all(member.full_name for member in record.members):
+            key = tuple(sorted(member.full_name.casefold() for member in record.members))
+            matches = tuning_by_members.get(key, [])
+            if len(matches) > 1:
+                contested_ids.add(record.instance)
+                for household in matches:
+                    candidates.setdefault(household.id, []).append(record)
+                continue
+            match = matches[0] if len(matches) == 1 else None
+        if match is not None and match.members:
+            candidates.setdefault(match.id, []).append(record)
+
+    candidate_ids: set[int] = set()
+    selected_ids: set[int] = set()
+    protected_sims: set[int] = set()
+    for household_id, records in candidates.items():
+        household = households[household_id]
+        household.starter_record_ids = sorted(record.instance for record in records)
+        candidate_ids.update(household.starter_record_ids)
+        protected_sims.update(member.sim_template_id for member in household.members)
+        placed = [record for record in records if record.instance in placed_ids]
+        eligible = placed or records
+        reason = "lot" if placed else "only_candidate"
+        if len(eligible) > 1 and not placed and household.funds is not None:
+            funds_matches = [record for record in eligible if record.funds == household.funds]
+            if len(funds_matches) == 1:
+                eligible = funds_matches
+                reason = "funds"
+        if len(eligible) == 1 and eligible[0].instance not in contested_ids:
+            household.selected_starter_record_id = eligible[0].instance
+            household.starter_selection_reason = reason
+            selected_ids.add(eligible[0].instance)
+        else:
+            household.starter_selection_reason = "ambiguous"
+
+    hinted_sims: set[int] = set()
     for record in sorted(
-        world.households.values(), key=lambda item: (item.name.casefold(), item.instance)
+        world.households.values(),
+        key=lambda item: (item.instance not in selected_ids, item.instance not in placed_ids,
+                          item.name.casefold(), item.instance),
     ):
         if not record.members:
+            continue
+        if record.instance in candidate_ids and record.instance not in selected_ids:
             continue
 
         # Some packs (for example EP10) store the household resource under the
@@ -1027,16 +1085,19 @@ def _merge_world(
             and match.members
             and len(match.members) == len(record.members)
         ):
+            applied: set[int] = set()
             for household_member, member in zip(match.members, record.members):
                 sim = sims.get(household_member.sim_template_id)
-                if sim is not None:
+                if sim is not None and sim.id not in hinted_sims:
                     _apply_hints(catalog, sim, member)
+                    hinted_sims.add(sim.id)
+                    applied.add(sim.id)
             if match.funds is None and record.funds is not None:
                 match.funds = record.funds
             sim_by_tag = {
                 member.tag: sims[member.sim_template_id]
                 for member in match.members
-                if member.sim_template_id in sims
+                if member.sim_template_id in applied
             }
             _link_starter_family(None, record.members, sim_by_tag)
             aliases.setdefault(record.name, match)
@@ -1049,24 +1110,28 @@ def _merge_world(
         if covered == len(record.members):
             # Tuning already defines every member.  Attach the resource's
             # household funds and any per-Sim hints that tuning leaves blank.
-            key = frozenset(
-                member.full_name.casefold() for member in record.members if member.full_name
-            )
-            match = tuning_by_members.get(key)
+            key = tuple(sorted(member.full_name.casefold() for member in record.members if member.full_name))
+            matches = tuning_by_members.get(key, [])
+            match = matches[0] if len(matches) == 1 else None
             if match is not None:
                 if match.funds is None and record.funds is not None:
                     match.funds = record.funds
                 if record.name:
                     aliases.setdefault(record.name, match)
                 household_id_aliases[record.instance] = match.id
+            applied = set()
             for member in record.members:
                 existing = by_name.get(member.full_name.casefold())
-                if existing is not None:
+                if (existing is not None and existing.id not in hinted_sims
+                        and (record.instance in selected_ids or existing.id not in protected_sims)):
                     _apply_hints(catalog, existing, member)
+                    hinted_sims.add(existing.id)
+                    applied.add(existing.id)
             sim_by_tag = {
                 f"household_member_{index}": by_name[member.full_name.casefold()]
                 for index, member in enumerate(record.members, start=1)
                 if member.full_name.casefold() in by_name
+                and by_name[member.full_name.casefold()].id in applied
             }
             _link_starter_family(None, record.members, sim_by_tag)
             continue
@@ -1078,6 +1143,9 @@ def _merge_world(
             name=record.name or f"household_{record.instance:016X}",
             funds=record.funds,
             source=record.source,
+            starter_record_ids=[record.instance],
+            selected_starter_record_id=record.instance,
+            starter_selection_reason="lot" if record.instance in placed_ids else "only_candidate",
         )
         taken_names.add(household.name.casefold())
 
@@ -1089,7 +1157,11 @@ def _merge_world(
                 existing = _starter_sim(catalog, household, member, index)
                 sims[existing.id] = existing
                 by_name[member.full_name.casefold()] = existing
-            sim_by_tag[tag] = existing
+                hinted_sims.add(existing.id)
+                sim_by_tag[tag] = existing
+            elif existing.id not in hinted_sims and existing.id not in protected_sims:
+                hinted_sims.add(existing.id)
+                sim_by_tag[tag] = existing
             household.members.append(
                 HouseholdMember(
                     tag=tag,

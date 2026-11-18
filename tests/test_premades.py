@@ -179,6 +179,85 @@ def test_localized_household_and_lot_links_follow_template_aliases() -> None:
     assert bundle.sim(1).scenario_usage is None
 
 
+def test_placed_household_wins_over_unplaced_duplicate() -> None:
+    from sims4_sdk.catalog.premades import HouseholdMember, PremadeHousehold, _merge_world
+
+    sim = PremadeSim(id=1, name="Penny", first_name="Penny", last_name="Pizzazz")
+    household = PremadeHousehold(id=2, name="hH_Template_Pizzazz", members=[
+        HouseholdMember(tag="a", sim_template_id=1, sim_name="Penny", full_name="Penny Pizzazz")
+    ])
+    world = WorldData(
+        households={
+            10: StarterHouseholdRecord(instance=10, name="hH_Template_Pinku", funds=20000,
+                members=[StarterMember(first_name="Penny", last_name="Pizzazz", aspiration_track_id=25441, career_id=123)]),
+            11: StarterHouseholdRecord(instance=11, name="hH_Template_Pizzazz", funds=4000,
+                members=[StarterMember(first_name="Penny", last_name="Pizzazz", aspiration_track_id=144947)]),
+            12: StarterHouseholdRecord(instance=12, name="Other", members=[StarterMember(first_name="Other")]),
+        },
+        lots={30: LotRecord(instance=30, household_id=11)},
+    )
+    households = {2: household}
+    aliases, ids = _merge_world(Catalog(), {1: sim}, households, world)
+
+    assert sim.aspiration_track_id == 144947
+    assert sim.career_id is None
+    assert household.funds == 4000
+    assert ids == {11: 2}
+    assert "hH_Template_Pinku" not in aliases
+    assert household.starter_record_ids == [10, 11]
+    assert household.selected_starter_record_id == 11
+    assert household.starter_selection_reason == "lot"
+    assert household.to_dict()["starter_record_ids"] == [10, 11]
+    assert '"selected_starter_record_id": 11' in household.to_json()
+    assert 12 in households
+    assert world.households[10].members[0].aspiration_track_id == 25441
+
+
+def test_unplaced_duplicate_selection_and_ambiguity() -> None:
+    from sims4_sdk.catalog.premades import HouseholdMember, PremadeHousehold, _merge_world
+
+    def merge(funds, placed=()):
+        sim = PremadeSim(id=1, name="Test", first_name="Alex", last_name="Test")
+        household = PremadeHousehold(id=2, name="Template", funds=funds, members=[
+            HouseholdMember(tag="a", sim_template_id=1, sim_name="Test", full_name="Alex Test")
+        ])
+        world = WorldData(households={
+            10: StarterHouseholdRecord(instance=10, name="First", funds=100,
+                members=[StarterMember(first_name="Alex", last_name="Test", aspiration_track_id=1)]),
+            11: StarterHouseholdRecord(instance=11, name="Second", funds=200,
+                members=[StarterMember(first_name="Alex", last_name="Test", aspiration_track_id=2)]),
+        }, lots={i: LotRecord(instance=i, household_id=i) for i in placed})
+        _, ids = _merge_world(Catalog(), {1: sim}, {2: household}, world)
+        return sim, household, ids
+
+    sim, household, ids = merge(200)
+    assert (sim.aspiration_track_id, household.selected_starter_record_id, household.starter_selection_reason) == (2, 11, "funds")
+    assert ids == {11: 2}
+    sim, household, ids = merge(None)
+    assert (sim.aspiration_track_id, household.selected_starter_record_id, household.starter_selection_reason) == (None, None, "ambiguous")
+    assert household.starter_record_ids == [10, 11] and ids == {}
+    sim, household, ids = merge(200, placed=(10, 11))
+    assert sim.aspiration_track_id is None and household.starter_selection_reason == "ambiguous"
+    assert ids == {}
+
+
+def test_same_named_tuning_households_do_not_get_an_arbitrary_match() -> None:
+    from sims4_sdk.catalog.premades import HouseholdMember, PremadeHousehold, _merge_world
+
+    sims = {i: PremadeSim(id=i, name=f"Sim{i}", first_name="Alex", last_name="Test") for i in (1, 2)}
+    households = {i + 10: PremadeHousehold(id=i + 10, name=f"Household{i}", members=[
+        HouseholdMember(tag="a", sim_template_id=i, sim_name=f"Sim{i}", full_name="Alex Test")
+    ]) for i in (1, 2)}
+    world = WorldData(households={20: StarterHouseholdRecord(instance=20, name="Other", members=[
+        StarterMember(first_name="Alex", last_name="Test", aspiration_track_id=100)
+    ])}, lots={30: LotRecord(instance=30, household_id=20)})
+    _, ids = _merge_world(Catalog(), sims, households, world)
+    assert ids == {}
+    assert all(sim.aspiration_track_id is None for sim in sims.values())
+    assert all(household.starter_record_ids == [20] and household.starter_selection_reason == "ambiguous"
+               for household in households.values())
+
+
 def test_scenario_name_and_world_placement_are_independent_evidence() -> None:
     xml = '''<root>
     <I c="PremadeSimTemplate" n="premadeSimTemplate_Scenario_Test" s="1" />

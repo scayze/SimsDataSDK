@@ -27,6 +27,25 @@ BASE_PACKAGES = {
 }
 
 
+def test_placed_penny_record_wins_over_scrapped_duplicate(install_dir: Path):
+    installation = Installation(install_dir, include_mods=False)
+    packages = [info for info in installation.packages
+                if info.pack in {"BASE", "EP03"} and info.path.name in BASE_PACKAGES]
+    if not any(info.pack == "EP03" for info in packages):
+        pytest.skip("City Living is not installed")
+    data = build_static(installation, packages=packages, use_cache=False)
+    placed_id = 0x1C4901E095C0A3D
+    scrapped_id = 0x01F4CF09537A06CE
+    if placed_id not in data.world.households or scrapped_id not in data.world.households:
+        pytest.skip("both Penny starter records are not available")
+    sim = data.premades.sim(144228)
+    household = data.premades.household(sim.household_id)
+    assert sim.aspiration_track_id == 144947
+    assert household.selected_starter_record_id == placed_id
+    assert scrapped_id in household.starter_record_ids
+    assert data.premades.lot(0x1FFC5).household_id == household.id
+
+
 def _selected_packages(installation: Installation):
     selected = [
         info
