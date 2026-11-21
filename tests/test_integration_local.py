@@ -46,6 +46,15 @@ def test_save_extraction_and_resolution_against_local_save(user_dir: Path) -> No
     for sim in resolved.sims.values():
         tracker = sim.raw.get("attributes", {}).get("trait_tracker", {})
         assert sim.trait_ids == tracker.get("trait_ids", [])
+    service = (source.decoded.get("save_slot", {}).get("gameplay_data", {})
+               .get("relationship_service", {}))
+    for entry in service.get("relationships", []):
+        a, b = entry.get("sim_id_a"), entry.get("sim_id_b")
+        if not a or not b or a == b or entry.get("target_object_id") or a not in resolved.sims:
+            continue
+        relation = next(r for r in resolved.sims[a].relationships if r.target_id == b)
+        assert set(entry.get("sim_a", {}).get("bits", [])) <= set(relation.directional_bits)
+        assert set(entry.get("bidirectional", {}).get("bits", [])) <= set(relation.shared_bits)
 
 
 def test_tray_extraction_and_resolution_against_local_household(user_dir: Path) -> None:

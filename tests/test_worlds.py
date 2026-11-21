@@ -206,6 +206,16 @@ def test_starter_species_reaches_premade_and_export() -> None:
     assert luna.to_dict()["species_raw"] == 6
 
 
+def test_starter_breed_key_resolves_with_locale():
+    member = _member("Luna", "", sim_id=101, species=6) + _varint_field(65, 42)
+    payload = _bytes_field(1, _household([member], name="Family"))
+    record = parse_premade_household(_v0resource(payload), instance=9, strings={42: "Arabian"})
+    luna = record.members[0]
+    assert (luna.breed_name, luna.breed_name_key) == ("Arabian", 42)
+    luna.resolve_names({42: "Arabe"})
+    assert luna.breed_name == "Arabe"
+
+
 def test_starter_localized_name_keys_and_resolution() -> None:
     from sims4_sdk.catalog.models import Catalog
     from sims4_sdk.catalog.premades import build_premades

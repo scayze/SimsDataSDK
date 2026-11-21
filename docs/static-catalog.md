@@ -422,6 +422,14 @@ household ID.
   track, career track, lots, lot↔household links, initial relationship defaults
   and cross-household relationship values, and the steady/engagement/marriage
   bits plus family and romance trope IDs.
+- **Animals:** `PremadeSim.is_animal` and `is_pet` distinguish known species;
+  either is `None` when species is unknown. `breed_name` / `breed_name_key`
+  come from the template or starter household when present. `owner_ids` and
+  `pet_ids` refer to premade Sim IDs and are populated only from explicit,
+  resolved directional ownership bits; sharing a household does not establish
+  an owner. Wild foxes are animals rather than household pets.
+  `find_sims(species="HORSE")` and `find_sims(is_pet=True)` filter known values;
+  unknown species do not match either value of `is_pet`.
 - **Template-only:** some newer-pack Sims (EP19+) do not pin an aspiration,
   career, gender or age in tuning and have no starter-save resource; the field
   is `None` rather than guessed.

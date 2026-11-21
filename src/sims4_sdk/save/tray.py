@@ -10,7 +10,7 @@ from typing import Any, Optional
 from ..catalog.models import Catalog
 from ..export import Serializable
 from .models import SavedSim, TrayHousehold, TrayItem, TrayLibrary
-from .reader import sim_from_dict, _as_list
+from .reader import sim_from_dict, _as_list, _link_pet_ownership
 from .tray_source import TrayError, TraySource, extract_tray_item, extract_household_binary
 from .tray_summary import TrayHouseholdSummary, read_household_summary
 
@@ -64,6 +64,7 @@ def resolve_household_binary(source: TraySource, catalog: Optional[Catalog] = No
         if sim_id:
             names[sim_id] = f"{sim.get('first_name', '')} {sim.get('last_name', '')}".strip()
     sims = [sim_from_dict(sim, catalog, names) for sim in raw_sims if sim.get("sim_id")]
+    _link_pet_ownership({sim.sim_id: sim for sim in sims})
 
     return TrayHousehold(
         path=path,

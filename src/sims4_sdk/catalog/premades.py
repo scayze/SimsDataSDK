@@ -30,7 +30,7 @@ from ..export import Serializable
 from ..exceptions import Sims4SDKError
 from ..installation import Installation
 from ..siminfo import SimInfo, SimInfoError
-from ..save.enums import SPECIES_NAMES
+from ..save.enums import PET_OWNED_BITS, PET_OWNER_BITS, SPECIES_NAMES, animal_classification
 from .models import (
     Aspiration,
     AspirationTrack,
@@ -383,6 +383,10 @@ class PremadeSim(Serializable):
     scenario_ids: list[int] = field(default_factory=list)
     normal_walkby_director_ids: list[int] = field(default_factory=list)
     species_raw: Optional[int] = None
+    breed_name: Optional[str] = None
+    breed_name_key: Optional[int] = None
+    owner_ids: list[int] = field(default_factory=list)
+    pet_ids: list[int] = field(default_factory=list)
 
     @property
     def full_name(self) -> str:
@@ -443,6 +447,14 @@ class PremadeSim(Serializable):
         return None
 
     @property
+    def is_animal(self) -> Optional[bool]:
+        return animal_classification(self.species)[0]
+
+    @property
+    def is_pet(self) -> Optional[bool]:
+        return animal_classification(self.species)[1]
+
+    @property
     def occult(self) -> Optional[str]:
         if self.occult_type:
             return self.occult_type
@@ -493,6 +505,10 @@ class PremadeSim(Serializable):
             ("extended_family_links", []),
             ("unlinked_relations", []),
             ("species_raw", None),
+            ("breed_name", None),
+            ("breed_name_key", None),
+            ("owner_ids", []),
+            ("pet_ids", []),
         ):
             if missing not in state:
                 setattr(
@@ -693,10 +709,12 @@ class PremadeBundle(Serializable):
         pack: Optional[str] = None,
         household: str | int | None = None,
         age: Optional[str] = None,
+        species: Optional[str] = None,
+        is_pet: Optional[bool] = None,
         occult: Optional[str] = None,
         origin: Optional[str] = None,
     ) -> list[PremadeSim]:
-        """Filter Sims by name, pack, household, age, occult, or origin evidence."""
+        """Filter Sims by name, household, species, and other available attributes."""
         if origin not in (None, "normal", "scenario", "both", "unknown"):
             raise PremadeFilterError(f"invalid origin filter: {origin!r}")
         needle = query.casefold()
@@ -713,6 +731,10 @@ class PremadeBundle(Serializable):
                 elif (sim.household_name or "").casefold() != household.casefold():
                     continue
             if age and (sim.age or "").casefold() != age.casefold():
+                continue
+            if species and (sim.species or "").casefold() != species.casefold():
+                continue
+            if is_pet is not None and sim.is_pet is not is_pet:
                 continue
             if occult and (sim.occult or "").casefold() != occult.casefold():
                 continue
@@ -1091,20 +1113,34 @@ def _merge_world(
             and match.members
             and len(match.members) == len(record.members)
         ):
-            applied: set[int] = set()
-            for household_member, member in zip(match.members, record.members):
+            # Starter member positions are independent of the tuning tags.
+            # Match unique names first; unnamed members can use their position.
+            named: dict[str, list[PremadeSim]] = {}
+            for household_member in match.members:
                 sim = sims.get(household_member.sim_template_id)
-                if sim is not None and sim.id not in hinted_sims:
-                    _apply_hints(catalog, sim, member)
+                if sim is not None and sim.full_name:
+                    named.setdefault(sim.full_name.casefold(), []).append(sim)
+            record_names = [member.full_name.casefold() for member in record.members]
+            matched: dict[int, PremadeSim] = {}
+            for index, name in enumerate(record_names):
+                if name and record_names.count(name) == 1 and len(named.get(name, [])) == 1:
+                    matched[index] = named[name][0]
+            used_ids = {sim.id for sim in matched.values()}
+            for index, member in enumerate(record.members):
+                if member.full_name:
+                    continue
+                sim = sims.get(match.members[index].sim_template_id)
+                if sim is not None and sim.id not in used_ids:
+                    matched[index] = sim
+                    used_ids.add(sim.id)
+            sim_by_tag = {}
+            for index, sim in matched.items():
+                if sim.id not in hinted_sims:
+                    _apply_hints(catalog, sim, record.members[index])
                     hinted_sims.add(sim.id)
-                    applied.add(sim.id)
+                    sim_by_tag[f"household_member_{index + 1}"] = sim
             if match.funds is None and record.funds is not None:
                 match.funds = record.funds
-            sim_by_tag = {
-                member.tag: sims[member.sim_template_id]
-                for member in match.members
-                if member.sim_template_id in applied
-            }
             _link_starter_family(None, record.members, sim_by_tag)
             aliases.setdefault(record.name, match)
             household_id_aliases[record.instance] = match.id
@@ -1183,6 +1219,19 @@ def _merge_world(
     return aliases, household_id_aliases
 
 
+def _link_premade_pet_bit(actor: PremadeSim, target: PremadeSim, bit_id: int) -> None:
+    if bit_id in PET_OWNER_BITS:
+        if target.id not in actor.owner_ids:
+            actor.owner_ids.append(target.id)
+        if actor.id not in target.pet_ids:
+            target.pet_ids.append(actor.id)
+    elif bit_id in PET_OWNED_BITS:
+        if target.id not in actor.pet_ids:
+            actor.pet_ids.append(target.id)
+        if actor.id not in target.owner_ids:
+            target.owner_ids.append(actor.id)
+
+
 def _link_starter_family(
     household: Optional[PremadeHousehold],
     members: list[StarterMember],
@@ -1203,6 +1252,16 @@ def _link_starter_family(
         for index, member in enumerate(members, start=1)
         if member.sim_id
     }
+
+    for index, member in enumerate(members, start=1):
+        actor = sim_by_tag.get(f"household_member_{index}")
+        if actor is None:
+            continue
+        for relationship in member.relationships:
+            target = sim_by_tag.get(tag_by_id.get(relationship.target_id, ""))
+            if target is not None and actor.id != target.id:
+                for bit in relationship.bits:
+                    _link_premade_pet_bit(actor, target, bit)
 
     spouse_pairs: set[frozenset[str]] = set()
     for index, member in enumerate(members, start=1):
@@ -1654,6 +1713,10 @@ def _link_cross_household_and_ancestors(
             if recipient.id == target.id:
                 continue
             bit_id = op.bit_id
+            if (isinstance(recipient, PremadeSim) and isinstance(target, PremadeSim)
+                    and op.recipients.casefold() in ("actor", "targetsim")
+                    and op.targets.casefold() in ("actor", "targetsim")):
+                _link_premade_pet_bit(recipient, target, bit_id)
             if bit_id == 8809 or op.is_parent_relationship:
                 _link_parent_child(target, recipient, kind="PARENT", target_id=target.id)
             elif bit_id == 8805:
@@ -1853,6 +1916,10 @@ def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> No
         sim.age_hint = member.age
     if sim.species_raw is None and member.species_raw is not None:
         sim.species_raw = member.species_raw
+    if sim.breed_name is None:
+        sim.breed_name = member.breed_name
+    if sim.breed_name_key is None:
+        sim.breed_name_key = member.breed_name_key
     if sim.body_blend is None and member.body_blend:
         sim.body_blend = member.body_blend
     if not sim.aspiration_track_id and member.aspiration_track_id:
@@ -1950,6 +2017,8 @@ def _starter_sim(
         gender_hint=member.gender,
         age_hint=member.age,
         species_raw=member.species_raw,
+        breed_name=member.breed_name,
+        breed_name_key=member.breed_name_key,
         body_blend=member.body_blend,
         household_id=household.id,
         household_name=household.name,
@@ -2134,6 +2203,10 @@ def _build_sim(
     first_name = _localized_child(view, info, "first_name") or ""
     last_name = _last_name(view, info)
     siminfo_key = _siminfo_key(view, info)
+    breed = view.resolve(_child(info, "breed_name"))
+    breed_key = None
+    if breed is not None and breed.get("t") == "specify_breed_name":
+        breed_key = view.number_of(_child(breed, "specify_breed_name"))
 
     explicit_trait_ids, random_trait_count = _traits(view)
     skills = _skills(view)
@@ -2221,6 +2294,8 @@ def _build_sim(
         last_name=last_name,
         siminfo_key=siminfo_key,
         species_raw=species_raw,
+        breed_name=catalog.strings.get(breed_key) if breed_key is not None else None,
+        breed_name_key=breed_key,
         explicit_trait_ids=explicit_trait_ids,
         siminfo_trait_ids=siminfo_trait_ids,
         traits=traits,

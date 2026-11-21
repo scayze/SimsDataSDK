@@ -124,6 +124,53 @@ def test_starter_species_fills_only_missing_siminfo_species() -> None:
     assert (sim.species_raw, sim.species) == (6, "Horse")
 
 
+def test_starter_relationships_use_record_positions_not_tuning_tags() -> None:
+    from sims4_sdk.catalog.premades import HouseholdMember, PremadeHousehold, _merge_world
+    from sims4_sdk.save.models import SavedRelationship
+
+    sims = {
+        1: PremadeSim(id=1, name="Luna", first_name="Luna", last_name=""),
+        2: PremadeSim(id=2, name="Umber", first_name="Umber", last_name=""),
+        3: PremadeSim(id=3, name="Juniper", first_name="Juniper", last_name=""),
+        4: PremadeSim(id=4, name="Starbrite", first_name="Starbrite", last_name=""),
+    }
+    household = PremadeHousehold(id=10, name="Family", members=[
+        HouseholdMember(tag="household_member_4", sim_template_id=1),
+        HouseholdMember(tag="household_member_2", sim_template_id=2),
+        HouseholdMember(tag="household_member_1", sim_template_id=3),
+        HouseholdMember(tag="household_member_3", sim_template_id=4),
+    ])
+    record = StarterHouseholdRecord(instance=20, name="Family", members=[
+        StarterMember(first_name="Luna", sim_id=101, species_raw=6,
+                      relationships=[SavedRelationship(target_id=102, bits=[321335])]),
+        StarterMember(first_name="Umber", sim_id=102, spouse_id=103),
+        StarterMember(first_name="Juniper", sim_id=103, spouse_id=102),
+        StarterMember(first_name="Starbrite", sim_id=104, species_raw=6,
+                      relations=[StarterRelation(0, 101)]),
+    ])
+    _merge_world(Catalog(), sims, {10: household}, WorldData(households={20: record}))
+    assert sims[1].spouse_id is None
+    assert sims[2].spouse_id == 3 and sims[3].spouse_id == 2
+    assert [(x.kind, x.sim_id) for x in sims[4].parent_links] == [("MOTHER", 1)]
+    assert sims[1].species == sims[4].species == "Horse"
+    assert sims[1].owner_ids == [2] and sims[2].pet_ids == [1]
+    assert sims[1].to_dict()["owner_ids"] == [2]
+
+
+def test_starter_named_members_match_even_if_order_differs() -> None:
+    from sims4_sdk.catalog.premades import HouseholdMember, PremadeHousehold, _merge_world
+
+    sims = {1: PremadeSim(id=1, name="A", first_name="A", last_name=""),
+            2: PremadeSim(id=2, name="B", first_name="B", last_name="")}
+    household = PremadeHousehold(id=10, name="Family", members=[
+        HouseholdMember(tag="x", sim_template_id=1), HouseholdMember(tag="y", sim_template_id=2)])
+    record = StarterHouseholdRecord(instance=20, name="Family", members=[
+        StarterMember(first_name="B", sim_id=2, species_raw=6),
+        StarterMember(first_name="A", sim_id=1, species_raw=1)])
+    _merge_world(Catalog(), sims, {10: household}, WorldData(households={20: record}))
+    assert sims[1].species == "Human" and sims[2].species == "Horse"
+
+
 def test_premade_sim_gender_options() -> None:
     def trait(name: str, type_: str = "GENDER_OPTIONS") -> Trait:
         return Trait(

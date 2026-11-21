@@ -39,6 +39,14 @@ def test_premade_species_from_siminfo(install_dir: Path) -> None:
         assert (sim.species_raw, sim.species) == (6, "Horse")
     umber = data.premades.sim(335520)
     assert (umber.species_raw, umber.species) == (1, "Human")
+    luna = data.premades.sim(335516)
+    starbrite = data.premades.sim(335517)
+    juniper = data.premades.sim(335519)
+    assert luna.spouse_id is None
+    assert umber.spouse_id == juniper.id and juniper.spouse_id == umber.id
+    assert [(link.kind, link.sim_id) for link in starbrite.parent_links] == [("MOTHER", luna.id)]
+    assert starbrite.full_name not in umber.children
+    assert luna.breed_name_key == 0x663FC969 and luna.is_pet is True
 
 
 def test_placed_penny_record_wins_over_scrapped_duplicate(install_dir: Path):

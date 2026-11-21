@@ -40,6 +40,10 @@ SPECIES_NAMES = {
     6: "HORSE",
 }
 
+# Directional bits: the target is respectively the actor's owner or pet.
+PET_OWNER_BITS = frozenset({148060, 148062, 321335})
+PET_OWNED_BITS = frozenset({148061, 148063, 321334})
+
 # From sims/occult/occult_enums.py (IntFlags)
 OCCULT_FLAGS = {
     1: "HUMAN",
@@ -80,3 +84,15 @@ def name_for(value: int, mapping: dict[int, str], default: str = "UNKNOWN") -> s
 
 def names_for_flags(value: int, mapping: dict[int, str]) -> list[str]:
     return [name for flag, name in mapping.items() if value & flag]
+
+
+def animal_classification(species: str | None) -> tuple[bool | None, bool | None]:
+    """Return (is_animal, is_pet); unknown species stay unknown."""
+    name = (species or "").casefold().replace("_", "")
+    if name == "human":
+        return False, False
+    if name == "fox":
+        return True, False
+    if name in {"dog", "smalldog", "cat", "horse"}:
+        return True, True
+    return None, None

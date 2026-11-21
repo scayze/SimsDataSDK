@@ -159,6 +159,9 @@ class StarterMember:
     _inline_first_name: str = field(default="", repr=False)
     _inline_last_name: str = field(default="", repr=False)
     species_raw: Optional[int] = None
+    breed_name: Optional[str] = None
+    breed_name_key: Optional[int] = None
+    _inline_breed_name: Optional[str] = field(default=None, repr=False)
 
     def resolve_names(self, strings: Mapping[int, str]) -> None:
         """Resolve keyed names; inline names take precedence over STBL values.
@@ -170,6 +173,8 @@ class StarterMember:
             self.first_name = self._inline_first_name or strings.get(self.first_name_key, "")
         if self.last_name_key is not None:
             self.last_name = self._inline_last_name or strings.get(self.last_name_key, "")
+        if self.breed_name_key is not None:
+            self.breed_name = self._inline_breed_name or strings.get(self.breed_name_key)
 
     @property
     def full_name(self) -> str:
@@ -488,6 +493,9 @@ def _parse_member(data: bytes, index: int) -> StarterMember:
         gender=_GENDER_FLAGS.get(_varint(fields, 7) or 0),
         age=_AGE_FLAGS.get(_varint(fields, 8) or 0),
         species_raw=_varint(fields, 60),
+        breed_name=_text(fields, 64),
+        breed_name_key=_integer(fields, 65),
+        _inline_breed_name=_text(fields, 64),
         body_blend=_text(fields, 12),
         spouse_id=_integer(fields, 15) or None,
         fiance_id=_integer(fields, 68) or None,

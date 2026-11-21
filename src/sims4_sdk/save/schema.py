@@ -58,6 +58,7 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         3: f("last_neighborhood"),
         5: f("last_zone"),
         7: f("is_migrated", "bool"),
+        8: f("gameplay_data", "message", message="GameplaySaveSlotData"),
         9: f("slot_name", "string"),
         10: f("timestamp"),
         11: f("active_household_id"),
@@ -65,6 +66,29 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         13: f("s4_guid_seed"),
         14: f("compatibility_version"),
         16: f("tutorial_mode", "int"),
+    },
+    "GameplaySaveSlotData": {
+        13: f("relationship_service", "message", message="PersistableRelationshipService"),
+    },
+    "PersistableRelationshipService": {
+        1: f("relationships", "message", repeated=True, message="PersistableServiceRelationship"),
+    },
+    "PersistableServiceRelationship": {
+        1: f("sim_id_a"),
+        2: f("sim_id_b"),
+        3: f("bidirectional", "message", message="BidirectionalRelationshipData"),
+        4: f("sim_a", "message", message="UnidirectionalRelationshipData"),
+        5: f("sim_b", "message", message="UnidirectionalRelationshipData"),
+        6: f("last_update_time"),
+        7: f("target_object_id"),
+    },
+    "BidirectionalRelationshipData": {
+        1: f("bits", repeated=True),
+        3: f("tracks", "message", repeated=True, message="PersistableRelationshipTrack"),
+    },
+    "UnidirectionalRelationshipData": {
+        1: f("bits", repeated=True),
+        7: f("tracks", "message", repeated=True, message="PersistableRelationshipTrack"),
     },
     "AccountData": {
         3: f("email", "string"),

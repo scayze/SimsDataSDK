@@ -74,6 +74,10 @@ Each `SimData` contains the full state:
 ### Read data
 
 - **Identity:** name, age, gender, species, occult flags, household, zone/world.
+  `is_animal` and `is_pet` are `True`, `False`, or `None` when species is
+  unknown. Foxes are animals but are not classified as household pets.
+  `breed_name` and `breed_name_key` preserve the inline or localized breed;
+  a key without a supplied catalog can remain unresolved.
 - **Traits / likes / dislikes:** the trait tracker holds personality traits, hidden
   traits, and preference traits. The SDK splits them into `traits` and
   `preferences` and reports `unresolved_trait_ids` separately. An unresolved ID
@@ -102,15 +106,23 @@ Each `SimData` contains the full state:
 - **Milestones:** developmental milestones from `GameplaySimData`, plus completed
   aspiration objectives/milestones from the event tracker.
 - **Pregnancy, occult, degrees, death, statistics, favorites.**
-- **Relationships:** per-Sim relationship tracker entries are exposed when the
-  save contains them (bits, track values, target names).
+- **Relationships:** per-Sim trackers and the save slot's relationship service
+  are exposed as `SavedSim.relationships` (bits, track values, target names).
+  Service records retain `shared_bits` and `directional_bits` in addition to
+  their combined `bits`; `directional_bits` is `None` for legacy tracker data.
+- **Pet ownership:** `SavedSim.owner_ids` and `pet_ids` contain IDs supported by
+  explicit directional dog, cat, or horse ownership bits. Either side's bit can
+  establish the reverse link when both Sims are present. Missing targets remain
+  as IDs on the side that recorded them; membership alone does not imply an
+  owner. The lists can be incomplete when relationship data is missing.
+  `save.find_sims(species="HORSE")` and `save.find_sims(is_pet=True)` filter
+  known values; unknown species do not match either value of `is_pet`.
 
 ### Current limitation
 
-Some saves may store friendship/romance relationship services in the
-type-`0x00000006` “LDNB” persistence chunks rather than in `SaveGameData`. Those
-chunks are not decoded yet. Such saves still expose spouse, family, traits,
-careers, skills, milestones, and all other per-Sim data.
+The save slot's relationship service is decoded, including its shared and
+per-Sim data. Type-`0x00000006` “LDNB” persistence chunks are not decoded yet
+and may contain additional data.
 
 When `read_save()` finds a non-null type-`0x00000006` resource, it records an
 `unsupported_persistence_resource` diagnostic with the package path and full

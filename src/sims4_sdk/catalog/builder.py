@@ -67,7 +67,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "source-resolved-5"
+CACHE_VERSION = "source-resolved-6"
 
 _MODEL_CLASSES = frozenset(
     {

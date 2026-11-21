@@ -19,6 +19,7 @@ from ..catalog.models import (
 )
 from ..export import Serializable
 from .artwork import Artwork
+from .enums import animal_classification
 
 __all__ = [
     "SaveSlot",
@@ -164,6 +165,15 @@ class SavedRelationship(Serializable):
     bit_names: list[str] = field(default_factory=list)
     track_values: list[SavedRelationshipTrack] = field(default_factory=list)
     last_update_time: Optional[int] = None
+    shared_bits: list[int] = field(default_factory=list)
+    directional_bits: Optional[list[int]] = None
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "shared_bits" not in state:
+            self.shared_bits = []
+        if "directional_bits" not in state:
+            self.directional_bits = None
 
 
 @dataclass
@@ -283,6 +293,25 @@ class SavedSim(Serializable):
     statistics: list[SavedStatistic] = field(default_factory=list)
 
     raw: dict[str, Any] = field(default_factory=dict, repr=False)
+    breed_name: Optional[str] = None
+    breed_name_key: Optional[int] = None
+    owner_ids: list[int] = field(default_factory=list)
+    pet_ids: list[int] = field(default_factory=list)
+
+    @property
+    def is_animal(self) -> Optional[bool]:
+        return animal_classification(self.species)[0]
+
+    @property
+    def is_pet(self) -> Optional[bool]:
+        return animal_classification(self.species)[1]
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        if "owner_ids" not in state:
+            self.owner_ids = []
+        if "pet_ids" not in state:
+            self.pet_ids = []
 
     @property
     def full_name(self) -> str:
@@ -460,6 +489,7 @@ class SaveFile(Serializable):
         household: str | int | None = None,
         age: Optional[str] = None,
         species: Optional[str] = None,
+        is_pet: Optional[bool] = None,
         occult: Optional[str] = None,
         is_dead: Optional[bool] = None,
     ) -> list[SavedSim]:
@@ -485,6 +515,8 @@ class SaveFile(Serializable):
             if age and (sim.age or "").casefold() != age.casefold():
                 continue
             if species and (sim.species or "").casefold() != species.casefold():
+                continue
+            if is_pet is not None and sim.is_pet is not is_pet:
                 continue
             if occult and occult.casefold() not in {item.casefold() for item in sim.occult}:
                 continue

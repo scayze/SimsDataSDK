@@ -12,6 +12,8 @@ from .enums import (
     FAMILY_RELATION_NAMES,
     GENDER_NAMES,
     OCCULT_FLAGS,
+    PET_OWNER_BITS,
+    PET_OWNED_BITS,
     SPECIES_NAMES,
     name_for,
     names_for_flags,
@@ -127,8 +129,10 @@ def _build_save(path: Path, root: Mapping[str, Any], catalog: Optional[Catalog])
             if sim is not None:
                 sim.household_name = household.name
 
+    _link_service_relationships(sims, root.get("save_slot", {}), catalog, names)
     _link_family(sims)
     _link_special_relationships(sims, catalog)
+    _link_pet_ownership(sims)
 
     return SaveFile(
         path=path,
@@ -140,6 +144,46 @@ def _build_save(path: Path, root: Mapping[str, Any], catalog: Optional[Catalog])
         neighborhoods=neighborhoods,
         raw=dict(root),
     )
+
+
+def _link_service_relationships(
+    sims: dict[int, SavedSim], slot: Mapping[str, Any],
+    catalog: Optional[Catalog], names: Mapping[int, str],
+) -> None:
+    """Merge the save-slot relationship service into each Sim's view."""
+    service = (slot.get("gameplay_data", {}) or {}).get("relationship_service", {}) or {}
+    for entry in service.get("relationships", []) or []:
+        a, b = entry.get("sim_id_a"), entry.get("sim_id_b")
+        if not a or not b or a == b or entry.get("target_object_id"):
+            continue
+        shared = entry.get("bidirectional", {}) or {}
+        for actor_id, target_id, side in ((a, b, "sim_a"), (b, a, "sim_b")):
+            actor = sims.get(actor_id)
+            if actor is None:
+                continue
+            own = entry.get(side, {}) or {}
+            payload = {
+                "target_id": target_id,
+                "bits": list(dict.fromkeys([*_as_list(shared.get("bits")), *_as_list(own.get("bits"))])),
+                "tracks": [*(shared.get("tracks", []) or []), *(own.get("tracks", []) or [])],
+                "last_update_time": entry.get("last_update_time"),
+            }
+            decoded = _relationships({"relationships": [payload]}, catalog, names)[0]
+            decoded.shared_bits = _as_list(shared.get("bits"))
+            decoded.directional_bits = _as_list(own.get("bits"))
+            existing = next((item for item in actor.relationships if item.target_id == target_id), None)
+            if existing is None:
+                actor.relationships.append(decoded)
+            else:
+                previous_directional = existing.directional_bits if existing.directional_bits is not None else existing.bits
+                existing.directional_bits = list(dict.fromkeys([*previous_directional, *decoded.directional_bits]))
+                existing.shared_bits = list(dict.fromkeys([*existing.shared_bits, *decoded.shared_bits]))
+                existing.bits = list(dict.fromkeys([*existing.bits, *decoded.bits]))
+                existing.bit_names = list(dict.fromkeys([*existing.bit_names, *decoded.bit_names]))
+                known_tracks = {track.track_id for track in existing.track_values}
+                existing.track_values.extend(track for track in decoded.track_values if track.track_id not in known_tracks)
+                if existing.last_update_time is None:
+                    existing.last_update_time = decoded.last_update_time
 
 
 def _slot(raw: Mapping[str, Any]) -> SaveSlot:
@@ -230,7 +274,8 @@ def sim_from_dict(
     gender_raw = data.get("gender")
     species_raw = data.get("extended_species")
 
-    return SavedSim(
+    breed_key = data.get("breed_name_key") or None
+    sim = SavedSim(
         sim_id=sim_id,
         first_name=first_name,
         last_name=last_name,
@@ -245,6 +290,8 @@ def sim_from_dict(
         gender=GENDER_NAMES.get(gender_raw) if gender_raw is not None else None,
         species_raw=species_raw,
         species=SPECIES_NAMES.get(species_raw) if species_raw is not None else None,
+        breed_name=data.get("breed_name") or (catalog.strings.get(breed_key) if catalog and breed_key else None),
+        breed_name_key=breed_key,
         occult_raw=occult_raw,
         occult=names_for_flags(occult_raw, OCCULT_FLAGS),
         primary_aspiration_track_id=aspiration_track_id,
@@ -277,6 +324,8 @@ def sim_from_dict(
         statistics=statistics,
         raw=dict(data),
     )
+    _link_pet_ownership({sim.sim_id: sim})
+    return sim
 
 
 def _careers(raw: Mapping[str, Any], catalog: Optional[Catalog]) -> list[SavedCareer]:
@@ -637,6 +686,27 @@ def _link_special_relationships(
                     sim.fiance_origin = "relationship_bit"
                     sim.fiance_name = sims[target_id].full_name
                     break
+
+
+def _link_pet_ownership(sims: Mapping[int, SavedSim]) -> None:
+    """Expose explicit directional owner/pet bits without assuming household ownership."""
+    for actor in sims.values():
+        for relationship in actor.relationships:
+            target_id = relationship.target_id
+            if not target_id or target_id == actor.sim_id:
+                continue
+            bits = set(relationship.directional_bits if relationship.directional_bits is not None else relationship.bits)
+            target = sims.get(target_id)
+            if bits & PET_OWNER_BITS:
+                if target_id not in actor.owner_ids:
+                    actor.owner_ids.append(target_id)
+                if target is not None and actor.sim_id not in target.pet_ids:
+                    target.pet_ids.append(actor.sim_id)
+            if bits & PET_OWNED_BITS:
+                if target_id not in actor.pet_ids:
+                    actor.pet_ids.append(target_id)
+                if target is not None and actor.sim_id not in target.owner_ids:
+                    target.owner_ids.append(actor.sim_id)
 
 
 def _as_list(value: Any) -> list[Any]:
