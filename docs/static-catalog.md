@@ -417,7 +417,8 @@ household ID.
   relationships with typed kinds (`MOTHER`/`FATHER`/`MOTHERS_FATHER`/...),
   dangling out-of-household targets (`PremadeSim.unlinked_relations`),
   ancestors, explicit skills, explicit aspiration and career level, dynasty,
-  occult, pregnancy, gender and age (from starter-save resources), aspiration
+  occult, pregnancy, species (from SimInfo or starter-save resources, with a
+  trait fallback), gender and age (from starter-save resources), aspiration
   track, career track, lots, lot↔household links, initial relationship defaults
   and cross-household relationship values, and the steady/engagement/marriage
   bits plus family and romance trope IDs.

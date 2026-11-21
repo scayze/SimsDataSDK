@@ -50,6 +50,18 @@ def test_too_small_raises() -> None:
         SimInfo.parse(b"abc")
 
 
+def test_species_header_versions_and_truncated_data() -> None:
+    header = bytearray(52)
+    struct.pack_into("<I", header, 48, 6)
+    for version, expected in ((18, None), (19, 6), (38, 6), (39, None)):
+        struct.pack_into("<I", header, 0, version)
+        assert SimInfo.parse(bytes(header)).species_raw == expected
+    struct.pack_into("<I", header, 0, 38)
+    assert SimInfo.parse(bytes(header[:51])).species_raw is None
+    struct.pack_into("<I", header, 48, 999)
+    assert SimInfo.parse(bytes(header)).species_raw == 999
+
+
 def test_describe() -> None:
     info = SimInfo.parse(build_siminfo([1]), known_trait_ids={1})
     assert "traits=1" in info.describe()

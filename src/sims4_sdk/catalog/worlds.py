@@ -158,6 +158,7 @@ class StarterMember:
     last_name_key: Optional[int] = None
     _inline_first_name: str = field(default="", repr=False)
     _inline_last_name: str = field(default="", repr=False)
+    species_raw: Optional[int] = None
 
     def resolve_names(self, strings: Mapping[int, str]) -> None:
         """Resolve keyed names; inline names take precedence over STBL values.
@@ -486,6 +487,7 @@ def _parse_member(data: bytes, index: int) -> StarterMember:
         sim_id=_fixed64(fields, 1),
         gender=_GENDER_FLAGS.get(_varint(fields, 7) or 0),
         age=_AGE_FLAGS.get(_varint(fields, 8) or 0),
+        species_raw=_varint(fields, 60),
         body_blend=_text(fields, 12),
         spouse_id=_integer(fields, 15) or None,
         fiance_id=_integer(fields, 68) or None,

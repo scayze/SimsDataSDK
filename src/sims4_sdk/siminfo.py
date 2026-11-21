@@ -5,6 +5,7 @@ full format is a proprietary serialization with several interleaved sections;
 The reader extracts the parts needed for the static catalog:
 
 * the resource's trait list (a byte count followed by 64-bit trait IDs),
+* the species value in supported resource headers,
 * enough header information to locate that list.
 
 The trait list is written immediately before the resource's CAS/appearance data.
@@ -38,6 +39,7 @@ class SimInfo:
     last_trait_offset: int
     traits: list[int] = field(default_factory=list)
     raw: bytes = field(default=b"", repr=False)
+    species_raw: Optional[int] = None
 
     @classmethod
     def parse(
@@ -61,6 +63,8 @@ class SimInfo:
             last_trait_offset=last_trait_offset,
             traits=traits,
             raw=data,
+            species_raw=struct.unpack_from("<I", data, 48)[0]
+            if 19 <= version <= 38 and len(data) >= 52 else None,
         )
 
     @property

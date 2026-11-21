@@ -128,11 +128,13 @@ This is the resource referenced by `PremadeSimTemplate.resource_key`.  It is a
 proprietary serialization (version field currently `38`) that interleaves Sim
 data with CAS/appearance data.
 
-The part used by the static catalog is the trait list:
+The static catalog reads the species header and the trait list:
 
 ```
 uint32  version                  (38)
 uint32  last_trait_offset        (offset of the last 64-bit trait ID)
+...
+uint32  species                  (offset 0x30, versions 19–38)
 ...
 byte    count
 uint64  trait_id                 (count times)
@@ -148,6 +150,11 @@ the Burglar, and the Landry household).
 
 Preferences (likes/dislikes) are stored in the same list and are separated by
 their catalog class.
+
+The species value uses the SDK's `SPECIES_NAMES` mapping. Unknown values are
+preserved as `species_raw`; unsupported versions and short headers leave it
+unset. Species from SimInfo takes precedence over starter-household data and
+species traits; the latter remain a fallback when no known direct value exists.
 
 ## Pre-made Sims
 

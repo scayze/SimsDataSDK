@@ -61,6 +61,7 @@ def _member(
     body_blend: str = "0.1,0.0,",
     spouse_id: int | None = None,
     relations: tuple[tuple[int, int], ...] = (),
+    species: int | None = None,
 ) -> bytes:
     gameplay = b""
     if traits:
@@ -102,6 +103,8 @@ def _member(
         message += _bytes_field(30, gameplay)
     if aspiration is not None:
         message += _varint_field(34, aspiration)
+    if species is not None:
+        message += _varint_field(60, species)
     return message
 
 
@@ -186,6 +189,21 @@ def test_parse_premade_household_v2_header() -> None:
     record = parse_premade_household(_v2resource(payload), instance=1)
     assert record.name == "BFF"
     assert len(record.members) == 2
+
+
+def test_starter_species_reaches_premade_and_export() -> None:
+    from sims4_sdk.catalog import Catalog, build_premades
+
+    members = [_member("Luna", "", sim_id=101, species=6),
+               _member("Unknown", "", sim_id=102)]
+    payload = _bytes_field(1, _household(members, name="Family"))
+    record = parse_premade_household(_v0resource(payload), instance=9)
+    assert [member.species_raw for member in record.members] == [6, None]
+    bundle = build_premades(None, Catalog(), {}, {},
+                            world=WorldData(households={9: record}), siminfo_index={})
+    luna = next(sim for sim in bundle.sims if sim.first_name == "Luna")
+    assert (luna.species, luna.species_raw) == ("Horse", 6)
+    assert luna.to_dict()["species_raw"] == 6
 
 
 def test_starter_localized_name_keys_and_resolution() -> None:

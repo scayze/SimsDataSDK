@@ -30,6 +30,7 @@ from ..export import Serializable
 from ..exceptions import Sims4SDKError
 from ..installation import Installation
 from ..siminfo import SimInfo, SimInfoError
+from ..save.enums import SPECIES_NAMES
 from .models import (
     Aspiration,
     AspirationTrack,
@@ -381,6 +382,7 @@ class PremadeSim(Serializable):
     normal_game_usage: Optional[bool] = None
     scenario_ids: list[int] = field(default_factory=list)
     normal_walkby_director_ids: list[int] = field(default_factory=list)
+    species_raw: Optional[int] = None
 
     @property
     def full_name(self) -> str:
@@ -432,6 +434,9 @@ class PremadeSim(Serializable):
 
     @property
     def species(self) -> Optional[str]:
+        name = SPECIES_NAMES.get(self.species_raw)
+        if name is not None:
+            return "SmallDog" if name == "SMALLDOG" else name.title()
         for trait in self.traits:
             if trait.name.startswith("trait_Species_"):
                 return trait.name[len("trait_Species_") :]
@@ -487,6 +492,7 @@ class PremadeSim(Serializable):
             ("sibling_links", []),
             ("extended_family_links", []),
             ("unlinked_relations", []),
+            ("species_raw", None),
         ):
             if missing not in state:
                 setattr(
@@ -1845,6 +1851,8 @@ def _apply_hints(catalog: Catalog, sim: PremadeSim, member: StarterMember) -> No
         sim.gender_hint = member.gender
     if sim.age_hint is None and member.age is not None:
         sim.age_hint = member.age
+    if sim.species_raw is None and member.species_raw is not None:
+        sim.species_raw = member.species_raw
     if sim.body_blend is None and member.body_blend:
         sim.body_blend = member.body_blend
     if not sim.aspiration_track_id and member.aspiration_track_id:
@@ -1941,6 +1949,7 @@ def _starter_sim(
         career_level=career_level,
         gender_hint=member.gender,
         age_hint=member.age,
+        species_raw=member.species_raw,
         body_blend=member.body_blend,
         household_id=household.id,
         household_name=household.name,
@@ -2163,6 +2172,7 @@ def _build_sim(
     pronouns = view.text("packed_pronouns") or view.raw_text("packed_pronouns")
 
     siminfo_trait_ids: list[int] = []
+    species_raw = None
     if siminfo_key is not None:
         found = siminfo_index.get(siminfo_key.instance)
         raw = (
@@ -2173,9 +2183,11 @@ def _build_sim(
         if raw:
             known = set(catalog.traits) | set(catalog.preferences)
             try:
-                siminfo_trait_ids = SimInfo.parse(
+                siminfo = SimInfo.parse(
                     raw, known_trait_ids=known
-                ).traits
+                )
+                siminfo_trait_ids = siminfo.traits
+                species_raw = siminfo.species_raw
             except SimInfoError as exc:
                 catalog.diagnostics.append(ExtractionIssue.from_exception(
                     "siminfo", exc, package_path=str(found[0].path),
@@ -2208,6 +2220,7 @@ def _build_sim(
         first_name=first_name,
         last_name=last_name,
         siminfo_key=siminfo_key,
+        species_raw=species_raw,
         explicit_trait_ids=explicit_trait_ids,
         siminfo_trait_ids=siminfo_trait_ids,
         traits=traits,

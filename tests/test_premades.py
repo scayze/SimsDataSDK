@@ -15,6 +15,10 @@ from sims4_sdk.catalog import (
     build_premades,
 )
 from sims4_sdk.core import CombinedTuning
+import struct
+from types import SimpleNamespace
+
+from sims4_sdk.core import DBPF
 
 
 def test_premade_sim_properties() -> None:
@@ -83,6 +87,41 @@ def test_premade_sim_derived_species_gender_occult() -> None:
     assert sim.species == "Dog"
     assert sim.gender == "MALE"
     assert sim.occult == "NoOccult"
+
+
+def test_species_from_siminfo_takes_precedence_and_exports(monkeypatch) -> None:
+    xml = '''<root><I c="PremadeSimTemplate" n="Horse" s="1">
+      <U n="_sim_creation_info"><T n="resource_key">025ed6f4:00000000:0000000000001234</T></U>
+      <U n="_traits"><L n="explicit"><T>2</T></L></U>
+    </I></root>'''
+    entries = {item.instance_id: item for item in CombinedTuning.from_xml(xml)}
+    trait = Trait(id=2, name="trait_Species_Dog", display_name="Dog", description=None, trait_type="HIDDEN")
+    raw = bytearray(52)
+    struct.pack_into("<I", raw, 0, 38)
+    struct.pack_into("<I", raw, 48, 6)
+    monkeypatch.setattr(DBPF, "read_entry", lambda *_: bytes(raw))
+    bundle = build_premades(None, Catalog(traits={2: trait}), entries, {},
+                            siminfo_index={0x1234: (SimpleNamespace(path="unused"), None)})
+    sim = bundle.sim(1)
+    assert (sim.species_raw, sim.species) == (6, "Horse")
+    assert sim.to_dict()["species_raw"] == 6
+    assert '"species": "Horse"' in sim.to_json()
+    sim.species_raw = 4
+    assert sim.species == "SmallDog"
+    sim.species_raw = 999
+    assert sim.species == "Dog"
+    sim.traits.clear()
+    assert sim.species is None
+
+
+def test_starter_species_fills_only_missing_siminfo_species() -> None:
+    from sims4_sdk.catalog.premades import _apply_hints
+
+    sim = PremadeSim(id=1, name="Test", first_name="", last_name="")
+    _apply_hints(Catalog(), sim, StarterMember(species_raw=6))
+    assert (sim.species_raw, sim.species) == (6, "Horse")
+    _apply_hints(Catalog(), sim, StarterMember(species_raw=1))
+    assert (sim.species_raw, sim.species) == (6, "Horse")
 
 
 def test_premade_sim_gender_options() -> None:

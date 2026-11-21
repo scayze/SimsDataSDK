@@ -532,6 +532,7 @@ def _premade_sim_dict(value: Any, options: _Options) -> dict[str, Any]:
         "age": value.age,
         "gender": value.gender,
         "species": value.species,
+        "species_raw": value.species_raw,
         "occult": value.occult,
         "pronouns": value.pronouns,
         "gender_hint": value.gender_hint,

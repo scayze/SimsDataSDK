@@ -27,6 +27,20 @@ BASE_PACKAGES = {
 }
 
 
+def test_premade_species_from_siminfo(install_dir: Path) -> None:
+    installation = Installation(install_dir, include_mods=False)
+    packages = [info for info in installation.packages
+                if info.pack in {"BASE", "EP04", "EP14"} and info.path.name in BASE_PACKAGES]
+    if not any(info.pack == "EP14" for info in packages):
+        pytest.skip("Horse Ranch is not installed")
+    data = build_static(installation, packages=packages, use_cache=False)
+    for sim_id in (335516, 335517):  # Luna and Starbrite
+        sim = data.premades.sim(sim_id)
+        assert (sim.species_raw, sim.species) == (6, "Horse")
+    umber = data.premades.sim(335520)
+    assert (umber.species_raw, umber.species) == (1, "Human")
+
+
 def test_placed_penny_record_wins_over_scrapped_duplicate(install_dir: Path):
     installation = Installation(install_dir, include_mods=False)
     packages = [info for info in installation.packages
