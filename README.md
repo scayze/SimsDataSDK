@@ -1,7 +1,7 @@
 # sims4-sdk
 
-Python SDK for reading The Sims 4 packages, game data, saves, and Tray files.
-The SDK does not modify game files. Python 3.10+ and Pillow are required.
+Python SDK for reading The Sims 4 packages, game data, saves, and Tray files,
+and building standalone mod packages. Python 3.10+ and Pillow are required.
 
 ## Installation
 
@@ -44,6 +44,9 @@ scans installed packages and, by default, mods; pass `include_mods=False` to
 exclude mods. Static data is cached under `%LOCALAPPDATA%\sims4-sdk\cache` by
 default; pass `cache_dir` to change it. Extraction issues are available in
 `ws.catalog.diagnostics`, and Tray scan errors in `ws.tray_library().errors`.
+
+Build a standalone mod from existing game resources with
+[`sims4_sdk.mods`](docs/mod-packages.md).
 
 ## Data and serialization
 

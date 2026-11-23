@@ -9,6 +9,8 @@ for Create a Sim and saving and briefly uses the foreground for lot placement.
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$AutomationDirectory,
+    [string[]]$ModPackage = @(),
+    [UInt64]$InspectSimTemplateId = 0,
     [string]$Python = 'python',
     [string]$InstallDirectory = $env:SIMS4_INSTALL_DIR,
     [string]$UserDirectory = (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Electronic Arts/The Sims 4'),
@@ -53,13 +55,27 @@ if ($originalProfile.FullName -ne $defaultProfile -or -not $originalProfile.PSIs
 if (Get-TestProcess) { throw 'Close The Sims 4 and its launcher before running the test.' }
 $livePath = $originalProfile.FullName
 $package = Get-Item -LiteralPath (Join-Path $AutomationDirectory 'SDK-Live-smoke-test.package')
+$extraPackages = @(
+    foreach ($path in $ModPackage) {
+        $item = Get-Item -LiteralPath $path
+        if ($item.PSIsContainer -or $item.Extension -ne '.package') {
+            throw "Expected a mod package file: $path"
+        }
+        $item
+    }
+)
+$duplicate = @($package) + $extraPackages | Group-Object Name | Where-Object Count -gt 1
+if ($duplicate) { throw "Duplicate smoke test package name: $($duplicate.Name)" }
 $stamp = [guid]::NewGuid().ToString('N')
 $backup = "$livePath.startup-original-$stamp"
 $testProfile = "$livePath.startup-test-$stamp"
 $log = Join-Path $package.DirectoryName "startup-$stamp.log"
 $mods = New-Item -Path (Join-Path $testProfile 'Mods') -ItemType Directory
 Copy-Item -LiteralPath $package.FullName -Destination $mods.FullName
-& $Python (Join-Path $PSScriptRoot 'build_runtime.py') $exe.Directory.Parent.Parent.FullName $mods.FullName $log
+foreach ($extra in $extraPackages) {
+    Copy-Item -LiteralPath $extra.FullName -Destination $mods.FullName
+}
+& $Python (Join-Path $PSScriptRoot 'build_runtime.py') $exe.Directory.Parent.Parent.FullName $mods.FullName $log $InspectSimTemplateId
 if ($LASTEXITCODE -ne 0) { throw 'Could not compile the Live Mode hook.' }
 Set-Content -LiteralPath (Join-Path $mods.FullName 'Resource.cfg') -Encoding ascii -Value @(
     'Priority 500', 'PackedFile *.package'

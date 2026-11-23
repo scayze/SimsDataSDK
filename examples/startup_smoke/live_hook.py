@@ -23,6 +23,15 @@ def loading_finished(self, *args, **kwargs):
     result = original(self, *args, **kwargs)
     household = services.active_household()
     if not saved and household is not None and household.home_zone_id == self.id:
+        if SIM_TEMPLATE_ID:
+            try:
+                from sims4.resources import Types
+
+                template = services.get_instance_manager(Types.SIM_TEMPLATE).get(SIM_TEMPLATE_ID)
+                explicit = tuple(trait.guid64 for trait in template._traits.explicit)
+                log("Sim template {} explicit traits: {}".format(SIM_TEMPLATE_ID, explicit))
+            except Exception:
+                log(format_exc())
         try:
             save_to_new_slot(127, "SDK Startup Smoke", 0, False)
             saved = True

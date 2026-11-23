@@ -27,10 +27,12 @@ practice:
 
 from __future__ import annotations
 
+import os
 import struct
+import tempfile
 import zlib
 from pathlib import Path
-from typing import Iterator, NamedTuple, Optional
+from typing import Iterable, Iterator, NamedTuple, Optional
 
 from ..exceptions import Sims4SDKError
 from . import refpack
@@ -41,6 +43,7 @@ __all__ = [
     "DBPFHeader",
     "ResourceEntry",
     "ResourceKey",
+    "write_package",
     "COMPRESSION_NONE",
     "COMPRESSION_ZLIB",
     "COMPRESSION_REFPACK",
@@ -75,7 +78,7 @@ _U32 = struct.Struct("<I").unpack_from
 
 
 class DBPFError(Sims4SDKError, ValueError):
-    """Raised when a DBPF container cannot be parsed or decompressed."""
+    """Raised when a DBPF container cannot be parsed, decompressed, or built."""
 
 
 class ResourceKey(NamedTuple):
@@ -95,6 +98,67 @@ class ResourceKey(NamedTuple):
         if len(parts) != 3:
             raise ValueError(f"invalid resource key: {text!r}")
         return cls(int(parts[0], 16), int(parts[1], 16), int(parts[2], 16))
+
+
+def write_package(
+    path: str | Path, resources: Iterable[tuple[ResourceKey, bytes]]
+) -> Path:
+    """Create a DBPF 2.1 mod package from uncompressed resource payloads.
+
+    The destination must be a new .package file. Duplicate keys and empty
+    payloads are rejected. Resources are written in key order.
+    """
+    path = Path(path)
+    if path.suffix.lower() != ".package":
+        raise DBPFError("the output must have a .package extension")
+    payloads: dict[ResourceKey, bytes] = {}
+    for key, data in resources:
+        if not isinstance(key, ResourceKey):
+            raise DBPFError("each resource must have a ResourceKey")
+        limits = (0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFFFFFFFFFF)
+        if any(type(value) is not int or not 0 <= value <= limit
+               for value, limit in zip(key, limits)):
+            raise DBPFError(f"resource key is out of range: {key!r}")
+        if key in payloads:
+            raise DBPFError(f"duplicate resource key: {key}")
+        if not isinstance(data, bytes) or not 0 < len(data) <= _SIZE_MASK:
+            raise DBPFError(f"resource {key} needs a non-empty bytes payload smaller than 2 GiB")
+        payloads[key] = data
+    if not payloads:
+        raise DBPFError("the package must contain at least one resource")
+
+    index_size = 4 + _MAX_ENTRY_SIZE * len(payloads)
+    offset = DBPF_HEADER_SIZE + index_size
+    if offset + sum(map(len, payloads.values())) > 0xFFFFFFFF:
+        raise DBPFError("package exceeds the DBPF 32-bit offset limit")
+    header = bytearray(DBPF_HEADER_SIZE)
+    header[:4] = DBPF_MAGIC
+    struct.pack_into("<II", header, 4, 2, 1)
+    struct.pack_into("<I", header, 0x24, len(payloads))
+    struct.pack_into("<I", header, 0x2C, index_size)
+    struct.pack_into("<II", header, 0x3C, 3, DBPF_HEADER_SIZE)
+    ordered = sorted(payloads.items())
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as output:
+            temporary = Path(output.name)
+            output.write(header)
+            output.write(bytes(4))  # All index key fields are stored inline.
+            for key, data in ordered:
+                size = len(data)
+                output.write(struct.pack(
+                    "<IIIIIIIHH", key.type_id, key.group, key.instance >> 32,
+                    key.instance & 0xFFFFFFFF, offset, size | _COMPRESSED_FLAG,
+                    size, COMPRESSION_NONE, 1,
+                ))
+                offset += size
+            for _, data in ordered:
+                output.write(data)
+        os.link(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink()
+    return path
 
 
 class ResourceEntry(NamedTuple):

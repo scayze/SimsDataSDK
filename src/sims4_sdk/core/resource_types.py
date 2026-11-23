@@ -11,6 +11,8 @@ from typing import Final
 
 #: Individual tuning XML resources (``<I>`` elements).
 TUNING_TYPE_ID: Final = 0x03B33DDF
+#: Individual Sim and household template XML.
+SIM_TEMPLATE_TYPE_ID: Final = 0x0CA4C78B
 #: One blob containing all tuning for a package (XML or binary ``DATA``).
 COMBINED_TUNING_TYPE_ID: Final = 0x62E94D38
 #: Localized string table.
@@ -47,6 +49,7 @@ PREMADE_HOUSEHOLD_TYPE_ID: Final = 0xB3C438F0
 #: Human-readable labels for the resource types this SDK understands.
 RESOURCE_TYPE_LABELS: Final[dict[int, str]] = {
     TUNING_TYPE_ID: "Tuning XML",
+    SIM_TEMPLATE_TYPE_ID: "Sim Template Tuning",
     COMBINED_TUNING_TYPE_ID: "Combined Tuning",
     STRING_TABLE_TYPE_ID: "String Table (STBL)",
     SIMDATA_TYPE_ID: "SimData (DATA)",

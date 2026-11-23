@@ -10,6 +10,7 @@ def main():
     parser.add_argument("install", type=Path)
     parser.add_argument("mods", type=Path)
     parser.add_argument("log", type=Path)
+    parser.add_argument("sim_template_id", nargs="?", type=int, default=0)
     args = parser.parse_args()
 
     game = ctypes.CDLL(str(args.install / "Game/Bin/python37_x64.dll"))
@@ -18,7 +19,7 @@ def main():
     game.PyRun_SimpleString.argtypes = [ctypes.c_char_p]
     game.Py_Initialize()
     try:
-        hook = f"LOG_PATH = {str(args.log)!r}\n"
+        hook = f"LOG_PATH = {str(args.log)!r}\nSIM_TEMPLATE_ID = {args.sim_template_id}\n"
         hook += Path(__file__).with_name("live_hook.py").read_text(encoding="utf-8")
         archive = args.mods / "SDK-Startup-Smoke.ts4script"
         if game.PyRun_SimpleString(f"""

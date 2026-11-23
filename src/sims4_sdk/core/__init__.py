@@ -1,4 +1,4 @@
-"""Low-level readers for The Sims 4 binary formats."""
+"""Low-level readers for The Sims 4 binary formats and a DBPF package writer."""
 
 from .combined_tuning import (
     CombinedTuning,
@@ -26,6 +26,7 @@ from .dbpf import (
     DBPFHeader,
     ResourceEntry,
     ResourceKey,
+    write_package,
 )
 from .fnv import fnv1_32, fnv1_64, fnv1a_32, fnv1a_64, hash32, hash64
 from .images import (
@@ -72,6 +73,7 @@ __all__ = [
     "DBPFHeader",
     "ResourceEntry",
     "ResourceKey",
+    "write_package",
     # compression
     "COMPRESSION_NONE",
     "COMPRESSION_REFPACK",

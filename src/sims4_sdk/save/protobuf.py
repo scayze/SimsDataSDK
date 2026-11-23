@@ -57,9 +57,15 @@ def _read_varint(data: bytes, pos: int) -> tuple[int, int]:
 
 def iter_fields(data: bytes) -> Iterator[tuple[int, int, Any]]:
     """Yield ``(field_number, wire_type, raw_value)`` tuples."""
+    for field_number, wire_type, value, _, _ in _iter_field_spans(data):
+        yield field_number, wire_type, value
+
+
+def _iter_field_spans(data: bytes) -> Iterator[tuple[int, int, Any, int, int]]:
     pos = 0
     total = len(data)
     while pos < total:
+        start = pos
         key, pos = _read_varint(data, pos)
         field_number = key >> 3
         wire_type = key & 0x07
@@ -96,7 +102,16 @@ def iter_fields(data: bytes) -> Iterator[tuple[int, int, Any]]:
         else:
             raise ProtobufError(f"unknown wire type {wire_type}")
 
-        yield field_number, wire_type, value
+        yield field_number, wire_type, value, start, pos
+
+
+def _encode_varint(value: int) -> bytes:
+    result = bytearray()
+    while value >= 0x80:
+        result.append((value & 0x7F) | 0x80)
+        value >>= 7
+    result.append(value)
+    return bytes(result)
 
 
 def decode(data: bytes, schema_name: str, schemas: Mapping[str, Mapping[int, FieldSpec]]) -> dict[str, Any]:

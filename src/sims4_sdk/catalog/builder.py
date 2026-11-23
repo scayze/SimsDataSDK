@@ -44,7 +44,7 @@ from .models import (
 from .strings import load_strings
 from .diagnostics import ExtractionIssue
 from .simdata_statistics import STATISTIC_SIMDATA_GROUP, statistic_from_simdata
-from ..core.resource_types import SIMDATA_TYPE_ID
+from ..core.resource_types import SIMDATA_TYPE_ID, SIM_TEMPLATE_TYPE_ID
 from .values import TuningView
 from .relationships import (
     FRIENDSHIP_TRACK_ID,
@@ -67,7 +67,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "source-resolved-6"
+CACHE_VERSION = "source-resolved-7"
 
 _MODEL_CLASSES = frozenset(
     {
@@ -93,7 +93,7 @@ _MOD_XML_TYPES = frozenset(fnv1_32(name.lower()) for name in (
     "Trait", "Skill", "TunableSkill", "Statistic", "Career", "TunableCareerTrack",
     "Aspiration", "Milestone", "DevelopmentalMilestone", "Preference",
     "RelationshipBit", "OccultTrait", "Occult",
-))
+)) | {SIM_TEMPLATE_TYPE_ID}
 #: Resource types the catalog build reads; everything else is skipped without
 #: being materialised.
 _SCANNED_TYPES = frozenset(
@@ -341,6 +341,10 @@ def collect_package_data(
                         recoverable=True,
                     ))
                     continue
+                if include_relationships:
+                    for module_name in RELATIONSHIP_MODULES:
+                        if module_name in combined.modules:
+                            data.relationship_modules[module_name] = combined
                 for tuning in combined:
                     try:
                         if tuning.instance_id == 0 and len(combined.entries) == 1:

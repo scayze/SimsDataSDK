@@ -25,3 +25,19 @@ The test starts windowed. Create a Sim and saving use in-game callbacks. World a
 The runner polls for the save every 250 ms. Placement polls the visible game screen and clicks when the next screen is ready. `-TimeoutSeconds` bounds the overall wait.
 
 The script temporarily renames the regular Sims profile and restores it after the game closes. Keep the PowerShell process running through cleanup. Each run preserves its separate profile and hook log for inspection. If cleanup reports a parked profile, close The Sims 4 and move the reported backup back to the regular profile path once that path is free.
+
+## Check new-save overrides
+
+Build the fixture at a new path, then pass it to the same runner. Use
+`-ModPackage` to stage one or more extra packages in the disposable profile.
+
+```powershell
+$mod = python examples/startup_smoke/check_overrides.py build .cache/startup-smoke/new-save.package
+$save = ./examples/startup_smoke/run_startup_test.ps1 -AutomationDirectory .cache/startup-smoke -ModPackage $mod -InspectSimTemplateId 469189 -TimeoutSeconds 155 -Verbose
+$stamp = (Get-Item -LiteralPath $save).Directory.Parent.Name.Split('-')[-1]
+python examples/startup_smoke/check_overrides.py check $save --log ".cache/startup-smoke/startup-$stamp.log"
+```
+
+The checker reads the generated save for BFF funds, Bella Goth's baked trait,
+and Bella and Nancy Landgraab's starting friendship. The hook log verifies
+Bella's loaded XML template separately.
