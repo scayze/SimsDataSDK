@@ -114,3 +114,6 @@ python -m pytest -m "integration"
 Integration tests requiring a local game installation are skipped when it is not
 available. Set `SIMS4_INSTALL_DIR` and `SIMS4_USER_DIR` to select the installation
 and user folders.
+
+The [Windows startup smoke test](examples/startup_smoke/README.md) launches the
+game with a disposable profile and checks for a playable save.
