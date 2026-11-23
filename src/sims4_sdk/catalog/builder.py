@@ -44,7 +44,10 @@ from .models import (
 from .strings import load_strings
 from .diagnostics import ExtractionIssue
 from .simdata_statistics import STATISTIC_SIMDATA_GROUP, statistic_from_simdata
-from ..core.resource_types import SIMDATA_TYPE_ID, SIM_TEMPLATE_TYPE_ID
+from ..core.resource_types import (
+    LOT_DESCRIPTION_TYPE_ID, REGION_DESCRIPTION_TYPE_ID, STREET_DESCRIPTION_TYPE_ID,
+    SIMDATA_TYPE_ID, SIM_TEMPLATE_TYPE_ID,
+)
 from .values import TuningView
 from .relationships import (
     FRIENDSHIP_TRACK_ID,
@@ -67,7 +70,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "source-resolved-7"
+CACHE_VERSION = "source-resolved-8"
 
 _MODEL_CLASSES = frozenset(
     {
@@ -96,7 +99,8 @@ _MOD_XML_TYPES = frozenset(fnv1_32(name.lower()) for name in (
 )) | {SIM_TEMPLATE_TYPE_ID}
 #: Resource types the catalog build reads; everything else is skipped without
 #: being materialised.
-_SCANNED_TYPES = frozenset(
+_GEOGRAPHY_TYPES = frozenset({LOT_DESCRIPTION_TYPE_ID, REGION_DESCRIPTION_TYPE_ID, STREET_DESCRIPTION_TYPE_ID})
+_SCANNED_TYPES = _GEOGRAPHY_TYPES | frozenset(
     {
         COMBINED_TUNING_TYPE_ID,
         TUNING_TYPE_ID,
@@ -370,7 +374,7 @@ def collect_package_data(
                         ))
                     else:
                         data.world_resources.append(WorldResource(entry_source, raw))
-            elif type_id == LOT_MANIFEST_TYPE_ID:
+            elif type_id == LOT_MANIFEST_TYPE_ID or type_id in _GEOGRAPHY_TYPES:
                 if include_world:
                     try:
                         raw = DBPF.read_entry(package.path, entry)
@@ -456,6 +460,11 @@ def resolve_world_resources(data: CollectedPackageData) -> WorldData:
             world.add_household(key.instance, resource.data, resource.source)
         elif key.type_id == LOT_MANIFEST_TYPE_ID:
             world.add_lot(key.instance, resource.data, resource.source)
+        elif key.type_id in _GEOGRAPHY_TYPES:
+            if resource.data:
+                world.geography[key] = resource.data
+            else:
+                world.geography.pop(key, None)
     return world.finalize()
 
 

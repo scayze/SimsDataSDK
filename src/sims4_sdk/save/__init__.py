@@ -35,7 +35,8 @@ from .protobuf import ProtobufError, decode, iter_fields
 from .source import SaveError, SaveSource, extract_save, extract_save_resource
 from .tray_source import TraySource, extract_tray_item, extract_household_binary
 from .reader import resolve_save, read_save, read_save_resource, sim_from_dict
-from .tray import (TrayError, TrayListing, TrayListingGroup, list_tray_households,
+from .tray import (TrayError, TrayListing, TrayListingGroup, TrayLot, TrayLotListing,
+                   list_tray_households, list_tray_lots,
                    resolve_tray_item, resolve_household_binary,
                    read_household_binary, read_tray_item, read_tray_library)
 
@@ -72,6 +73,9 @@ __all__ = [
     "TrayListing",
     "TrayListingGroup",
     "list_tray_households",
+    "TrayLot",
+    "TrayLotListing",
+    "list_tray_lots",
     # readers
     "read_save",
     "SaveSource", "extract_save", "extract_save_resource", "resolve_save",

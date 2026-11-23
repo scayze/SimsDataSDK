@@ -140,8 +140,12 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         6: f("household_id"),
         7: f("nucleus_id"),
         10: f("neighborhood_id"),
+        11: f("gameplay_zone_data", "message", message="GameplayZoneData"),
         12: f("lot_description_id"),
         14: f("description", "string"),
+    },
+    "GameplayZoneData": {
+        7: f("venue_type_id_on_save"),
     },
     "GameplayData": {
         2: f("daily_sim_info_creation_count"),
@@ -188,7 +192,7 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         8: f("flag_8"),
         9: f("flag_9"),
         10: f("data", "message", message="TrayItemData"),
-        11: f("household_id"),
+        11: f("household_id"),  # Legacy SDK name for TrayMetadata.item_timestamp.
         12: f("sim_id_bytes", "bytes"),
         26: f("flag_26"),
         28: f("flag_28"),
@@ -196,6 +200,7 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         34: f("flag_34"),
     },
     "TrayItemData": {
+        1: f("blueprint", "message", message="TrayBlueprintMetadata"),
         2: f("sim_entries", "bytes", repeated=True),
         8: f("tags", "string"),
         10: f("flag_10"),
@@ -209,6 +214,15 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         25: f("flag_25"),
         27: f("thumbnail_bytes_2", "bytes"),
         1001: f("build"),
+    },
+    "TrayBlueprintMetadata": {
+        1: f("venue_type"),
+        2: f("size_x"),
+        3: f("size_z"),
+        9: f("num_thumbnails"),
+        10: f("front_side"),
+        11: f("venue_type_string_key"),
+        12: f("ground_floor_index"),
     },
     # ------------------------------------------------------------------
     # Sim header + trackers

@@ -1,4 +1,4 @@
-"""Reader for Tray files (``.trayitem`` + ``.householdbinary``)."""
+"""Read Tray metadata and discover household and lot file groups."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from ..catalog.models import Catalog
 from ..export import Serializable
+from .artwork import Artwork, read_tray_image
 from .models import SavedSim, TrayHousehold, TrayItem, TrayLibrary
 from .reader import sim_from_dict, _as_list, _link_pet_ownership
 from .tray_source import TrayError, TraySource, extract_tray_item, extract_household_binary
@@ -25,6 +26,9 @@ __all__ = [
     "TrayListingGroup",
     "TrayListing",
     "list_tray_households",
+    "TrayLot",
+    "TrayLotListing",
+    "list_tray_lots",
 ]
 
 
@@ -33,6 +37,9 @@ def resolve_tray_item(source: TraySource) -> TrayItem:
         raise TrayError("expected a Tray item source")
     path = source.path
     raw = deepcopy(source.decoded)
+    timestamp = raw.get("timestamp")
+    if raw.get("item_type") == 2:
+        timestamp = raw.get("household_id", timestamp)
     return TrayItem(
         path=path,
         item_id=raw.get("item_id"),
@@ -41,13 +48,102 @@ def resolve_tray_item(source: TraySource) -> TrayItem:
         title=raw.get("title"),
         description=raw.get("description"),
         creator=raw.get("creator"),
-        timestamp=raw.get("timestamp"),
+        timestamp=timestamp,
         raw=raw,
     )
 
 
 def read_tray_item(path: str | Path) -> TrayItem:
     return resolve_tray_item(extract_tray_item(path))
+
+
+@dataclass
+class TrayLot(Serializable):
+    """One lot in a Tray folder, with preview files in resource-group order."""
+
+    identifier: str
+    item: Optional[TrayItem] = None
+    blueprint_files: list[Path] = field(default_factory=list)
+    preview_files: list[Path] = field(default_factory=list)
+    item_files: list[Path] = field(default_factory=list)
+    width: Optional[int] = None
+    depth: Optional[int] = None
+    venue_id: Optional[int] = None
+    venue_name_key: Optional[int] = None
+    venue_name: Optional[str] = None
+
+    def read_preview(self, index: int = 0) -> Artwork:
+        """Decode an associated preview. Index zero selects the lowest group."""
+        try:
+            path = self.preview_files[index]
+        except IndexError as exc:
+            raise TrayError(f"no lot preview at index {index} for {self.identifier}") from exc
+        return read_tray_image(path)
+
+
+@dataclass
+class TrayLotListing(Serializable):
+    lots: list[TrayLot] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
+
+
+def list_tray_lots(folder: str | Path, *, catalog: Optional[Catalog] = None) -> TrayLotListing:
+    """Find lots by Tray identity without opening blueprints or preview images."""
+    result = TrayLotListing()
+    groups: dict[int, TrayLot] = {}
+    candidates: list[tuple[int, int, Path]] = []
+    for path in sorted(Path(folder).iterdir(), key=lambda path: path.name.casefold()):
+        suffix = path.suffix.casefold()
+        if suffix not in (".trayitem", ".blueprint", ".bpi") or not path.is_file():
+            continue
+        try:
+            group_text, instance_text = path.stem.split("!")
+            group, instance = int(group_text, 16), int(instance_text, 16)
+            if not 0 <= group < 2**32 or not 0 < instance < 2**64:
+                raise ValueError("Tray key outside supported range")
+        except ValueError:
+            if suffix != ".trayitem":
+                result.errors.append({"path": str(path), "error": "invalid Tray resource filename"})
+            continue
+        candidates.append((instance, group, path))
+        # Lot metadata has group 2. Keep incomplete groups visible.
+        if suffix != ".trayitem" or group == 2:
+            groups.setdefault(instance, TrayLot(identifier=f"0x{instance:016x}"))
+
+    for instance, _, path in sorted(candidates):
+        lot = groups.get(instance)
+        if lot is None:
+            continue
+        suffix = path.suffix.casefold()
+        if suffix == ".trayitem":
+            lot.item_files.append(path)
+        elif suffix == ".blueprint":
+            lot.blueprint_files.append(path)
+        else:
+            lot.preview_files.append(path)
+
+    for lot in sorted(groups.values(), key=lambda lot: lot.identifier):
+        if len(lot.item_files) == 1:
+            path = lot.item_files[0]
+            try:
+                item = read_tray_item(path)
+                if item.item_type != 2:
+                    raise TrayError("metadata does not describe a lot")
+                metadata = item.raw.get("data", {}).get("blueprint", {})
+                lot.item = item
+                lot.width = metadata.get("size_x") or None
+                lot.depth = metadata.get("size_z") or None
+                lot.venue_id = metadata.get("venue_type") or None
+                lot.venue_name_key = metadata.get("venue_type_string_key") or None
+                if catalog is not None:
+                    lot.venue_name = catalog.strings.get(lot.venue_name_key)
+            except (TrayError, OSError) as exc:
+                result.errors.append({"path": str(path), "error": str(exc)})
+        for paths, label in ((lot.item_files, "metadata"), (lot.blueprint_files, "blueprint")):
+            if len(paths) != 1:
+                result.errors.append({"path": lot.identifier, "error": f"expected one {label} file, found {len(paths)}"})
+        result.lots.append(lot)
+    return result
 
 
 def resolve_household_binary(source: TraySource, catalog: Optional[Catalog] = None) -> TrayHousehold:

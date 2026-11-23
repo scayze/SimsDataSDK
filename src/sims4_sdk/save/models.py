@@ -88,6 +88,9 @@ class SaveZone(Serializable):
     household_id: Optional[int] = None
     neighborhood_id: Optional[int] = None
     description: Optional[str] = None
+    lot_description_id: Optional[int] = None
+    lot_template_id: Optional[int] = None
+    venue_id: Optional[int] = None
 
 
 @dataclass

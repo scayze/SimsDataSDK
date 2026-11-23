@@ -41,3 +41,14 @@ python examples/startup_smoke/check_overrides.py check $save --log ".cache/start
 The checker reads the generated save for BFF funds, Bella Goth's baked trait,
 and Bella and Nancy Landgraab's starting friendship. The hook log verifies
 Bella's loaded XML template separately.
+
+## Check a starter household move
+
+```powershell
+$mod = python examples/startup_smoke/check_lot_move.py build .cache/startup-smoke/move-bff.package
+$save = ./examples/startup_smoke/run_startup_test.ps1 -AutomationDirectory .cache/startup-smoke -ModPackage $mod -TimeoutSeconds 155 -Verbose
+python examples/startup_smoke/check_lot_move.py check $save
+```
+
+The checker verifies the new home's zone and household references in both
+directions and checks that the original lot is vacant.

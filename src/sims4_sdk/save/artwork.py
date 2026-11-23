@@ -140,7 +140,7 @@ def decode_artwork(data: bytes, *, tolerate_missing_end: bool = False) -> Artwor
 
 
 def read_tray_image(path: str | Path, *, tolerate_missing_end: bool = False) -> Artwork:
-    """Read a Tray ``.hhi`` or ``.sgi`` image, including supported wrappers."""
+    """Read a Tray ``.hhi``, ``.sgi``, or ``.bpi`` image."""
     data = Path(path).read_bytes()
     if data.startswith(b"\xff\xd8"):
         return decode_artwork(data, tolerate_missing_end=tolerate_missing_end)

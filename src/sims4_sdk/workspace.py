@@ -33,9 +33,10 @@ from .catalog import (
     resolve_static,
 )
 from .installation import Installation
+from .catalog.lot_registry import LotRegistry, build_lot_registry, overlay_save
 from .paths import find_user_dir
-from .save import (SaveFile, SaveSource, TrayLibrary, extract_save, resolve_save,
-                   read_save, read_tray_library)
+from .save import (SaveFile, SaveSource, TrayLibrary, TrayLotListing, extract_save,
+                   list_tray_lots, resolve_save, read_save, read_tray_library)
 
 __all__ = ["Sims4Workspace"]
 
@@ -59,6 +60,7 @@ class Sims4Workspace:
         self.include_mods = include_mods
         self.cache_dir = cache_dir
         self._static: Optional[StaticData] = None
+        self._lot_registry: Optional[LotRegistry] = None
         self._static_provided = static is not None
         self.installation: Optional[Installation] = None
 
@@ -148,7 +150,28 @@ class Sims4Workspace:
                 progress=progress,
             )
             self._static_provided = False
+            self._lot_registry = None
         return self._static
+
+    def lot_registry(self, save: SaveFile | None = None) -> LotRegistry:
+        """List installed lots, optionally with the names and occupants from a save."""
+        static = self.static_data()
+        if self._lot_registry is None:
+            self._lot_registry = build_lot_registry(static, self.installation)
+        if save is not None:
+            names = getattr(static.world, "venue_names", {})
+            return overlay_save(self._lot_registry, save, names)
+        return LotRegistry(list(self._lot_registry.lots))
+
+    def tray_lots(
+        self, folder: str | Path | None = None, *, catalog: Catalog | None = None,
+    ) -> TrayLotListing:
+        """List Tray lots without reading build data or preview images."""
+        if folder is None:
+            if self.user_dir is None:
+                raise FileNotFoundError("no Sims 4 user directory; pass the Tray folder")
+            folder = self.user_dir / "Tray"
+        return list_tray_lots(folder, catalog=catalog)
 
     @property
     def catalog(self) -> Catalog:

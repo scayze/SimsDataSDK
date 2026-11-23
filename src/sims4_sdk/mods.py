@@ -7,9 +7,13 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterable, Mapping
 
 from .catalog.relationships import RELATIONSHIPS_MODULE
+from .catalog.lot_registry import WorldLot
+from .catalog.worlds import WorldData
 from .core.combined_tuning import CombinedTuning, TuningElement
 from .core.dbpf import ResourceKey, write_package
-from .core.resource_types import PREMADE_HOUSEHOLD_TYPE_ID, SIM_TEMPLATE_TYPE_ID, TUNING_TYPE_ID
+from .core.resource_types import (
+    LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID, SIM_TEMPLATE_TYPE_ID, TUNING_TYPE_ID,
+)
 from .exceptions import Sims4SDKError
 from .save.protobuf import _encode_varint, _iter_field_spans, iter_fields
 
@@ -19,11 +23,52 @@ __all__ = [
     "starter_household_override",
     "premade_template_override",
     "premade_relationship_override",
+    "move_starter_household",
 ]
 
 
 class ModPackageError(Sims4SDKError, ValueError):
     """A template source or override is invalid."""
+
+
+def move_starter_household(
+    world: WorldData, origin: WorldLot, destination: WorldLot,
+) -> tuple[tuple[ResourceKey, bytes], tuple[ResourceKey, bytes]]:
+    """Relocate a baked premade household between two default residential lots.
+
+    Pass lots from the clean registry and the corresponding static world data.
+    Both version 18 manifests must be included in the exported package.
+    """
+    if origin.lot_id == destination.lot_id:
+        raise ModPackageError("origin and destination must be distinct lots")
+    if (origin.occupancy, destination.occupancy) != ("occupied", "vacant"):
+        raise ModPackageError("the move needs an occupied origin and a vacant destination")
+    resources: list[tuple[ResourceKey, bytes]] = []
+    for lot in (origin, destination):
+        if lot.zone_id is not None or lot.venue_id != 28614:
+            raise ModPackageError("the move needs default lots with the Residential venue")
+        key = lot.manifest_key
+        record = world.lot_resources.get(key)
+        if (key is None or key.type_id != LOT_MANIFEST_TYPE_ID or record is None
+                or record.lot_description_id != lot.lot_description_id
+                or record.lot_template_id != lot.lot_template_id):
+            raise ModPackageError("lot manifest does not match the supplied world data")
+        if len(record.raw) != 162 or record.raw[:4] != b"\x12\0\0\0":
+            raise ModPackageError("moving households requires version 18 lot manifests")
+        resources.append((key, record.raw))
+
+    source_key, source = resources[0]
+    target_key, target = resources[1]
+    if (source_key == target_key or source[83] != 2 or target[83] != 0
+            or not origin.starter_household_id
+            or struct.unpack_from("<Q", source, 122)[0] != origin.starter_household_id
+            or target[114:130] != bytes(16)):
+        raise ModPackageError("expected a baked starter assignment and an unassigned destination")
+    # The assignment marker and household name, description, and resource ID
+    # travel together. The lot template and physical location stay in place.
+    cleared = source[:83] + b"\0" + source[84:114] + bytes(16) + source[130:]
+    occupied = target[:83] + b"\x02" + target[84:114] + source[114:130] + target[130:]
+    return (source_key, cleared), (target_key, occupied)
 
 
 def _replace_fields(data: bytes, replacements: Mapping[int, tuple[int, int | bytes]]) -> bytes:

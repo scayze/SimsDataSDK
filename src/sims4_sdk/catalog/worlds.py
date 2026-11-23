@@ -53,6 +53,7 @@ __all__ = [
 
 #: ``member.gender_flags`` bits observed in household resources.
 _GENDER_FLAGS = {0x1000: "MALE", 0x2000: "FEMALE"}
+_LOT_MANIFEST_LAYOUTS = {(7, 94): (54, 70, 78), (18, 162): (90, 106, 114)}
 #: ``member.age_flags`` bits.  The trait list also contains ``trait_<age>``,
 #: which is preferred when present; this is only a fallback.
 _AGE_FLAGS = {
@@ -85,10 +86,18 @@ class LotRecord:
     record_size: int = 0
     source: Optional[TuningSource] = None
     raw: bytes = field(default=b"", repr=False)
+    lot_description_id: Optional[int] = None
+    lot_template_id: Optional[int] = None
 
     @property
     def has_household(self) -> bool:
         return self.household_id is not None
+
+    @property
+    def household_assignment(self) -> bytes | None:
+        """Return the assignment block for a recognized manifest layout."""
+        layout = _LOT_MANIFEST_LAYOUTS.get((int.from_bytes(self.raw[:4], "little"), len(self.raw)))
+        return self.raw[layout[2]:layout[2] + 16] if layout else None
 
     def __repr__(self) -> str:
         name = f"0x{self.lot_name_key:08X}" if self.lot_name_key else None
@@ -219,6 +228,13 @@ class WorldData:
     #: Winners by full resource key, preserving resources in different groups.
     household_resources: dict[ResourceKey, StarterHouseholdRecord] = field(default_factory=dict)
     lot_resources: dict[ResourceKey, LotRecord] = field(default_factory=dict)
+    geography: dict[ResourceKey, bytes] = field(default_factory=dict, repr=False)
+    venue_names: dict[int, str] = field(default_factory=dict)
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self.__dict__.setdefault("geography", {})
+        self.__dict__.setdefault("venue_names", {})
 
     def resolve_names(self, strings: Mapping[int, str]) -> None:
         """Resolve starter-member names against a selected locale's STBL map."""
@@ -310,6 +326,8 @@ class WorldData:
         self.lots.update(other.lots)
         self.households.update(other.households)
         self.lot_resources.update(other.lot_resources)
+        self.geography.update(getattr(other, "geography", {}))
+        self.venue_names.update(getattr(other, "venue_names", {}))
         self.household_resources.update(other.household_resources)
         self.errors.extend(other.errors)
         self.diagnostics.extend(other.diagnostics)
@@ -356,6 +374,11 @@ def parse_lot_manifest(
     )
 
     block = _find_household_block(data, household_ids, strings)
+    location = _LOT_MANIFEST_LAYOUTS.get((_u32(data, 0), len(data)))
+    if location is not None:
+        template_offset, description_offset, _ = location
+        record.lot_template_id = _u64(data, template_offset) or None
+        record.lot_description_id = _u64(data, description_offset) or None
     if block is None:
         return record
 

@@ -43,6 +43,10 @@ ICON_IMAGE_TYPE_IDS: Final = frozenset(
 TRAYITEM_TYPE_ID: Final = 0x2A8A5E22
 #: Lot/household manifest used to build a new save (one record per lot).
 LOT_MANIFEST_TYPE_ID: Final = 0x729F6C4F
+LOT_DESCRIPTION_TYPE_ID: Final = 0x01942E2C
+STREET_DESCRIPTION_TYPE_ID: Final = 0xA680EA4B
+REGION_DESCRIPTION_TYPE_ID: Final = 0xD65DAFF9
+WORLD_LOT_ARCHITECTURE_TYPE_ID: Final = 0x12952634
 #: Pre-made household / starter-save definition (protobuf, older pack range).
 PREMADE_HOUSEHOLD_TYPE_ID: Final = 0xB3C438F0
 
@@ -56,6 +60,10 @@ RESOURCE_TYPE_LABELS: Final[dict[int, str]] = {
     SIMOUTFIT_TYPE_ID: "SimInfo (SIMO)",
     TRAYITEM_TYPE_ID: "Tray Item",
     LOT_MANIFEST_TYPE_ID: "Lot/Household Manifest",
+    LOT_DESCRIPTION_TYPE_ID: "Lot Description",
+    STREET_DESCRIPTION_TYPE_ID: "Street Description",
+    REGION_DESCRIPTION_TYPE_ID: "Region Description",
+    WORLD_LOT_ARCHITECTURE_TYPE_ID: "World Lot Architecture",
     PREMADE_HOUSEHOLD_TYPE_ID: "Pre-made Household",
     0x00B2D882: "DDS Image",
     0x0166038C: "Name Map",

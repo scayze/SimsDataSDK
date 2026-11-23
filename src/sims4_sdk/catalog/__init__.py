@@ -1,6 +1,7 @@
 """Save-independent static catalog and pre-made Sim extraction."""
 
 from .diagnostics import ExtractionIssue
+from .lot_registry import LotRegistry, WorldLot
 
 from .builder import (
     CollectedPackageData,
@@ -131,6 +132,8 @@ __all__ = [
     "WorldData",
     "WorldDataError",
     "LotRecord",
+    "LotRegistry",
+    "WorldLot",
     "StarterCareer",
     "StarterHouseholdRecord",
     "StarterMember",

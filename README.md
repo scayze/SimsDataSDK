@@ -47,6 +47,8 @@ default; pass `cache_dir` to change it. Extraction issues are available in
 
 Build a standalone mod from existing game resources with
 [`sims4_sdk.mods`](docs/mod-packages.md).
+For build browsing and destination selection, see
+[Tray lots and the world lot registry](docs/world-and-tray-lots.md).
 
 ## Data and serialization
 

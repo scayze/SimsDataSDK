@@ -27,6 +27,7 @@ from .diagnostics import ExtractionIssue
 from .premades import PremadeBundle, build_premades
 from .strings import load_strings
 from .worlds import WorldData
+from .values import TuningView
 from .scenarios import ScenarioData, extract_scenarios
 
 __all__ = [
@@ -102,6 +103,10 @@ def resolve_static(
     entries, sources = collected.entries, collected.sources
     strings = dict(source.strings)
     world = resolve_world_resources(collected)
+    for entry in entries.values():
+        if entry.tuning_type == "venue":
+            name_key = TuningView(entry, strings).number("display_name")
+            world.venue_names[entry.instance_id] = strings.get(name_key) or entry.name
     if progress:
         progress("resolving catalog")
     catalog = extract_catalog(entries, sources, strings,

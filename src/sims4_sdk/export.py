@@ -1279,7 +1279,8 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
     from .save.source import SaveSource
     from .save.tray_source import TraySource
     from .catalog.static import StaticSource
-    from .save.tray import TrayListing, TrayListingGroup
+    from .save.tray import TrayListing, TrayListingGroup, TrayLot, TrayLotListing
+    from .catalog.lot_registry import LotRegistry, WorldLot
     from .catalog.diagnostics import ExtractionIssue
     from .core.images import GameImage
     if isinstance(obj, GameImage):
@@ -1295,7 +1296,9 @@ def to_dict(obj: Any, **options: Any) -> dict[str, Any]:
     if isinstance(obj, StaticSource):
         return obj.to_dict(include_raw=opts.include_raw, include_strings=opts.include_strings,
                            include_tuning_index=opts.include_tuning_index)
-    if isinstance(obj, (SaveSource, TraySource, SaveSlot, SaveAccount, SaveZone, SaveNeighborhood, Artwork, ExtractionIssue, TrayListing, TrayListingGroup)):
+    if isinstance(obj, (SaveSource, TraySource, SaveSlot, SaveAccount, SaveZone, SaveNeighborhood,
+                        Artwork, ExtractionIssue, TrayListing, TrayListingGroup, TrayLot,
+                        TrayLotListing, LotRegistry, WorldLot)):
         return _dataclass_dict(obj, opts)
     if isinstance(obj, TrayLibrary):
         return _tray_library_dict(obj, opts)
