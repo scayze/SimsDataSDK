@@ -94,10 +94,16 @@ class LotRecord:
         return self.household_id is not None
 
     @property
+    def household_block_offset(self) -> int | None:
+        """Offset of the household name key, description key and record ID."""
+        layout = _LOT_MANIFEST_LAYOUTS.get((int.from_bytes(self.raw[:4], "little"), len(self.raw)))
+        return layout[2] if layout else None
+
+    @property
     def household_assignment(self) -> bytes | None:
         """Return the assignment block for a recognized manifest layout."""
-        layout = _LOT_MANIFEST_LAYOUTS.get((int.from_bytes(self.raw[:4], "little"), len(self.raw)))
-        return self.raw[layout[2]:layout[2] + 16] if layout else None
+        offset = self.household_block_offset
+        return self.raw[offset:offset + 16] if offset is not None else None
 
     def __repr__(self) -> str:
         name = f"0x{self.lot_name_key:08X}" if self.lot_name_key else None

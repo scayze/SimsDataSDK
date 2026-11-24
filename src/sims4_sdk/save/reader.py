@@ -89,6 +89,7 @@ def _build_save(path: Path, root: Mapping[str, Any], catalog: Optional[Catalog])
             lot_description_id=raw_zone.get("lot_description_id"),
             lot_template_id=raw_zone.get("lot_template_id"),
             venue_id=raw_zone.get("gameplay_zone_data", {}).get("venue_type_id_on_save"),
+            lot_trait_ids=list(dict.fromkeys(_as_list(raw_zone.get("lot_traits")))),
         )
 
     neighborhoods = {}

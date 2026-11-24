@@ -44,7 +44,7 @@ def test_simdata_only_and_xml_precedence_with_mod_groups(tmp_path):
         resource(SIMDATA_TYPE_ID, 0x009BC58E, 500, b"DATA\x00"),
     ]))
     data = collect_package_data([PackageInfo(base, "BASE"), PackageInfo(mod, "MOD", True)],
-                                include_world=False, include_relationships=False)
+                                include_world=False, include_modules=False)
     catalog = extract_catalog(data.entries, data.sources, {})
     add_simdata_statistics(catalog, data, {0x1234: "Localized"})
     catalog = catalog.finalize()

@@ -91,6 +91,7 @@ from .catalog import (
     resolve_catalog,
     StaticDataError,
     Trait,
+    LotTrait,
     TuningCandidate,
     TuningSource,
     WorldData,
@@ -215,7 +216,7 @@ from .save import (
 from .siminfo import SimInfo, SimInfoError
 from .workspace import Sims4Workspace
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "SaveSource", "extract_save", "extract_save_resource", "resolve_save",
@@ -247,6 +248,7 @@ __all__ = [
     "TuningCandidate",
     "TuningSource",
     "Trait",
+    "LotTrait",
     "Preference",
     "Aspiration",
     "AspirationCategory",

@@ -1,4 +1,4 @@
-"""Reader for STBL (string table) resources.
+"""Reader and writer for STBL (string table) resources.
 
 STBL resources (type ``0x220557DA``) map 32-bit FNV hashes to localized text.
 They are stored inside DBPF packages, usually compressed with RefPack/zlib.
@@ -139,6 +139,20 @@ class StringTable:
     @classmethod
     def from_entries(cls, entries: Mapping[int, str], version: int = 5) -> "StringTable":
         return cls(version=version, entries=dict(entries))
+
+    def to_bytes(self) -> bytes:
+        """Serialize as an uncompressed version 5 STBL, ordered by key."""
+        body = bytearray()
+        total = 0
+        for key, text in sorted(self.entries.items()):
+            if type(key) is not int or not 0 <= key < 2**32 or not isinstance(text, str):
+                raise STBLError("STBL entries need uint32 keys and text values")
+            raw = text.encode("utf-8")
+            if len(raw) > 0xFFFF:
+                raise STBLError(f"STBL string 0x{key:08X} is longer than 65535 bytes")
+            body += _ENTRY.pack(key, 0, len(raw)) + raw
+            total += len(raw) + 1
+        return _HEADER.pack(b"STBL", 5, 0, len(self.entries), 0, total) + bytes(body)
 
     # ------------------------------------------------------------------
     # mapping interface

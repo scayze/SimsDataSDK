@@ -473,6 +473,11 @@ def _catalog_dict(catalog: Any, options: _Options) -> dict[str, Any]:
         "career_levels": _by_id(catalog.career_levels, _career_level_dict, options),
         "milestones": _by_id(catalog.milestones, _milestone_dict, options),
         "statistics": _by_id(catalog.statistics, _dataclass_dict, options),
+        "lot_traits": _by_id(getattr(catalog, "lot_traits", {}), _dataclass_dict, options),
+        "initial_lot_trait_ids": {
+            str(key): list(value)
+            for key, value in getattr(catalog, "initial_lot_trait_ids", {}).items()
+        },
         "tuning_overrides": _jsonable(catalog.tuning_overrides, options),
         "relationship_bits": _by_id(
             catalog.relationship_bits, _relationship_bit_dict, options

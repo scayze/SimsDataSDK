@@ -30,6 +30,7 @@ for the same complete resource key; different groups remain separate variants.
 `largest` compares decoded dimensions and breaks ties by key. A corrupt winning
 resource is reported, not silently replaced by an overridden resource. These
 are SDK ordering rules, not a claim about every game or mod load-order case.
-Rebuild the index after packages change. Indexing failures and unreadable
+Rebuild the index after packages change. Results are `ArtworkIndexResult`
+holding `IndexedArtwork` items, shared with `LotThumbnailIndex`. Indexing failures and unreadable
 resources are reported alongside successful images. The raw JPEG and optional
 embedded mask are preserved; the SDK does not infer individual Sim crops.

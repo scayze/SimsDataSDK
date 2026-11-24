@@ -175,10 +175,16 @@ An empty diagnostics list does not establish that all game data is understood.
 | `CareerLevel` | `CareerLevel` | title, pay, schedule, promotion reward, level |
 | `DevelopmentalMilestone` | `Milestone` | display name, category, ages, repeatable, primary |
 | `RelationshipBit` | `RelationshipBit` | display name, description, depth, track |
+| `ZoneModifierDisplayInfo` + `ZoneModifier` | `LotTrait` | lot trait or challenge (`kind`), name, description, icon |
 | `Skill`, `TunableSkill`, `Statistic` | `StatisticDefinition` | explicit tuning class, optional name, icon, ages and level type, source |
 
 All localized strings are resolved through the merged STBL tables for the chosen
 locale. The default is `ENG_US`; pass another locale to `Sims4Workspace`.
+
+`catalog.lot_trait(id_or_name)` and `catalog.find_lot_traits(query, kind=...)`
+look up lot traits by zone modifier ID. `catalog.initial_lot_trait_ids` maps
+house description IDs to the traits a lot starts with in a new save, read from
+the `zone_modifier.zone_modifier_tuning` module.
 
 `catalog.statistics` enumerates these three explicit XML tuning classes from
 combined and individual tuning. `catalog.statistic(id_or_name)` and

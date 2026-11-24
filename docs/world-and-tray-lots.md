@@ -57,6 +57,33 @@ for lot in current.find_lots(region_id=brook.region_id):
   leave the affected fields unset. Static snapshots can supply geometry and
   strings, and default venue extraction uses the installation's world files.
 
+## Lot traits and static previews
+
+```python
+romantic = workspace.catalog.find_lot_traits("romantic")
+challenges = workspace.catalog.find_lot_traits(kind="LOT_CHALLENGE")
+print(brook.house_description_id, brook.lot_trait_ids)
+
+thumbnails = workspace.lot_thumbnails().read([brook.house_description_id])
+preview = thumbnails.largest(brook.house_description_id, unique=True)
+if preview is not None:
+    png = preview.artwork.to_png()
+```
+
+- `Catalog.lot_traits` holds every zone modifier with display info: lot
+  traits and lot challenges (`kind`, `is_challenge`), with name,
+  description, and icon. The game data has no per-lot trait slot count, so
+  the SDK does not expose one.
+- `lot_trait_ids` on a clean registry entry are the traits the lot starts with
+  in a new save (`Catalog.initial_lot_trait_ids`). With a save overlay they
+  are the traits stored on the zone. They are `None` when unknown.
+- `house_description_id` is the lot manifest instance. It keys starting lot
+  traits and the static thumbnails.
+- `workspace.lot_thumbnails()` indexes the 256 and 400 pixel previews shipped
+  in `Data/Client/thumbnails*.package`. Only about a quarter of the lots have
+  one, from a few worlds. Several lots share one placeholder at 400 pixels;
+  `largest(..., unique=True)` skips images whose bytes other lots share.
+
 ## Export a new-save move
 
 ```python

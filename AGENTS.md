@@ -24,4 +24,5 @@ SIMS4_INSTALL_DIR=... SIMS4_USER_DIR=... python -m pytest -m "integration"
 - Lookups accept ID or name with case-insensitive fallback; `find_*` = substring filter.
 - Raise `Sims4SDKError` subclasses (keep builtin base for compat).
 - Core readers: stdlib only, no new deps without need.
+- Record every user-visible change in `CHANGELOG.md` under the next version; list anything users must adjust under **Breaking changes**. Breaking changes need no deprecated aliases.
 - Prefer editing existing files; verify with `pytest` + `python examples/inspect_package.py <pkg>` when touching binary parsing.

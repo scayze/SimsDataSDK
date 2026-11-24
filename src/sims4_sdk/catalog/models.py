@@ -25,6 +25,7 @@ __all__ = [
     "TuningSource",
     "TuningCandidate",
     "Trait",
+    "LotTrait",
     "Preference",
     "Aspiration",
     "AspirationTrack",
@@ -658,6 +659,36 @@ class SkillLevel(Serializable):
 
 
 @dataclass
+class LotTrait(Serializable):
+    """A lot trait or lot challenge (``ZoneModifier`` tuning) shown in the UI.
+
+    ``id`` is the zone modifier ID that saves store per lot and that
+    :attr:`Catalog.initial_lot_trait_ids` lists. ``kind`` is ``LOT_TRAIT`` or
+    ``LOT_CHALLENGE`` from the display info.
+    """
+
+    id: int
+    name: str
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    kind: str = "LOT_TRAIT"
+    icon: Optional[str] = None
+    display_info_id: Optional[int] = None
+    source: Optional[TuningSource] = None
+
+    @property
+    def icon_key(self) -> Optional[ResourceKey]:
+        return parse_icon_key(self.icon)
+
+    @property
+    def is_challenge(self) -> bool:
+        return self.kind == "LOT_CHALLENGE"
+
+    def __repr__(self) -> str:
+        return f"LotTrait({self.display_name or self.name!r}, kind={self.kind})"
+
+
+@dataclass
 class Catalog(Serializable):
     """All static definitions extracted from the installed game and mods."""
 
@@ -715,6 +746,10 @@ class Catalog(Serializable):
     statistics_by_name: dict[str, StatisticDefinition] = field(default_factory=dict, repr=False)
     #: None means the catalog predates capture; empty means capture found no collisions.
     tuning_overrides: Optional[dict[int, list[TuningCandidate]]] = None
+    lot_traits: dict[int, LotTrait] = field(default_factory=dict)
+    lot_traits_by_name: dict[str, LotTrait] = field(default_factory=dict, repr=False)
+    #: Lot traits a new save starts with, by house description (lot manifest) ID.
+    initial_lot_trait_ids: dict[int, list[int]] = field(default_factory=dict)
 
     def __setstate__(self, state: dict) -> None:
         self.__dict__.update(state)
@@ -732,6 +767,8 @@ class Catalog(Serializable):
             self.statistics_by_name = {}
         if "tuning_overrides" not in state:
             self.tuning_overrides = None
+        for name in ("lot_traits", "lot_traits_by_name", "initial_lot_trait_ids"):
+            self.__dict__.setdefault(name, {})
 
     @property
     def visible_traits(self) -> list[Trait]:
@@ -765,6 +802,7 @@ class Catalog(Serializable):
         self.relationship_bits_by_name = {
             item.name: item for item in self.relationship_bits.values()
         }
+        self.lot_traits_by_name = {item.name: item for item in self.lot_traits.values()}
 
         # Link aspirations to their tracks / categories.
         for track in self.aspiration_tracks.values():
@@ -888,6 +926,27 @@ class Catalog(Serializable):
             return self.relationship_bits.get(key)
         return _lookup(self.relationship_bits_by_name, key)
 
+    def lot_trait(self, key: int | str) -> Optional[LotTrait]:
+        if isinstance(key, int):
+            return self.lot_traits.get(key)
+        return _lookup(self.lot_traits_by_name, key)
+
+    def find_lot_traits(
+        self,
+        query: str = "",
+        *,
+        kind: Optional[str] = None,
+        pack: Optional[str] = None,
+    ) -> list[LotTrait]:
+        """Filter lot traits and challenges by name and ``kind``."""
+        needle = query.casefold()
+        return [
+            item for item in self.lot_traits.values()
+            if _matches_text(item.name, item.display_name, needle)
+            and (kind is None or item.kind.casefold() == kind.casefold())
+            and _matches_source(item.source, pack)
+        ]
+
     def tuning_name(self, tuning_id: int) -> Optional[str]:
         """Return the tuning name for an arbitrary definition ID."""
         return self.tuning_names.get(tuning_id)
@@ -1001,6 +1060,7 @@ class Catalog(Serializable):
             self.career_levels,
             self.milestones,
             self.relationship_bits,
+            self.lot_traits,
         )
         for collection in collections:
             for item in collection.values():

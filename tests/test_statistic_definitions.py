@@ -30,7 +30,7 @@ def test_statistics_use_explicit_classes_and_keep_mod_source(tmp_path):
         <E n="skill_level_type">MAJOR</E>
       </I><I c="TunableSkill" i="statistic" n="custom" s="3"/></root>''')
     collected = collect_package_data([PackageInfo(base, "BASE"), PackageInfo(mod, "MOD", True)],
-                                     include_world=False, include_relationships=False)
+                                     include_world=False, include_modules=False)
     catalog = extract_catalog(collected.entries, collected.sources, {0x1234: "Charisma"})
     catalog = catalog.finalize()
     skill = catalog.statistic(16699)

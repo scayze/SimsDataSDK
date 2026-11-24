@@ -47,6 +47,12 @@ class SkillCurve(Serializable):
     def max_level(self) -> int:
         return len(self.thresholds)
 
+    def xp_for_level(self, level: int) -> float:
+        """Return the minimum XP for ``level``, from 1 to :attr:`max_level`."""
+        if type(level) is not int or not 1 <= level <= self.max_level:
+            raise SkillCurveError(f"level must be an integer from 1 to {self.max_level}")
+        return self.thresholds[level - 1]
+
     def to_dict(self, **options) -> dict:
         return {"name": self.name, "thresholds": list(self.thresholds), "source": self.source}
 

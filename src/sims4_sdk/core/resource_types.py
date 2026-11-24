@@ -13,6 +13,8 @@ from typing import Final
 TUNING_TYPE_ID: Final = 0x03B33DDF
 #: Individual Sim and household template XML.
 SIM_TEMPLATE_TYPE_ID: Final = 0x0CA4C78B
+#: Individual loot (``action`` instance manager) XML, such as ``LootActions``.
+ACTION_TUNING_TYPE_ID: Final = 0x0C772E27
 #: One blob containing all tuning for a package (XML or binary ``DATA``).
 COMBINED_TUNING_TYPE_ID: Final = 0x62E94D38
 #: Localized string table.
@@ -54,6 +56,7 @@ PREMADE_HOUSEHOLD_TYPE_ID: Final = 0xB3C438F0
 RESOURCE_TYPE_LABELS: Final[dict[int, str]] = {
     TUNING_TYPE_ID: "Tuning XML",
     SIM_TEMPLATE_TYPE_ID: "Sim Template Tuning",
+    ACTION_TUNING_TYPE_ID: "Action Tuning",
     COMBINED_TUNING_TYPE_ID: "Combined Tuning",
     STRING_TABLE_TYPE_ID: "String Table (STBL)",
     SIMDATA_TYPE_ID: "SimData (DATA)",

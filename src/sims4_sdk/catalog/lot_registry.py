@@ -55,6 +55,14 @@ class WorldLot(Serializable):
     household_id: int | None = None
     household_name: str | None = None
     occupancy: str = "unknown"
+    #: Lot trait and challenge IDs: the new-save defaults in a clean registry,
+    #: or the zone's current traits in a save overlay. None means unknown.
+    lot_trait_ids: tuple[int, ...] | None = None
+
+    @property
+    def house_description_id(self) -> int | None:
+        """The lot manifest instance, which keys default lot traits and thumbnails."""
+        return self.manifest_key.instance if self.manifest_key is not None else None
 
 
 @dataclass
@@ -145,6 +153,7 @@ def build_lot_registry(static: StaticData, installation: Installation | None) ->
     strings = static.catalog.strings
     geography = getattr(world, "geography", {})
     venue_names = getattr(world, "venue_names", {})
+    initial_traits = getattr(static.catalog, "initial_lot_trait_ids", {})
     worlds = _world_packages(installation)
     packages: dict[Path, DBPF] = {}
     manifests: dict[int, list[tuple[ResourceKey, LotRecord]]] = defaultdict(list)
@@ -192,6 +201,7 @@ def build_lot_registry(static: StaticData, installation: Installation | None) ->
                 manifest_key=manifest_key, starter_household_id=household_id,
                 household_name=household_name or (household.name if household else None),
                 occupancy=_starter_occupancy(record),
+                lot_trait_ids=tuple(initial_traits.get(manifest_key.instance, ())) if manifest_key else None,
             ))
     return LotRegistry(lots)
 
@@ -264,7 +274,9 @@ def overlay_save(base: LotRegistry, save: SaveFile, venue_names: dict[int, str])
             household_id=zone.household_id or None,
             household_name=household.name if household else None, occupancy=occupancy,
             venue_id=venue, venue_name=venue_names.get(venue),
+            lot_trait_ids=tuple(getattr(zone, "lot_trait_ids", ())),
         ))
-    lots.extend(replace(lot, household_name=None, occupancy="unknown")
+    # The save does not cover these sites, so their current traits are unknown.
+    lots.extend(replace(lot, household_name=None, occupancy="unknown", lot_trait_ids=None)
                 for index, lot in enumerate(base.lots) if index not in matched)
     return LotRegistry(lots)
