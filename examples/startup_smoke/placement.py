@@ -48,8 +48,15 @@ def main():
 
     placement_deadline = time.monotonic() + args.seconds
 
-    def wait_for(stage, ready, timeout=8):
+    def press(key):
+        if user32.GetForegroundWindow() != args.window:
+            raise SystemExit("The Sims 4 lost focus during placement.")
+        user32.keybd_event(key, 0, 0, 0)
+        user32.keybd_event(key, 0, 2, 0)
+
+    def wait_for(stage, ready, timeout=8, dismiss=None):
         deadline = min(time.monotonic() + timeout, placement_deadline)
+        next_dismiss = time.monotonic() + 2
         while True:
             if user32.GetForegroundWindow() != args.window:
                 raise SystemExit("The Sims 4 lost focus during placement.")
@@ -63,6 +70,9 @@ def main():
                 path = args.output / f"placement-{stage}.png"
                 frame.save(path)
                 raise SystemExit(f"Timed out waiting for {stage}. Screenshot: {path}")
+            if dismiss is not None and time.monotonic() >= next_dismiss:
+                dismiss()
+                next_dismiss = time.monotonic() + 2
             time.sleep(0.08)
 
     def world_ready(frame):
@@ -86,7 +96,9 @@ def main():
         user32.keybd_event(0x12, 0, 2, 0)
         user32.SetForegroundWindow(args.window)
     try:
-        wait_for("world-selection", world_ready, timeout=16)
+        # A fresh profile can show a full-screen Marketplace promo over the
+        # world selection; Escape closes it.
+        wait_for("world-selection", world_ready, timeout=24, dismiss=lambda: press(0x1B))
         click(681, 300)
         wait_for("Willow-Creek", map_ready)
         click(1101, 675)
