@@ -35,12 +35,21 @@ Build the fixture at a new path, then pass it to the same runner. Use
 $mod = python examples/startup_smoke/check_overrides.py build .cache/startup-smoke/new-save.package
 $save = ./examples/startup_smoke/run_startup_test.ps1 -AutomationDirectory .cache/startup-smoke -ModPackage $mod -InspectSimTemplateId 469189 -TimeoutSeconds 155 -Verbose
 $stamp = (Get-Item -LiteralPath $save).Directory.Parent.Name.Split('-')[-1]
-python examples/startup_smoke/check_overrides.py check $save --log ".cache/startup-smoke/startup-$stamp.log"
+python examples/startup_smoke/check_overrides.py check $save --expect "$mod.json" --log ".cache/startup-smoke/startup-$stamp.log"
 ```
 
-The checker reads the generated save for BFF funds, Bella Goth's baked trait,
-and Bella and Nancy Landgraab's starting friendship. The hook log verifies
-Bella's loaded XML template separately.
+The build picks the painting skill, career, and aspiration and two unused lot
+traits from the installed game data, and writes them to `<package>.json`.
+The checker reads the generated save for:
+
+- BFF's funds, and the name and description from its lot manifest;
+- the first BFF member's painting skill XP, career and track level, and
+  primary aspiration track;
+- the starting lot traits on BFF's home zone;
+- Bella Goth's baked trait;
+- Bella and Nancy Landgraab's friendship and romance from a generated loot.
+
+The hook log verifies Bella's loaded XML template separately.
 
 ## Check a starter household move
 
