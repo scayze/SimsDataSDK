@@ -543,7 +543,7 @@ def _lot_traits_simdata(source: bytes, wanted: Mapping[int, list[int]]) -> bytes
     if (module.name != LOT_TRAITS_SIMDATA_TABLE or module.row_count != 1
             or [(c.name, c.data_type) for c in module_columns] != [("INITIAL_ZONE_MODIFIERS", 14)]
             or set(columns) != {"key", "value"} or columns["key"].data_type != 7
-            or columns["value"].data_type != 14 or items.has_schema or items.data_type != 9):
+            or columns["value"].data_type != 14 or items.has_schema or items.data_type not in (9, 18)):
         raise ModPackageError("unexpected lot trait SimData layout")
 
     mapping: dict[int, list[int]] = {}

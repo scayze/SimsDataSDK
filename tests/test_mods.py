@@ -181,7 +181,7 @@ def _lot_trait_simdata(mapping):
     for index, (name, schema, kind, size, start, count) in enumerate((
             (offsets[0], schemas, 13, 8, 112, 1),
             (None, schemas + 24, 13, 12, rows_start, len(mapping)),
-            (None, None, 9, 8, items_start, len(items)))):
+            (None, None, 18, 8, items_start, len(items)))):
         position = 28 + 28 * index
         struct.pack_into("<iIiIIiI", data, position,
                          -0x80000000 if name is None else name - position, 0,
