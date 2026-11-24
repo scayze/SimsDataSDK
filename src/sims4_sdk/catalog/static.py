@@ -22,6 +22,7 @@ from .builder import (
     resolve_relationship_tuning,
     resolve_world_resources,
 )
+from .lot_traits import LOT_TRAITS_MODULE
 from .models import Catalog
 from .diagnostics import ExtractionIssue
 from .premades import PremadeBundle, build_premades
@@ -110,7 +111,8 @@ def resolve_static(
     if progress:
         progress("resolving catalog")
     catalog = extract_catalog(entries, sources, strings,
-                              relationship_tuning=resolve_relationship_tuning(collected))
+                              relationship_tuning=resolve_relationship_tuning(collected),
+                              lot_traits_module=collected.tuning_modules.get(LOT_TRAITS_MODULE))
     catalog.tuning_overrides = deepcopy(collected.tuning_overrides)
     add_simdata_statistics(catalog, collected, strings)
     catalog.finalize()

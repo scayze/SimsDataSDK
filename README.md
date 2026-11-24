@@ -3,6 +3,8 @@
 Python SDK for reading The Sims 4 packages, game data, saves, and Tray files,
 and building standalone mod packages. Python 3.10+ and Pillow are required.
 
+See [CHANGELOG.md](CHANGELOG.md) for what changed between versions and what to adjust when updating.
+
 ## Installation
 
 ```bash

@@ -33,6 +33,7 @@ from .catalog import (
     resolve_static,
 )
 from .installation import Installation
+from .artwork_index import LotThumbnailIndex
 from .catalog.lot_registry import LotRegistry, build_lot_registry, overlay_save
 from .paths import find_user_dir
 from .save import (SaveFile, SaveSource, TrayLibrary, TrayLotListing, extract_save,
@@ -61,6 +62,7 @@ class Sims4Workspace:
         self.cache_dir = cache_dir
         self._static: Optional[StaticData] = None
         self._lot_registry: Optional[LotRegistry] = None
+        self._lot_thumbnails: Optional[LotThumbnailIndex] = None
         self._static_provided = static is not None
         self.installation: Optional[Installation] = None
 
@@ -151,6 +153,7 @@ class Sims4Workspace:
             )
             self._static_provided = False
             self._lot_registry = None
+            self._lot_thumbnails = None
         return self._static
 
     def lot_registry(self, save: SaveFile | None = None) -> LotRegistry:
@@ -162,6 +165,14 @@ class Sims4Workspace:
             names = getattr(static.world, "venue_names", {})
             return overlay_save(self._lot_registry, save, names)
         return LotRegistry(list(self._lot_registry.lots))
+
+    def lot_thumbnails(self) -> LotThumbnailIndex:
+        """Index the static lot thumbnails; look lots up by house description ID."""
+        if self.installation is None:
+            raise FileNotFoundError("lot thumbnails need a Sims 4 installation")
+        if self._lot_thumbnails is None:
+            self._lot_thumbnails = LotThumbnailIndex(self.installation)
+        return self._lot_thumbnails
 
     def tray_lots(
         self, folder: str | Path | None = None, *, catalog: Catalog | None = None,

@@ -4,26 +4,37 @@ from __future__ import annotations
 
 import struct
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from math import isfinite
+from typing import Optional
 
-from .catalog.relationships import RELATIONSHIPS_MODULE
 from .catalog.lot_registry import WorldLot
-from .catalog.worlds import WorldData
+from .catalog.lot_traits import LOT_TRAITS_MODULE
+from .catalog.relationships import FRIENDSHIP_TRACK_ID, RELATIONSHIPS_MODULE, ROMANCE_TRACK_ID
+from .catalog.worlds import LotRecord, StarterCareer, WorldData
 from .core.combined_tuning import CombinedTuning, TuningElement
 from .core.dbpf import ResourceKey, write_package
+from .core.fnv import fnv1_32, fnv1_64
 from .core.resource_types import (
-    LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID, SIM_TEMPLATE_TYPE_ID, TUNING_TYPE_ID,
+    ACTION_TUNING_TYPE_ID, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID, SIM_TEMPLATE_TYPE_ID,
+    STRING_TABLE_TYPE_ID, TUNING_TYPE_ID,
 )
+from .core.stbl import LOCALE_CODES, StringTable
 from .exceptions import Sims4SDKError
 from .save.protobuf import _encode_varint, _iter_field_spans, iter_fields
 
 __all__ = [
     "ModPackageError",
     "write_package",
+    "StarterMemberEdit",
     "starter_household_override",
     "premade_template_override",
     "premade_relationship_override",
+    "relationship_loot",
+    "initial_lot_traits_override",
     "move_starter_household",
+    "starter_household_text",
 ]
 
 
@@ -71,6 +82,53 @@ def move_starter_household(
     return (source_key, cleared), (target_key, occupied)
 
 
+def starter_household_text(
+    manifest: tuple[ResourceKey, bytes],
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    locales: Iterable[int] | None = None,
+) -> list[tuple[ResourceKey, bytes]]:
+    """Set the name and description players see for a placed starter household.
+
+    The game shows the text that the lot manifest (the house description)
+    references, not the household record's inline text. This returns the
+    edited manifest followed by one string table per locale that holds the
+    new text. ``locales`` are locale bytes from
+    :data:`~sims4_sdk.core.stbl.LOCALE_CODES`; by default every locale gets
+    the same text. To move the household too, pass the destination manifest
+    returned by :func:`move_starter_household`.
+    """
+    key, data = manifest
+    if key.type_id != LOT_MANIFEST_TYPE_ID or not isinstance(data, bytes):
+        raise ModPackageError("expected a lot manifest resource key and its bytes")
+    if name is None and description is None:
+        raise ModPackageError("supply a household name or description")
+    offset = LotRecord(key.instance, raw=data).household_block_offset
+    if offset is None:
+        raise ModPackageError("unsupported lot manifest layout")
+    if not struct.unpack_from("<Q", data, offset + 8)[0]:
+        raise ModPackageError("the lot manifest has no starter household")
+    codes = sorted(set(LOCALE_CODES if locales is None else locales))
+    if not codes or any(code not in LOCALE_CODES for code in codes):
+        raise ModPackageError("locales must be known STBL locale codes")
+    namespace = f"sims4_sdk:household_text:{key.group:08x}:{key.instance:016x}"
+    strings = {}
+    edited = bytearray(data)
+    for position, label, value in ((0, "name", name), (4, "description", description)):
+        if value is None:
+            continue
+        string_key = fnv1_32(f"{namespace}:{label}")
+        strings[string_key] = _text(value, f"household {label}",
+                                    allow_empty=label == "description").decode("utf-8")
+        struct.pack_into("<I", edited, offset + position, string_key)
+    table = StringTable.from_entries(strings).to_bytes()
+    base = fnv1_64(namespace) & 0x00FFFFFFFFFFFFFF
+    return [(key, bytes(edited))] + [
+        (ResourceKey(STRING_TABLE_TYPE_ID, 0, code << 56 | base), table) for code in codes
+    ]
+
+
 def _replace_fields(data: bytes, replacements: Mapping[int, tuple[int, int | bytes]]) -> bytes:
     """Copy untouched fields and any footer byte-for-byte."""
     remainder = dict(replacements)
@@ -94,6 +152,8 @@ def _encode_field(number, wire, value):
     key = _encode_varint(number << 3 | wire)
     if wire == 2:
         return key + _encode_varint(len(value)) + value
+    if wire == 5:
+        return key + struct.pack("<f", value)
     return key + _encode_varint(value)
 
 
@@ -104,29 +164,140 @@ def _message(data: bytes, number: int, *, required: bool = False) -> bytes:
     return messages[0] if messages else b""
 
 
-def _edit_member_traits(household: bytes, sim_traits: Mapping[int, Iterable[int]]) -> bytes:
-    remaining = dict(sim_traits)
+@dataclass(frozen=True)
+class StarterMemberEdit:
+    """Changes to one member of a starter household record.
+
+    Every field defaults to ``None``, which leaves that part of the member
+    unchanged.
+
+    * ``trait_ids`` replaces the complete trait list, including age, species,
+      preference, and other non-personality IDs.
+    * ``skills`` maps skill IDs to raw skill XP, the unit the record stores.
+      Listed skills are set and ``None`` removes a skill; unlisted skills stay.
+      Convert a level with :meth:`sims4_sdk.skills.SkillCurve.xp_for_level`.
+    * ``careers`` replaces the member's current careers; an empty sequence
+      removes them. ``display_level`` defaults to ``track_level + 1``. The
+      career history is kept.
+    * ``aspiration_track_id`` sets the primary aspiration track.
+    """
+
+    trait_ids: Optional[Sequence[int]] = None
+    skills: Optional[Mapping[int, Optional[float]]] = None
+    careers: Optional[Sequence[StarterCareer]] = None
+    aspiration_track_id: Optional[int] = None
+
+
+def _uint64(value, label: str) -> int:
+    if type(value) is not int or not 0 < value < 2**64:
+        raise ModPackageError(f"{label} must be a positive uint64")
+    return value
+
+
+def _skill_entry(skill_id: int, xp: float) -> bytes:
+    return _encode_field(1, 0, skill_id) + _encode_field(2, 5, xp)
+
+
+def _edit_skills(container: bytes, skills: Mapping[int, Optional[float]]) -> bytes:
+    """Edit ``PersistableSkillTracker.skills`` in place, keeping its order."""
+    for skill_id, xp in skills.items():
+        _uint64(skill_id, "skill IDs")
+        if xp is not None and (isinstance(xp, bool) or not isinstance(xp, (int, float))
+                               or not isfinite(xp) or xp < 0):
+            raise ModPackageError("skill XP must be a finite, non-negative number or None")
+    remaining = dict(skills)
+    output = bytearray()
+    end = 0
+    for number, wire, entry, start, end in _iter_field_spans(container):
+        skill_id = next((value for tag, kind, value in iter_fields(entry) if (tag, kind) == (1, 0)),
+                        None) if (number, wire) == (1, 2) else None
+        if skill_id not in skills:
+            output.extend(container[start:end])
+            continue
+        if skill_id not in remaining:
+            continue  # Drop a duplicate entry for an edited skill.
+        xp = remaining.pop(skill_id)
+        if xp is not None:
+            output.extend(_encode_field(1, 2, _replace_fields(entry, {2: (5, float(xp))})))
+    output.extend(container[end:])
+    for skill_id, xp in remaining.items():
+        if xp is not None:
+            output.extend(_encode_field(1, 2, _skill_entry(skill_id, float(xp))))
+    return bytes(output)
+
+
+def _career_entry(career: StarterCareer, previous: bytes) -> bytes:
+    if not isinstance(career, StarterCareer):
+        raise ModPackageError("careers must be StarterCareer values")
+    _uint64(career.career_id, "career IDs")
+    _uint64(career.track_id, "career track IDs")
+    level = career.track_level if career.track_level is not None else 0
+    if type(level) is not int or not 0 <= level < 2**32:
+        raise ModPackageError("career track_level must be a 0-based uint32")
+    display = career.display_level if career.display_level is not None else level + 1
+    if type(display) is not int or not 0 < display < 2**32:
+        raise ModPackageError("career display_level must be a positive uint32")
+    return _replace_fields(previous, {1: (0, career.career_id), 2: (0, career.track_id),
+                                      3: (0, level), 4: (0, display)})
+
+
+def _edit_careers(container: bytes, careers: Sequence[StarterCareer]) -> bytes:
+    """Replace ``PersistableSimCareers.careers``; history and other fields stay."""
+    existing = {}
+    output = bytearray()
+    end = 0
+    for number, wire, entry, start, end in _iter_field_spans(container):
+        if (number, wire) == (1, 2):
+            career_id = next((value for tag, kind, value in iter_fields(entry) if (tag, kind) == (1, 0)), None)
+            existing.setdefault(career_id, entry)
+        else:
+            output.extend(container[start:end])
+    output.extend(container[end:])
+    if len({career.career_id for career in careers}) != len(careers):
+        raise ModPackageError("a member can hold each career only once")
+    # An existing entry for the same career keeps its other fields, such as
+    # the company name and join time.
+    entries = b"".join(_encode_field(1, 2, _career_entry(career, existing.get(career.career_id, b"")))
+                       for career in careers)
+    return entries + bytes(output)
+
+
+def _edit_member(member: bytes, edit: StarterMemberEdit) -> bytes:
+    gameplay_fields: dict[int, tuple[int, int | bytes]] = {}
+    gameplay = _message(member, 30)
+    if edit.trait_ids is not None:
+        ids = tuple(_uint64(value, "trait IDs") for value in edit.trait_ids)
+        packed = b"".join(_encode_varint(value) for value in dict.fromkeys(ids))
+        gameplay_fields[10] = (2, _replace_fields(_message(gameplay, 10), {1: (2, packed)}))
+    if edit.careers is not None:
+        gameplay_fields[12] = (2, _edit_careers(_message(gameplay, 12), tuple(edit.careers)))
+    if edit.skills is not None:
+        gameplay_fields[13] = (2, _edit_skills(_message(gameplay, 13), edit.skills))
+    member_fields: dict[int, tuple[int, int | bytes]] = {}
+    if gameplay_fields:
+        member_fields[30] = (2, _replace_fields(gameplay, gameplay_fields))
+    if edit.aspiration_track_id is not None:
+        member_fields[34] = (0, _uint64(edit.aspiration_track_id, "aspiration track IDs"))
+    return _replace_fields(member, member_fields)
+
+
+def _edit_members(household: bytes, members: Mapping[int, StarterMemberEdit]) -> bytes:
+    for sim_id, edit in members.items():
+        _uint64(sim_id, "Sim IDs")
+        if not isinstance(edit, StarterMemberEdit):
+            raise ModPackageError("member edits must be StarterMemberEdit values")
+    remaining = dict(members)
     output = bytearray()
     end = 0
     for number, wire, member, start, end in _iter_field_spans(household):
-        if (number, wire) != (6, 2):
-            output.extend(household[start:end])
-            continue
-        sim_id = next((int.from_bytes(value, "little") for tag, wire, value in iter_fields(member)
-                       if (tag, wire) == (1, 1)), None)
-        if sim_id not in sim_traits:
+        sim_id = next((int.from_bytes(value, "little") for tag, kind, value in iter_fields(member)
+                       if (tag, kind) == (1, 1)), None) if (number, wire) == (6, 2) else None
+        if sim_id not in members:
             output.extend(household[start:end])
             continue
         if sim_id not in remaining:
             raise ModPackageError(f"duplicate household member with Sim ID {sim_id}")
-        ids = tuple(remaining.pop(sim_id))
-        if any(type(value) is not int or not 0 < value < 2**64 for value in ids):
-            raise ModPackageError("trait IDs must be positive uint64 values")
-        packed = b"".join(_encode_varint(value) for value in dict.fromkeys(ids))
-        gameplay = _message(member, 30)
-        tracker = _replace_fields(_message(gameplay, 10), {1: (2, packed)})
-        gameplay = _replace_fields(gameplay, {10: (2, tracker)})
-        output.extend(_encode_field(6, 2, _replace_fields(member, {30: (2, gameplay)})))
+        output.extend(_encode_field(6, 2, _edit_member(member, remaining.pop(sim_id))))
     if remaining:
         raise ModPackageError(f"Sim IDs do not belong to this household: {list(remaining)}")
     output.extend(household[end:])
@@ -138,29 +309,28 @@ def starter_household_override(
     source: bytes,
     *,
     name: str | None = None,
+    description: str | None = None,
     funds: int | None = None,
-    sim_traits: Mapping[int, Iterable[int]] | None = None,
+    members: Mapping[int, StarterMemberEdit] | None = None,
 ) -> tuple[ResourceKey, bytes]:
-    """Patch a version 0 or 2 starter household.
+    """Patch a version 0 or 2 starter household record.
 
-    ``name`` sets the embedded name. Placed households may get their display
-    name from a lot manifest instead. ``sim_traits`` maps baked member IDs to
-    complete trait lists, including preference and other non-personality IDs.
+    ``name`` and ``description`` set the record's inline text. Placed
+    households show the text from their lot manifest instead, so use
+    :func:`starter_household_text` to change what players see. ``members``
+    maps the baked member IDs from ``parse_premade_household`` to edits.
     """
     if key.type_id != PREMADE_HOUSEHOLD_TYPE_ID:
         raise ModPackageError("expected a starter household resource key")
     if not isinstance(source, bytes):
         raise ModPackageError("expected the original starter household bytes")
-    if name is None and funds is None and not sim_traits:
-        raise ModPackageError("supply a household name, funds, or member traits")
+    if name is None and description is None and funds is None and not members:
+        raise ModPackageError("supply a household name, description, funds, or member edits")
     fields: dict[int, tuple[int, int | bytes]] = {}
     if name is not None:
-        if not isinstance(name, str) or not name.strip() or "\x00" in name:
-            raise ModPackageError("household name must be non-empty text without NULs")
-        try:
-            fields[3] = (2, name.encode("utf-8"))
-        except UnicodeEncodeError as exc:
-            raise ModPackageError("household name must be valid Unicode") from exc
+        fields[3] = (2, _text(name, "household name", allow_empty=False))
+    if description is not None:
+        fields[11] = (2, _text(description, "household description", allow_empty=True))
     if funds is not None:
         if type(funds) is not int or not 0 <= funds <= 0xFFFFFFFF:
             raise ModPackageError("household funds must be a uint32")
@@ -176,12 +346,19 @@ def starter_household_override(
         raise ModPackageError("truncated starter household payload")
     payload = source[header_size:end]
     household = _replace_fields(_message(payload, 1, required=True), fields)
-    if sim_traits:
-        if any(type(value) is not int or not 0 < value < 2**64 for value in sim_traits):
-            raise ModPackageError("Sim IDs must be positive uint64 values")
-        household = _edit_member_traits(household, sim_traits)
+    if members:
+        household = _edit_members(household, members)
     updated = _replace_fields(payload, {1: (2, household)})
     return key, source[:header_size - 4] + struct.pack("<I", len(updated)) + updated + source[end:]
+
+
+def _text(value, label: str, *, allow_empty: bool) -> bytes:
+    if not isinstance(value, str) or (not allow_empty and not value.strip()) or "\x00" in value:
+        raise ModPackageError(f"{label} must be {'' if allow_empty else 'non-empty '}text without NULs")
+    try:
+        return value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ModPackageError(f"{label} must be valid Unicode") from exc
 
 
 def _standalone(element, references, active=frozenset()):
@@ -253,12 +430,7 @@ def premade_relationship_override(
     relationship_map = standalone.find("./C[@n='PremadeSimRelationships']/L[@n='RELATIONSHIP_MAP']")
     if relationship_map is None:
         raise ModPackageError("premade relationship module has no RELATIONSHIP_MAP")
-    try:
-        instance = int(standalone.get("s", ""), 0)
-    except ValueError as exc:
-        raise ModPackageError("premade relationship module has no valid instance ID") from exc
-    if instance <= 0:
-        raise ModPackageError("premade relationship module has no valid instance ID")
+    instance = _module_instance(standalone, "premade relationship")
     for (a, b), loot in pairs.items():
         ids = (a, b) if loot is None else (a, b, loot)
         if a == b or any(type(value) is not int or not 0 < value < 2**64 for value in ids):
@@ -286,4 +458,107 @@ def premade_relationship_override(
             row = ET.SubElement(relationship_map, "U")
             for name, value in (("sim_a", a), ("sim_b", b), ("relationship_loot", loot)):
                 ET.SubElement(row, "T", n=name).text = str(value)
+    return ResourceKey(TUNING_TYPE_ID, group, instance), _xml(standalone)
+
+
+def relationship_loot(
+    name: str,
+    *,
+    friendship: float | None = None,
+    romance: float | None = None,
+    bit_ids: Iterable[int] = (),
+    group: int = 0,
+) -> tuple[ResourceKey, bytes]:
+    """Build a new relationship loot that sets exact track values and adds bits.
+
+    The loot uses the shape of the game's premade loots: it sets each track
+    from the Actor (``sim_a``) to the TargetSim (``sim_b``) and adds each bit
+    the same way. Reference the returned instance ID from
+    :func:`premade_relationship_override`. The instance ID is the FNV-64 hash
+    of ``name``, so pick a name unique to your package.
+    """
+    if not isinstance(name, str) or not name.strip() or "\x00" in name:
+        raise ModPackageError("loot name must be non-empty text without NULs")
+    tracks = [(track, value) for track, value in ((FRIENDSHIP_TRACK_ID, friendship),
+                                                  (ROMANCE_TRACK_ID, romance)) if value is not None]
+    for _, value in tracks:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not -100 <= value <= 100:
+            raise ModPackageError("relationship track values must be numbers from -100 to 100")
+    bits = list(dict.fromkeys(_uint64(bit, "relationship bit IDs") for bit in bit_ids))
+    if not tracks and not bits:
+        raise ModPackageError("supply friendship, romance, or relationship bits")
+    instance = fnv1_64(name)
+    root = ET.Element("I", {"c": "LootActions", "i": "action", "m": "interactions.utils.loot",
+                            "n": name, "s": str(instance)})
+    actions = ET.SubElement(root, "L", n="loot_actions")
+    for track, value in tracks:
+        statistic = ET.SubElement(ET.SubElement(actions, "V", t="statistics"),
+                                  "V", n="statistics", t="relationship_set")
+        setting = ET.SubElement(statistic, "U", n="relationship_set")
+        ET.SubElement(ET.SubElement(setting, "L", n="target_participant_type"), "E").text = "TargetSim"
+        ET.SubElement(setting, "T", n="track").text = str(track)
+        ET.SubElement(setting, "T", n="value").text = f"{value:g}"
+    if bits:
+        loot = ET.SubElement(ET.SubElement(actions, "V", t="relationship_bits_loot"),
+                             "U", n="relationship_bits_loot")
+        operations = ET.SubElement(loot, "L", n="bit_operations")
+        for bit in bits:
+            operation = ET.SubElement(operations, "U")
+            ET.SubElement(operation, "T", n="bit").text = str(bit)
+            for field_name, value in (("operation", "ADD"), ("recipients", "Actor"),
+                                      ("targets", "TargetSim")):
+                ET.SubElement(operation, "E", n=field_name).text = value
+    ET.SubElement(root, "T", n="run_test_first").text = "True"
+    return ResourceKey(ACTION_TUNING_TYPE_ID, group, instance), _xml(root)
+
+
+def _module_instance(module: ET.Element, label: str) -> int:
+    try:
+        instance = int(module.get("s", ""), 0)
+    except ValueError:
+        instance = 0
+    if instance <= 0:
+        raise ModPackageError(f"{label} module has no valid instance ID")
+    return instance
+
+
+def initial_lot_traits_override(
+    source: CombinedTuning,
+    lots: Mapping[int, Iterable[int] | None],
+    *,
+    group: int = 0,
+) -> tuple[ResourceKey, bytes]:
+    """Set the lot traits that lots start with in a new save.
+
+    ``lots`` maps house description IDs (``WorldLot.house_description_id``)
+    to complete lists of lot trait IDs from ``Catalog.lot_traits``. ``None``
+    or an empty list leaves the lot without starting traits. Other lots keep
+    their entries from the supplied module.
+    """
+    module = source.find_module(LOT_TRAITS_MODULE)
+    if module is None or not lots:
+        raise ModPackageError("supply the lot trait module and at least one lot")
+    standalone = _standalone(module, source.references)
+    mapping = standalone.find("./C[@n='ZoneModifierTuning']/L[@n='INITIAL_ZONE_MODIFIERS']")
+    if mapping is None:
+        raise ModPackageError("lot trait module has no INITIAL_ZONE_MODIFIERS")
+    instance = _module_instance(standalone, "lot trait")
+    wanted: dict[int, list[int]] = {}
+    for house, traits in lots.items():
+        _uint64(house, "house description IDs")
+        wanted[house] = list(dict.fromkeys(_uint64(trait, "lot trait IDs") for trait in traits or ()))
+    for row in list(mapping):
+        try:
+            house = int(row.findtext("./T[@n='key']", ""), 0)
+        except ValueError:
+            continue
+        if house in wanted:
+            mapping.remove(row)
+    for house, traits in wanted.items():
+        if traits:
+            row = ET.SubElement(mapping, "U")
+            ET.SubElement(row, "T", n="key").text = str(house)
+            values = ET.SubElement(row, "L", n="value")
+            for trait in traits:
+                ET.SubElement(values, "T").text = str(trait)
     return ResourceKey(TUNING_TYPE_ID, group, instance), _xml(standalone)

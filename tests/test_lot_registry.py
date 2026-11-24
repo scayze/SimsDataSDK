@@ -59,7 +59,8 @@ def test_lot_registry_and_relocation_round_trip(tmp_path):
     _site(world, 1, 1234)
     _site(world, 2, 0)
     strings = {1: "Origin", 2: "Destination", 3: "Family", 5: "Region", 6: "Street"}
-    static = StaticData(catalog=Catalog(strings=strings), world=world)
+    static = StaticData(catalog=Catalog(strings=strings, initial_lot_trait_ids={501: [144156]}),
+                        world=world)
     path = tmp_path / "Data/Shared/Worlds/Areas/Test.world"
     path.parent.mkdir(parents=True)
     architecture = _architecture(28614)
@@ -77,6 +78,7 @@ def test_lot_registry_and_relocation_round_trip(tmp_path):
     assert (destination.region_name, destination.street_name, destination.world_id) == ("Region", "Street", fnv1_32("test"))
     assert (destination.width, destination.depth, destination.venue_name) == (40, 30, "Residential")
     assert destination.to_dict()["manifest_key"] == str(destination.manifest_key)
+    assert (origin.house_description_id, origin.lot_trait_ids, destination.lot_trait_ids) == (501, (144156,), ())
 
     output = write_package(tmp_path / "move.package", move_starter_household(world, origin, destination))
     package = DBPF(output)
@@ -95,7 +97,7 @@ def test_lot_registry_and_relocation_round_trip(tmp_path):
         + b"\x12" + _encode_varint(len(saved_architecture)) + saved_architecture}]))
     save = SaveFile(save_path, zones={
         700: SaveZone(700, "Renamed", lot_id=202, household_id=900, lot_description_id=302,
-                      lot_template_id=402, venue_id=28614),
+                      lot_template_id=402, venue_id=28614, lot_trait_ids=[7]),
         701: SaveZone(701, "Unlinked", lot_id=209, household_id=0, lot_description_id=309),
     }, households={900: SavedHousehold(900, name="Family", home_zone=700)})
     overlaid = overlay_save(base, save, world.venue_names)
@@ -104,6 +106,7 @@ def test_lot_registry_and_relocation_round_trip(tmp_path):
         "Renamed", "Family", "Library", destination.manifest_key
     )
     assert overlaid.zone(701).occupancy == "vacant"
+    assert (lot.lot_trait_ids, overlaid.lot(201).lot_trait_ids) == ((7,), None)
     assert overlaid.lot(201).occupancy == "unknown"
     assert base.lot(201).occupancy == "occupied"
     with pytest.raises(ModPackageError):

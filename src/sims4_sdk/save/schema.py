@@ -143,6 +143,7 @@ SCHEMAS: dict[str, Mapping[int, FieldSpec]] = {
         11: f("gameplay_zone_data", "message", message="GameplayZoneData"),
         12: f("lot_description_id"),
         14: f("description", "string"),
+        20: f("lot_traits", "fixed64", repeated=True),
     },
     "GameplayZoneData": {
         7: f("venue_type_id_on_save"),

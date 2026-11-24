@@ -91,6 +91,12 @@ class SaveZone(Serializable):
     lot_description_id: Optional[int] = None
     lot_template_id: Optional[int] = None
     venue_id: Optional[int] = None
+    #: Lot trait and challenge IDs (``ZoneModifier`` tuning) on this zone.
+    lot_trait_ids: list[int] = field(default_factory=list)
+
+    def __setstate__(self, state: dict) -> None:
+        self.__dict__.update(state)
+        self.__dict__.setdefault("lot_trait_ids", [])
 
 
 @dataclass

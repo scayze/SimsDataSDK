@@ -12,6 +12,7 @@ from sims4_sdk.core.resource_types import COMBINED_TUNING_TYPE_ID, PREMADE_HOUSE
 from sims4_sdk.mods import (
     premade_relationship_override,
     premade_template_override,
+    StarterMemberEdit,
     starter_household_override,
     write_package,
 )
@@ -40,7 +41,8 @@ def build(path):
     # Use a different marker for the baked and tuning paths.
     print(write_package(path, [
         starter_household_override(HOUSEHOLD, client.read_resource(HOUSEHOLD), funds=FUNDS),
-        starter_household_override(GOTH, raw, sim_traits={member.sim_id: [*member.trait_ids, NEAT]}),
+        starter_household_override(GOTH, raw, members={
+            member.sim_id: StarterMemberEdit(trait_ids=[*member.trait_ids, NEAT])}),
         premade_template_override(bella, {"_traits": traits}),
         premade_relationship_override(tuning, {(BELLA, NANCY): CLOSE_FRIENDS}),
     ]))

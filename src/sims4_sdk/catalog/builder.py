@@ -57,6 +57,7 @@ from .relationships import (
     extract_relationship_tuning,
     has_interval_data,
 )
+from .lot_traits import LOT_TRAITS_MODULE, extract_initial_lot_traits, extract_lot_traits
 from .worlds import WorldData
 
 __all__ = [
@@ -70,7 +71,7 @@ __all__ = [
 
 ProgressCallback = Optional[Callable[[str], None]]
 
-CACHE_VERSION = "source-resolved-8"
+CACHE_VERSION = "source-resolved-9"
 
 _MODEL_CLASSES = frozenset(
     {
@@ -110,6 +111,9 @@ _SCANNED_TYPES = _GEOGRAPHY_TYPES | frozenset(
         SIMDATA_TYPE_ID,
     }
 )
+
+#: Module tuning kept whole so packages can override it.
+_CAPTURED_MODULES = (*RELATIONSHIP_MODULES, LOT_TRAITS_MODULE)
 
 _DAY_NAMES = ("SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY")
 
@@ -242,7 +246,7 @@ class CollectedPackageData:
     tuning_overrides: dict[int, list[TuningCandidate]] = field(default_factory=dict)
     simdata_statistics: dict[int, StatisticDefinition] = field(default_factory=dict)
     world_resources: list[WorldResource] = field(default_factory=list)
-    relationship_modules: dict[str, CombinedTuning] = field(
+    tuning_modules: dict[str, CombinedTuning] = field(
         default_factory=dict, repr=False
     )
     relationship_track_sources: dict[int, TuningElement] = field(
@@ -272,7 +276,7 @@ def collect_package_data(
     *,
     progress: ProgressCallback = None,
     include_world: bool = True,
-    include_relationships: bool = True,
+    include_modules: bool = True,
     include_siminfo: bool = True,
 ) -> CollectedPackageData:
     """Open every package once and collect tuning and world resources."""
@@ -345,10 +349,10 @@ def collect_package_data(
                         recoverable=True,
                     ))
                     continue
-                if include_relationships:
-                    for module_name in RELATIONSHIP_MODULES:
+                if include_modules:
+                    for module_name in _CAPTURED_MODULES:
                         if module_name in combined.modules:
-                            data.relationship_modules[module_name] = combined
+                            data.tuning_modules[module_name] = combined
                 for tuning in combined:
                     try:
                         if tuning.instance_id == 0 and len(combined.entries) == 1:
@@ -431,10 +435,10 @@ def collect_package_data(
                 combined_cache[content_key] = combined
             for tuning in combined:
                 add_tuning(tuning, entry_source)
-            if include_relationships:
-                for module_name in RELATIONSHIP_MODULES:
+            if include_modules:
+                for module_name in _CAPTURED_MODULES:
                     if module_name in combined.modules:
-                        data.relationship_modules[module_name] = combined
+                        data.tuning_modules[module_name] = combined
                 for track_id in (FRIENDSHIP_TRACK_ID, ROMANCE_TRACK_ID):
                     element = combined.find_by_instance_id(track_id)
                     if element is not None and has_interval_data(element):
@@ -470,9 +474,9 @@ def resolve_world_resources(data: CollectedPackageData) -> WorldData:
 
 def resolve_relationship_tuning(data: CollectedPackageData) -> RelationshipTuningData:
     """Interpret collected relationship modules and track tuning."""
-    if data.relationship_modules:
+    if data.tuning_modules:
         return extract_relationship_tuning(
-            data.relationship_modules,
+            data.tuning_modules,
             data.entries,
             track_sources=data.relationship_track_sources,
         )
@@ -488,11 +492,14 @@ def extract_catalog(
     strings: dict[int, str],
     *,
     relationship_tuning: Optional[RelationshipTuningData] = None,
+    lot_traits_module: Optional[CombinedTuning] = None,
 ) -> Catalog:
     """Extract supported tuning fields without linking catalog records."""
     catalog = Catalog(strings=strings)
     _build_models(catalog, entries, sources, strings)
     _build_aspiration_objectives(catalog, entries, sources, strings)
+    catalog.lot_traits = extract_lot_traits(entries, sources, strings)
+    catalog.initial_lot_trait_ids = extract_initial_lot_traits(lot_traits_module)
     if relationship_tuning is not None:
         catalog.relationship_defaults = relationship_tuning.defaults
         catalog.premade_relationships = relationship_tuning.pairs
