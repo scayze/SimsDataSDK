@@ -9,7 +9,10 @@ from sims4_sdk.catalog.worlds import parse_premade_household
 from sims4_sdk.core import DBPF, DBPFError, CombinedTuning, ResourceKey, write_package
 from sims4_sdk.core.resource_types import PREMADE_HOUSEHOLD_TYPE_ID
 from sims4_sdk.installation import PackageInfo
-from sims4_sdk.catalog.lot_traits import LOT_TRAITS_MODULE, extract_initial_lot_traits
+from sims4_sdk.catalog.lot_traits import (
+    LOT_TRAITS_MODULE, LOT_TRAITS_SIMDATA_KEY, extract_initial_lot_traits,
+)
+from sims4_sdk.core import SimData
 from sims4_sdk.catalog.relationships import _evaluate_loot
 from sims4_sdk.catalog.worlds import StarterCareer, parse_lot_manifest
 from sims4_sdk.core.resource_types import (
@@ -160,6 +163,65 @@ def test_relationship_loot_sets_tracks_and_bits():
         relationship_loot("empty")
 
 
+def _lot_trait_simdata(mapping):
+    """Build a DATA resource shaped like the game's compiled lot trait module."""
+    names = [b"zone_modifier.zone_modifier_tuning.ZoneModifierTuning", b"Module",
+             b"INITIAL_ZONE_MODIFIERS", b"Row", b"key", b"value"]
+    rows_start, items = 128, [trait for traits in mapping.values() for trait in traits]
+    items_start = (rows_start + 12 * len(mapping) + 15) & ~15
+    tail = (items_start + 8 * len(items) + 15) & ~15
+    schemas, columns = tail, tail + 48
+    strings = columns + 60
+    offsets, position = [], strings
+    for name in names:
+        offsets.append(position)
+        position += len(name) + 1
+    data = bytearray(position)
+    struct.pack_into("<4sIiiiiI", data, 0, b"DATA", 0x101, 20, 3, schemas - 16, 2, 0)
+    for index, (name, schema, kind, size, start, count) in enumerate((
+            (offsets[0], schemas, 13, 8, 112, 1),
+            (None, schemas + 24, 13, 12, rows_start, len(mapping)),
+            (None, None, 9, 8, items_start, len(items)))):
+        position = 28 + 28 * index
+        struct.pack_into("<iIiIIiI", data, position,
+                         -0x80000000 if name is None else name - position, 0,
+                         -0x80000000 if schema is None else schema - (position + 8),
+                         kind, size, start - (position + 20), count)
+    for index, (name, size, column, count) in enumerate(
+            ((offsets[1], 8, columns, 1), (offsets[3], 12, columns + 20, 2))):
+        position = schemas + 24 * index
+        struct.pack_into("<iIIIiI", data, position, name - position, 0, 0, size,
+                         column - (position + 16), count)
+    for index, (name, kind, offset) in enumerate(((offsets[2], 14, 0), (offsets[4], 7, 0),
+                                                  (offsets[5], 14, 4))):
+        position = columns + 20 * index
+        struct.pack_into("<iIHHIi", data, position, name - position, 0, kind, 0, offset, 0)
+    struct.pack_into("<iI", data, 112, rows_start - 112, len(mapping))
+    element = 0
+    for index, (house, traits) in enumerate(mapping.items()):
+        row = rows_start + 12 * index
+        target = items_start + 8 * element
+        struct.pack_into("<IiI", data, row, house, target - (row + 4), len(traits))
+        for trait in traits:
+            struct.pack_into("<Q", data, items_start + 8 * element, trait)
+            element += 1
+    for offset, name in zip(offsets, names):
+        data[offset:offset + len(name)] = name
+    return bytes(data)
+
+
+def _read_lot_trait_simdata(data):
+    simdata = SimData.parse(data)
+    assert simdata.table_names()[0] == "zone_modifier.zone_modifier_tuning.ZoneModifierTuning"
+    result = {}
+    for row in simdata.tables.rows[1]:
+        vector = row["value"]
+        start = vector["startof_mDataOffset"] + vector["mDataOffset"]
+        result[row["key"]] = [struct.unpack_from("<Q", data, start + 8 * index)[0]
+                              for index in range(vector["mCount"])]
+    return result
+
+
 def test_initial_lot_traits_override_replaces_listed_lots_only(tmp_path):
     source = CombinedTuning.from_xml(f"""
     <root>
@@ -172,13 +234,22 @@ def test_initial_lot_traits_override_replaces_listed_lots_only(tmp_path):
         </L>
       </C></M>
     </root>""")
+    simdata = _lot_trait_simdata({10: [144156], 11: [1], 12: [2]})
+    assert _read_lot_trait_simdata(simdata) == {10: [144156], 11: [1], 12: [2]}
     assert extract_initial_lot_traits(source) == {10: [144156], 11: [1], 12: [2]}
-    key, xml = initial_lot_traits_override(source, {11: [3, 4, 3], 12: None, 13: [5]})
+    resources = initial_lot_traits_override(source, simdata, {11: [3, 4, 3], 12: None, 13: [5]})
+    (key, xml), (copy_key, copy), (client_key, client) = resources
     assert key == ResourceKey(0x03B33DDF, 0, 77)
+    assert (copy_key, client_key) == (ResourceKey(0x545AC67A, 0x006CA304, 77), LOT_TRAITS_SIMDATA_KEY)
+    assert copy == client
+    assert _read_lot_trait_simdata(client) == {10: [144156], 11: [3, 4], 13: [5]}
+    assert client.endswith(simdata[-60:])  # names and schemas move as one block
     path = write_package(tmp_path / "traits.package", [(key, xml)])
     collected = collect_package_data([PackageInfo(path, "MOD", True)])
     assert extract_initial_lot_traits(collected.tuning_modules[LOT_TRAITS_MODULE]) == {
         10: [144156], 11: [3, 4], 13: [5]}
+    with pytest.raises(ModPackageError):
+        initial_lot_traits_override(source, b"DATA", {11: [3]})
 
 
 def test_template_and_relationship_overrides_are_readable_as_mod_tuning(tmp_path):

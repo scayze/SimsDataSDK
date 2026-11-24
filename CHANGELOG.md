@@ -33,7 +33,8 @@ deprecated aliases or fallbacks.
 - Lot traits and challenges: `LotTrait`, `Catalog.lot_traits`,
   `Catalog.lot_trait`, `Catalog.find_lot_traits`, and
   `Catalog.initial_lot_trait_ids`. `initial_lot_traits_override` changes the
-  traits lots start with in a new save.
+  traits lots start with in a new save; it rewrites the module tuning and its
+  compiled SimData (`LOT_TRAITS_SIMDATA_KEY`), which the game reads.
 - `WorldLot.lot_trait_ids` and `WorldLot.house_description_id`;
   `SaveZone.lot_trait_ids` from the save's zone data.
 - `LotThumbnailIndex` and `Sims4Workspace.lot_thumbnails()` for the static

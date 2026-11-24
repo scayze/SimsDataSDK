@@ -14,12 +14,21 @@ from __future__ import annotations
 from typing import Mapping, Optional
 
 from ..core.combined_tuning import CombinedTuning, TuningElement
+from ..core.dbpf import ResourceKey
+from ..core.fnv import fnv1_64
+from ..core.resource_types import SIMDATA_TYPE_ID
 from .models import LotTrait, TuningSource
 from .values import TuningView
 
-__all__ = ["LOT_TRAITS_MODULE", "extract_lot_traits", "extract_initial_lot_traits"]
+__all__ = ["LOT_TRAITS_MODULE", "LOT_TRAITS_SIMDATA_KEY", "extract_lot_traits",
+           "extract_initial_lot_traits"]
 
 LOT_TRAITS_MODULE = "zone_modifier.zone_modifier_tuning"
+LOT_TRAITS_SIMDATA_TABLE = f"{LOT_TRAITS_MODULE}.ZoneModifierTuning"
+#: The compiled client copy of the module that new saves take starting traits
+#: from. Its instance is the FNV-64 hash of the lowercased module and class.
+LOT_TRAITS_SIMDATA_KEY = ResourceKey(SIMDATA_TYPE_ID, 0x006CA304,
+                                     fnv1_64(LOT_TRAITS_SIMDATA_TABLE.lower()))
 _INITIAL_PATH = "./C[@n='ZoneModifierTuning']/L[@n='INITIAL_ZONE_MODIFIERS']"
 
 

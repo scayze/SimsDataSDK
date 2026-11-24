@@ -12,7 +12,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 from sims4_sdk import Sims4Workspace
-from sims4_sdk.catalog.lot_traits import LOT_TRAITS_MODULE
+from sims4_sdk.catalog.lot_traits import LOT_TRAITS_MODULE, LOT_TRAITS_SIMDATA_KEY
 from sims4_sdk.catalog.relationships import FRIENDSHIP_TRACK_ID, ROMANCE_TRACK_ID
 from sims4_sdk.catalog.worlds import StarterCareer, parse_premade_household
 from sims4_sdk.core import DBPF, CombinedTuning, ResourceKey
@@ -127,7 +127,8 @@ def build(path):
         premade_template_override(bella, {"_traits": traits}),
         (loot_key, loot),
         premade_relationship_override(tuning, {(BELLA, NANCY): loot_key.instance}),
-        initial_lot_traits_override(lot_tuning, {lot.house_description_id: lot_traits}),
+        *initial_lot_traits_override(lot_tuning, ws.installation.find_resource(*LOT_TRAITS_SIMDATA_KEY),
+                                     {lot.house_description_id: lot_traits}),
     ])
     Path(f"{output}.json").write_text(json.dumps(expected, indent=2), encoding="utf-8")
     print(output)

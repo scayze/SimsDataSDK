@@ -10,15 +10,16 @@ from math import isfinite
 from typing import Optional
 
 from .catalog.lot_registry import WorldLot
-from .catalog.lot_traits import LOT_TRAITS_MODULE
+from .catalog.lot_traits import LOT_TRAITS_MODULE, LOT_TRAITS_SIMDATA_KEY, LOT_TRAITS_SIMDATA_TABLE
 from .catalog.relationships import FRIENDSHIP_TRACK_ID, RELATIONSHIPS_MODULE, ROMANCE_TRACK_ID
 from .catalog.worlds import LotRecord, StarterCareer, WorldData
 from .core.combined_tuning import CombinedTuning, TuningElement
+from .core.data_tables import RELOFFSET_NULL, DataTableError, DataTables
 from .core.dbpf import ResourceKey, write_package
 from .core.fnv import fnv1_32, fnv1_64
 from .core.resource_types import (
     ACTION_TUNING_TYPE_ID, LOT_MANIFEST_TYPE_ID, PREMADE_HOUSEHOLD_TYPE_ID, SIM_TEMPLATE_TYPE_ID,
-    STRING_TABLE_TYPE_ID, TUNING_TYPE_ID,
+    SIMDATA_TYPE_ID, STRING_TABLE_TYPE_ID, TUNING_TYPE_ID,
 )
 from .core.stbl import LOCALE_CODES, StringTable
 from .exceptions import Sims4SDKError
@@ -522,22 +523,122 @@ def _module_instance(module: ET.Element, label: str) -> int:
     return instance
 
 
+def _lot_traits_simdata(source: bytes, wanted: Mapping[int, list[int]]) -> bytes:
+    """Rewrite the client's compiled ``INITIAL_ZONE_MODIFIERS`` table.
+
+    The resource holds three tables: the module row with one vector, the
+    mapping rows (``key`` and ``value``), and the trait IDs. Only the row data
+    is rebuilt; schemas and names after it move as one block.
+    """
+    try:
+        tables = DataTables.parse(source)
+    except DataTableError as exc:
+        raise ModPackageError(f"invalid lot trait SimData: {exc}") from exc
+    if len(tables.tables) != 3:
+        raise ModPackageError("unexpected lot trait SimData layout")
+    module, rows, items = tables.tables
+    columns = {column.name: column for column in tables.schemas[rows.schema_index].columns} \
+        if rows.has_schema else {}
+    module_columns = tables.schemas[module.schema_index].columns if module.has_schema else []
+    if (module.name != LOT_TRAITS_SIMDATA_TABLE or module.row_count != 1
+            or [(c.name, c.data_type) for c in module_columns] != [("INITIAL_ZONE_MODIFIERS", 14)]
+            or set(columns) != {"key", "value"} or columns["key"].data_type != 7
+            or columns["value"].data_type != 14 or items.has_schema or items.data_type != 9):
+        raise ModPackageError("unexpected lot trait SimData layout")
+
+    mapping: dict[int, list[int]] = {}
+    for row in tables.rows[1]:
+        vector = row["value"]
+        start = vector["startof_mDataOffset"] + vector["mDataOffset"]
+        mapping[row["key"]] = [struct.unpack_from("<Q", source, start + 8 * index)[0]
+                               for index in range(vector["mCount"])]
+    for house, traits in wanted.items():
+        if house > 0xFFFFFFFF:
+            raise ModPackageError("house description IDs must fit in 32 bits")
+        if traits:
+            mapping[house] = traits
+        else:
+            mapping.pop(house, None)
+
+    def align(position: int) -> int:
+        return (position + 15) & ~15
+
+    old_end = items.row_start + items.row_stride * items.row_count
+    data_start = min(table.row_start for table in tables.tables)
+    module_start = data_start
+    rows_start = align(module_start + module.row_stride)
+    items_start = align(rows_start + rows.row_stride * len(mapping))
+    flat = [trait for traits in mapping.values() for trait in traits]
+    new_end = items_start + 8 * len(flat)
+    new_end += (old_end - new_end) % 16  # keep the moved block's alignment
+    delta = new_end - old_end
+
+    header = struct.unpack_from("<4sIiiii", source, 0)
+    schema_target = 16 + header[4]
+    table_pos = 8 + header[2]
+    targets = [schema_target]
+    for index, table in enumerate(tables.tables):
+        position = table_pos + 28 * index
+        name_offset, = struct.unpack_from("<i", source, position)
+        if name_offset != RELOFFSET_NULL:
+            targets.append(position + name_offset)
+        if table.has_schema:
+            targets.append(table.schema_offset_pos + table.schema_offset)
+    if any(target < old_end for target in targets) or data_start < table_pos + 28 * 3:
+        raise ModPackageError("unexpected lot trait SimData layout")
+
+    output = bytearray(source[:data_start])
+    output += bytes(new_end - data_start)
+    struct.pack_into("<i", output, 16, header[4] + delta)
+    for index, (table, start, count) in enumerate(
+            ((module, module_start, 1), (rows, rows_start, len(mapping)), (items, items_start, len(flat)))):
+        position = table_pos + 28 * index
+        name_offset, = struct.unpack_from("<i", source, position)
+        if name_offset != RELOFFSET_NULL:
+            struct.pack_into("<i", output, position, name_offset + delta)
+        if table.has_schema:
+            struct.pack_into("<i", output, position + 8, table.schema_offset + delta)
+        struct.pack_into("<iI", output, position + 20, start - (position + 20), count)
+    field = module_start + module_columns[0].offset
+    struct.pack_into("<iI", output, field, rows_start - field, len(mapping))
+    element = 0
+    for index, (house, traits) in enumerate(mapping.items()):
+        row = rows_start + rows.row_stride * index
+        struct.pack_into("<I", output, row + columns["key"].offset, house)
+        field = row + columns["value"].offset
+        target = items_start + 8 * element
+        struct.pack_into("<iI", output, field, target - field, len(traits))
+        for trait in traits:
+            struct.pack_into("<Q", output, items_start + 8 * element, trait)
+            element += 1
+    output += source[old_end:]
+    return bytes(output)
+
+
 def initial_lot_traits_override(
     source: CombinedTuning,
+    simdata: bytes,
     lots: Mapping[int, Iterable[int] | None],
     *,
     group: int = 0,
-) -> tuple[ResourceKey, bytes]:
+) -> list[tuple[ResourceKey, bytes]]:
     """Set the lot traits that lots start with in a new save.
 
     ``lots`` maps house description IDs (``WorldLot.house_description_id``)
     to complete lists of lot trait IDs from ``Catalog.lot_traits``. ``None``
     or an empty list leaves the lot without starting traits. Other lots keep
-    their entries from the supplied module.
+    their entries.
+
+    The game assigns starting traits from the compiled client copy of the
+    module, so pass its SimData too: the resource at
+    :data:`~sims4_sdk.catalog.lot_traits.LOT_TRAITS_SIMDATA_KEY`. This returns
+    the module tuning and the SimData under both keys the game ships it at.
     """
     module = source.find_module(LOT_TRAITS_MODULE)
     if module is None or not lots:
         raise ModPackageError("supply the lot trait module and at least one lot")
+    if not isinstance(simdata, bytes):
+        raise ModPackageError("expected the lot trait SimData bytes")
     standalone = _standalone(module, source.references)
     mapping = standalone.find("./C[@n='ZoneModifierTuning']/L[@n='INITIAL_ZONE_MODIFIERS']")
     if mapping is None:
@@ -547,6 +648,7 @@ def initial_lot_traits_override(
     for house, traits in lots.items():
         _uint64(house, "house description IDs")
         wanted[house] = list(dict.fromkeys(_uint64(trait, "lot trait IDs") for trait in traits or ()))
+    compiled = _lot_traits_simdata(simdata, wanted)
     for row in list(mapping):
         try:
             house = int(row.findtext("./T[@n='key']", ""), 0)
@@ -561,4 +663,8 @@ def initial_lot_traits_override(
             values = ET.SubElement(row, "L", n="value")
             for trait in traits:
                 ET.SubElement(values, "T").text = str(trait)
-    return ResourceKey(TUNING_TYPE_ID, group, instance), _xml(standalone)
+    return [
+        (ResourceKey(TUNING_TYPE_ID, group, instance), _xml(standalone)),
+        (ResourceKey(SIMDATA_TYPE_ID, LOT_TRAITS_SIMDATA_KEY.group, instance), compiled),
+        (LOT_TRAITS_SIMDATA_KEY, compiled),
+    ]

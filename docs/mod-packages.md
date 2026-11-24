@@ -11,7 +11,7 @@ The package produced by this example requires no script or in-game command.
 from xml.etree import ElementTree as ET
 
 from sims4_sdk import ResourceKey, Sims4Workspace
-from sims4_sdk.catalog.lot_traits import LOT_TRAITS_MODULE
+from sims4_sdk.catalog.lot_traits import LOT_TRAITS_MODULE, LOT_TRAITS_SIMDATA_KEY
 from sims4_sdk.catalog.relationships import RELATIONSHIPS_MODULE
 from sims4_sdk.catalog.worlds import StarterCareer, parse_premade_household
 from sims4_sdk.skill_discovery import discover_skill_curves
@@ -59,9 +59,11 @@ write_package("new-save.package", [
     premade_relationship_override(collected.tuning_modules[RELATIONSHIPS_MODULE], {
         (469189, 468090): loot_key.instance,  # Bella, Nancy
     }),
-    initial_lot_traits_override(collected.tuning_modules[LOT_TRAITS_MODULE], {
-        lot.house_description_id: [ws.catalog.lot_trait("lottrait_Romantic").id],
-    }),
+    *initial_lot_traits_override(
+        collected.tuning_modules[LOT_TRAITS_MODULE],
+        ws.installation.find_resource(*LOT_TRAITS_SIMDATA_KEY),
+        {lot.house_description_id: [ws.catalog.lot_trait("zoneModifier_lotTrait_Homey").id]},
+    ),
 ])
 ```
 
@@ -103,8 +105,11 @@ The IDs above are illustrative; look them up in `ws.catalog` for your build.
   cross-household relationships.
 - **Starting lot traits** for a new save come from the
   `INITIAL_ZONE_MODIFIERS` module tuning, keyed by house description ID
-  (`WorldLot.house_description_id`). `initial_lot_traits_override` replaces
-  the complete list for each listed lot and keeps every other lot. Read the
+  (`WorldLot.house_description_id`). The game assigns them from the compiled
+  client copy of that module (`LOT_TRAITS_SIMDATA_KEY`), not from the XML, so
+  `initial_lot_traits_override` takes both and returns the XML plus the
+  rebuilt SimData under both keys the game ships it at. It replaces the
+  complete list for each listed lot and keeps every other lot. Read the
   defaults from `Catalog.initial_lot_trait_ids` and the available traits and
   challenges from `Catalog.lot_traits`.
 
@@ -112,6 +117,6 @@ Export against the intended game patch and installed packs. Overrides of the
 same resource key can conflict, including two packages that edit different
 pairs in the relationship module. Combine changes for each resource before
 exporting and test the package using a fresh save. For game verification, see
-the [startup smoke test](../examples/startup_smoke/README.md). The new loot,
-manifest text, and starting lot trait exports are verified against game data
-but not yet covered by the smoke test.
+the [startup smoke test](../examples/startup_smoke/README.md). The smoke test
+covers member edits, household text, generated loots, and starting lot
+traits.
